@@ -1205,12 +1205,14 @@ const pages = {
             <table class="data-table">
               <thead>
                 <tr>
-                  <th>Date</th><th>Season</th><th>Team</th>
-                  <th>Score</th><th>Opponent</th><th>Location</th><th>Actions</th>
+                  <th id="gm-date-sort" style="cursor:pointer;user-select:none;white-space:nowrap">Date <span id="gm-sort-icon" style="opacity:.6;font-size:.75em">▲</span></th>
+                  <th>Team</th>
+                  <th style="white-space:nowrap">Score</th>
+                  <th>Opponent</th><th>Location</th><th>Actions</th>
                 </tr>
               </thead>
               <tbody id="game-list">
-                <tr><td colspan="7" class="list-empty">Loading…</td></tr>
+                <tr><td colspan="6" class="list-empty">Loading…</td></tr>
               </tbody>
             </table>
           </div>
@@ -1265,18 +1267,26 @@ const pages = {
       refreshSeasonFilter(params.season);
       refreshTeamFilter(params.team);
 
-      const countEl = document.getElementById('gm-count');
+      const countEl  = document.getElementById('gm-count');
+      const dateSort = document.getElementById('gm-date-sort');
+      const sortIcon = document.getElementById('gm-sort-icon');
+      let sortAsc = true;
 
       function renderRows() {
         const lid = leagueFilt.value, sid = seasonFilt.value, tid = teamFilt.value;
-        const visible = gamesCache.filter(g =>
-          (!lid || String(g.league_id) === lid || String(g.opponent_league_id) === lid) &&
-          (!sid || String(g.season_id) === sid || String(g.opponent_season_id) === sid) &&
-          (!tid || String(g.team_id) === tid || String(g.opponent_id) === tid)
-        );
+        const visible = gamesCache
+          .filter(g =>
+            (!lid || String(g.league_id) === lid || String(g.opponent_league_id) === lid) &&
+            (!sid || String(g.season_id) === sid || String(g.opponent_season_id) === sid) &&
+            (!tid || String(g.team_id) === tid || String(g.opponent_id) === tid)
+          )
+          .sort((a, b) => {
+            const cmp = String(a.game_date).localeCompare(String(b.game_date));
+            return sortAsc ? cmp : -cmp;
+          });
         countEl.textContent = `${visible.length} game${visible.length !== 1 ? 's' : ''}`;
         if (!visible.length) {
-          listEl.innerHTML = '<tr><td colspan="7" class="list-empty">No games found.</td></tr>';
+          listEl.innerHTML = '<tr><td colspan="6" class="list-empty">No games found.</td></tr>';
           return;
         }
         listEl.innerHTML = visible.map(g => {
@@ -1288,9 +1298,8 @@ const pages = {
           return `
             <tr>
               <td>${date}</td>
-              <td>${escapeHtml(g.season_name)}</td>
               <td>${team}</td>
-              <td class="col-num">${score}</td>
+              <td class="col-num" style="white-space:nowrap">${score}</td>
               <td>${opp}</td>
               <td>${escapeHtml(g.location)}</td>
               <td class="col-actions">
@@ -1301,15 +1310,21 @@ const pages = {
         }).join('');
       }
 
+      dateSort.addEventListener('click', () => {
+        sortAsc = !sortAsc;
+        sortIcon.textContent = sortAsc ? '▲' : '▼';
+        renderRows();
+      });
+
       async function loadGames() {
-        listEl.innerHTML = '<tr><td colspan="7" class="list-empty">Loading…</td></tr>';
+        listEl.innerHTML = '<tr><td colspan="6" class="list-empty">Loading…</td></tr>';
         try {
           const res = await fetch('api/games');
           const data = await res.json();
-          if (data.error) { listEl.innerHTML = `<tr><td colspan="7" class="list-empty">${escapeHtml(data.error)}</td></tr>`; return; }
+          if (data.error) { listEl.innerHTML = `<tr><td colspan="6" class="list-empty">${escapeHtml(data.error)}</td></tr>`; return; }
           gamesCache = data.games;
           renderRows();
-        } catch { listEl.innerHTML = '<tr><td colspan="7" class="list-empty">Could not load games.</td></tr>'; }
+        } catch { listEl.innerHTML = '<tr><td colspan="6" class="list-empty">Could not load games.</td></tr>'; }
       }
 
       leagueFilt.addEventListener('change', () => { refreshSeasonFilter(); refreshTeamFilter(); renderRows(); });
