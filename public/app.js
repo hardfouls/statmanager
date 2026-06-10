@@ -1269,9 +1269,13 @@ const pages = {
 
       function renderRows() {
         const lid = leagueFilt.value, sid = seasonFilt.value, tid = teamFilt.value;
+        const oppInLeague = (oppId, leagueId) =>
+          allTeamsCache.some(t => String(t.id) === String(oppId) && String(t.league_id) === leagueId);
+        const oppInSeason = (oppId, seasonId) =>
+          allTeamsCache.some(t => String(t.id) === String(oppId) && String(t.season_ids || '').split(',').includes(seasonId));
         const visible = gamesCache.filter(g =>
-          (!lid || String(g.league_id) === lid) &&
-          (!sid || String(g.season_id) === sid) &&
+          (!lid || String(g.league_id) === lid || oppInLeague(g.opponent_id, lid)) &&
+          (!sid || String(g.season_id) === sid || oppInSeason(g.opponent_id, sid)) &&
           (!tid || String(g.team_id) === tid || String(g.opponent_id) === tid)
         );
         countEl.textContent = `${visible.length} game${visible.length !== 1 ? 's' : ''}`;
