@@ -1,4 +1,4 @@
-const CACHE = 'statmanager-v2';
+const CACHE = 'statmanager-v4';
 
 const SCOPE = self.registration.scope;
 const ASSETS = ['', 'app.js', 'manifest.json', 'icon.svg'].map(p => SCOPE + p);

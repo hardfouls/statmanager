@@ -10,8 +10,7 @@ npm install                  # no --no-bin-links needed on native Linux
 pm2 start ecosystem.config.js
 pm2 save
 
-# Local development (WSL2 — Windows mapped drive):
-npm install --no-bin-links   # symlinks not supported on NTFS via WSL2
+# Local development (PowerShell):
 npm start                    # http://localhost:3000
 PORT=8080 npm start
 ```
@@ -26,6 +25,11 @@ so Node.js always sees paths starting at `/`. See `nginx-statmanager.conf` for t
 location block — place it at `/etc/nginx/conf.d/http.statmanager.conf` on the Synology
 and reload nginx. PM2 config is in `ecosystem.config.js`; update `cwd` if the
 web root volume differs from `/volume1/web/`.
+
+## Deployment
+After making any code changes, restart the service on the Synology NAS by running:
+ssh vaughanp@192.168.86.33 -p 220 'PATH=/usr/local/bin:$PATH /usr/local/bin/pm2 restart statmanager'
+SSH key authentication is configured — no password prompt required.
 
 ## Architecture
 

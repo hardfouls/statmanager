@@ -186,7 +186,7 @@ app.get('/api/leagues', async (req, res) => {
         (SELECT COUNT(*)
            FROM seasons s
           WHERE s.league_id = l.id)                                                          AS season_count,
-        (SELECT COUNT(*)
+        (SELECT COUNT(DISTINCT ts.team_id)
            FROM team_seasons ts JOIN seasons s ON ts.season_id = s.id
           WHERE s.league_id = l.id)                                                          AS team_count,
         (SELECT COUNT(*)
@@ -263,6 +263,63 @@ app.delete('/api/leagues/:id', async (req, res) => {
     if (result.affectedRows === 0) return res.status(404).json({ error: 'League not found' });
     res.json({ success: true });
   } catch (err) {
+    res.json({ error: err.message });
+  } finally {
+    await conn?.end().catch(() => {});
+  }
+});
+
+app.post('/api/leagues/merge', async (req, res) => {
+  const { masterId, sourceIds } = req.body;
+  if (!masterId || !Array.isArray(sourceIds) || !sourceIds.length)
+    return res.status(400).json({ error: 'masterId and sourceIds are required' });
+  let conn;
+  try {
+    conn = await dbConnect();
+    await conn.execute('START TRANSACTION');
+
+    for (const srcId of sourceIds) {
+      const id = parseInt(srcId);
+
+      await conn.execute('UPDATE seasons SET league_id = ? WHERE league_id = ?', [masterId, id]);
+
+      // Safety check — all seasons must be migrated before deleting
+      const [[{ remaining }]] = await conn.execute(
+        'SELECT COUNT(*) AS remaining FROM seasons WHERE league_id = ?', [id]
+      );
+      if (remaining)
+        throw new Error(`League #${id} still has ${remaining} season(s) that could not be migrated`);
+
+      const [[src]] = await conn.execute(
+        'SELECT contact_person, contact_phone, contact_email, website_url, founded_date, facebook, x_handle, instagram FROM leagues WHERE id = ?',
+        [id]
+      );
+      if (src) {
+        await conn.execute(
+          `UPDATE leagues SET
+             contact_person = COALESCE(contact_person, ?),
+             contact_phone  = COALESCE(contact_phone,  ?),
+             contact_email  = COALESCE(contact_email,  ?),
+             website_url    = COALESCE(website_url,    ?),
+             founded_date   = COALESCE(founded_date,   ?),
+             facebook       = COALESCE(facebook,       ?),
+             x_handle       = COALESCE(x_handle,       ?),
+             instagram      = COALESCE(instagram,      ?)
+           WHERE id = ?`,
+          [src.contact_person, src.contact_phone, src.contact_email, src.website_url,
+           src.founded_date, src.facebook, src.x_handle, src.instagram, masterId]
+        );
+      }
+
+      const [delResult] = await conn.execute('DELETE FROM leagues WHERE id = ?', [id]);
+      if (delResult.affectedRows === 0)
+        throw new Error(`League #${id} could not be deleted — it may no longer exist`);
+    }
+
+    await conn.execute('COMMIT');
+    res.json({ success: true });
+  } catch (err) {
+    await conn?.execute('ROLLBACK').catch(() => {});
     res.json({ error: err.message });
   } finally {
     await conn?.end().catch(() => {});
@@ -349,6 +406,50 @@ app.delete('/api/seasons/:id', async (req, res) => {
   }
 });
 
+app.post('/api/seasons/merge', async (req, res) => {
+  const { masterId, sourceIds } = req.body;
+  if (!masterId || !Array.isArray(sourceIds) || !sourceIds.length)
+    return res.status(400).json({ error: 'masterId and sourceIds are required' });
+  let conn;
+  try {
+    conn = await dbConnect();
+    await conn.execute('START TRANSACTION');
+
+    for (const srcId of sourceIds) {
+      // team_seasons: drop duplicates (JOIN avoids the self-reference limitation) then move the rest
+      await conn.execute(
+        `DELETE ts FROM team_seasons ts
+         INNER JOIN team_seasons ts2 ON ts2.season_id = ? AND ts2.team_id = ts.team_id
+         WHERE ts.season_id = ?`,
+        [masterId, srcId]
+      );
+      await conn.execute('UPDATE team_seasons SET season_id = ? WHERE season_id = ?', [masterId, srcId]);
+
+      // competitions: move all
+      await conn.execute('UPDATE competitions SET season_id = ? WHERE season_id = ?', [masterId, srcId]);
+
+      // player_seasons: drop duplicates then move the rest
+      await conn.execute(
+        `DELETE ps FROM player_seasons ps
+         INNER JOIN player_seasons ps2 ON ps2.season_id = ? AND ps2.player_id = ps.player_id
+         WHERE ps.season_id = ?`,
+        [masterId, srcId]
+      );
+      await conn.execute('UPDATE player_seasons SET season_id = ? WHERE season_id = ?', [masterId, srcId]);
+
+      await conn.execute('DELETE FROM seasons WHERE id = ?', [srcId]);
+    }
+
+    await conn.execute('COMMIT');
+    res.json({ success: true });
+  } catch (err) {
+    await conn?.execute('ROLLBACK').catch(() => {});
+    res.json({ error: err.message });
+  } finally {
+    await conn?.end().catch(() => {});
+  }
+});
+
 // ── Teams CRUD ────────────────────────────────────────────────────────────────
 app.get('/api/teams', async (req, res) => {
   let conn;
@@ -415,17 +516,31 @@ app.post('/api/teams/merge', async (req, res) => {
   const { masterId, sourceIds } = req.body;
   if (!masterId || !Array.isArray(sourceIds) || !sourceIds.length)
     return res.status(400).json({ error: 'masterId and sourceIds are required' });
+  if (sourceIds.includes(masterId))
+    return res.status(400).json({ error: 'Cannot merge a team with itself' });
+
   let conn;
   try {
     conn = await dbConnect();
     await conn.execute('START TRANSACTION');
 
     for (const srcId of sourceIds) {
+      // Migrate all games globally first — catches any game regardless of
+      // whether a matching team_seasons row exists for the source team.
+      await conn.execute(
+        'UPDATE competitions SET team_id = ? WHERE team_id = ?',
+        [masterId, srcId]
+      );
+      await conn.execute(
+        'UPDATE competitions SET opponent_id = ? WHERE opponent_id = ?',
+        [masterId, srcId]
+      );
+
+      // Migrate season assignments, skipping any already held by the master.
       const [srcSeasons] = await conn.execute(
         'SELECT season_id, coach, active FROM team_seasons WHERE team_id = ?',
         [srcId]
       );
-
       for (const { season_id, coach, active } of srcSeasons) {
         const [[{ has }]] = await conn.execute(
           'SELECT COUNT(*) AS has FROM team_seasons WHERE team_id = ? AND season_id = ?',
@@ -437,30 +552,24 @@ app.post('/api/teams/merge', async (req, res) => {
             [masterId, season_id, coach, active]
           );
         }
-        await conn.execute(
-          'UPDATE competitions SET team_id = ? WHERE team_id = ? AND season_id = ?',
-          [masterId, srcId, season_id]
-        );
-        await conn.execute(
-          'UPDATE competitions SET opponent_id = ? WHERE opponent_id = ? AND season_id = ?',
-          [masterId, srcId, season_id]
-        );
       }
 
-      // Copy any null fields from source to master
+      // Copy null fields from source to master.
       const [[src]] = await conn.execute(
         'SELECT abbrev, nickname, gender + 0 AS gender FROM teams WHERE id = ?', [srcId]
       );
-      await conn.execute(
-        `UPDATE teams SET
-           abbrev   = COALESCE(abbrev,   ?),
-           nickname = COALESCE(nickname, ?),
-           gender   = COALESCE(gender,   ?)
-         WHERE id = ?`,
-        [src.abbrev, src.nickname, src.gender, masterId]
-      );
+      if (src) {
+        await conn.execute(
+          `UPDATE teams SET
+             abbrev   = COALESCE(abbrev,   ?),
+             nickname = COALESCE(nickname, ?),
+             gender   = COALESCE(gender,   ?)
+           WHERE id = ?`,
+          [src.abbrev, src.nickname, src.gender, masterId]
+        );
+      }
 
-      // Safety check — all games must be migrated before deleting
+      // Safety check — all games must be gone from source before deleting it.
       const [[{ remaining }]] = await conn.execute(
         'SELECT COUNT(*) AS remaining FROM competitions WHERE team_id = ? OR opponent_id = ?',
         [srcId, srcId]

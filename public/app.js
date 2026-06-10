@@ -62,12 +62,22 @@ const pages = {
         <div class="card">
           <div class="section-header">
             <h3 class="section-title">League Manager</h3>
-            <button class="btn btn-primary btn-sm" id="new-league-btn">+ New League</button>
+            <div class="header-controls">
+              <select id="lg-bulk-action" class="filter-select">
+                <option value=""></option>
+                <option value="delete">Delete</option>
+                <option value="merge">Merge</option>
+              </select>
+              <button class="btn btn-secondary btn-sm" id="lg-bulk-execute" disabled>Execute</button>
+              <button class="btn btn-primary btn-sm" id="new-league-btn">+ New League</button>
+            </div>
           </div>
+          <div id="league-count" class="list-count"></div>
           <div class="table-wrap">
             <table class="data-table">
               <thead>
                 <tr>
+                  <th class="col-check"><input type="checkbox" id="lg-check-all" title="Select all"></th>
                   <th>Name</th>
                   <th class="col-num">Seasons</th>
                   <th class="col-num">Teams</th>
@@ -80,7 +90,7 @@ const pages = {
                 </tr>
               </thead>
               <tbody id="league-list">
-                <tr><td colspan="5" class="list-empty">Loading…</td></tr>
+                <tr><td colspan="10" class="list-empty">Loading…</td></tr>
               </tbody>
             </table>
           </div>
@@ -90,7 +100,15 @@ const pages = {
 
     async init() {
       let leaguesCache = [];
-      const listEl = document.getElementById('league-list');
+      const listEl      = document.getElementById('league-list');
+      const countEl     = document.getElementById('league-count');
+      const checkAll    = document.getElementById('lg-check-all');
+      const bulkAction  = document.getElementById('lg-bulk-action');
+      const bulkExecute = document.getElementById('lg-bulk-execute');
+
+      bulkAction.addEventListener('change', () => {
+        bulkExecute.disabled = !bulkAction.value;
+      });
 
       const GLOBE_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="12" r="10"/>
@@ -112,6 +130,7 @@ const pages = {
         <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/>
         <line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/>
       </svg>`;
+      const NAV_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>`;
 
       function buildLinks(lg) {
         const strip = h => h ? h.replace(/^@/, '') : '';
@@ -128,51 +147,129 @@ const pages = {
         ).join('');
       }
 
+      function syncMasterCheck() {
+        const boxes   = [...listEl.querySelectorAll('.row-check')];
+        const checked = boxes.filter(cb => cb.checked).length;
+        checkAll.checked       = boxes.length > 0 && checked === boxes.length;
+        checkAll.indeterminate = checked > 0 && checked < boxes.length;
+      }
+
+      function renderRows() {
+        countEl.textContent = `${leaguesCache.length} league${leaguesCache.length !== 1 ? 's' : ''}`;
+        if (!leaguesCache.length) {
+          listEl.innerHTML = '<tr><td colspan="10" class="list-empty">No leagues yet. Click + New League to add one.</td></tr>';
+          return;
+        }
+        listEl.innerHTML = leaguesCache.map(lg => {
+          const seasons = Number(lg.season_count);
+          const teams   = Number(lg.team_count);
+          const games   = Number(lg.competition_count);
+          const seasonNav = seasons > 0
+            ? `<a class="link-icon" href="#/seasons?league=${lg.id}" title="View seasons">${NAV_ICON}</a>`
+            : '';
+          const teamNav = teams > 0
+            ? `<a class="link-icon" href="#/teams?league=${lg.id}" title="View teams">${NAV_ICON}</a>`
+            : '';
+          return `
+          <tr>
+            <td class="col-check"><input type="checkbox" class="row-check" data-id="${lg.id}"></td>
+            <td><button class="tbl-link name-btn" data-id="${lg.id}">${escapeHtml(lg.name)}</button></td>
+            <td class="col-num" style="white-space:nowrap">${seasons}${seasonNav}</td>
+            <td class="col-num" style="white-space:nowrap">${teams}${teamNav}</td>
+            <td class="col-num">${games > 0 ? `<a class="tbl-link" href="#/seasons?league=${lg.id}">${games}</a>` : games}</td>
+            <td class="col-num">${Number(lg.player_count)}</td>
+            <td class="col-num">${Number(lg.boxscore_count)}</td>
+            <td>${escapeHtml(lg.contact_person || '—')}</td>
+            <td class="col-links">${buildLinks(lg)}</td>
+            <td class="col-actions">
+              <button class="btn-icon add-season-btn" data-id="${lg.id}" title="Add Season">${ADD_SEASON_ICON}</button>
+              <button class="btn-icon edit-btn" data-id="${lg.id}" title="Edit">${EDIT_ICON}</button>
+              <button class="btn-icon delete-btn" data-id="${lg.id}" title="Delete">${DELETE_ICON}</button>
+            </td>
+          </tr>`;
+        }).join('');
+        syncMasterCheck();
+      }
+
       async function loadLeagues() {
-        listEl.innerHTML = '<tr><td colspan="9" class="list-empty">Loading…</td></tr>';
+        listEl.innerHTML = '<tr><td colspan="10" class="list-empty">Loading…</td></tr>';
         try {
           const res  = await fetch('api/leagues');
           const data = await res.json();
           if (data.error) {
-            listEl.innerHTML = `<tr><td colspan="9" class="list-empty">${escapeHtml(data.error)}</td></tr>`;
+            listEl.innerHTML = `<tr><td colspan="10" class="list-empty">${escapeHtml(data.error)}</td></tr>`;
             return;
           }
           leaguesCache = data.leagues;
-          if (!leaguesCache.length) {
-            listEl.innerHTML = '<tr><td colspan="9" class="list-empty">No leagues yet. Click + New League to add one.</td></tr>';
-            return;
-          }
-          const NAV_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>`;
-          listEl.innerHTML = leaguesCache.map(lg => {
-            const seasons = Number(lg.season_count);
-            const games   = Number(lg.competition_count);
-            const seasonNav = seasons > 0
-              ? `<a class="link-icon" href="#/seasons?league=${lg.id}" title="View seasons">${NAV_ICON}</a>`
-              : '';
-            return `
-            <tr>
-              <td><button class="tbl-link name-btn" data-id="${lg.id}">${escapeHtml(lg.name)}</button></td>
-              <td class="col-num" style="white-space:nowrap">${seasons}${seasonNav}</td>
-              <td class="col-num">${Number(lg.team_count)}</td>
-              <td class="col-num">${games > 0 ? `<a class="tbl-link" href="#/seasons?league=${lg.id}">${games}</a>` : games}</td>
-              <td class="col-num">${Number(lg.player_count)}</td>
-              <td class="col-num">${Number(lg.boxscore_count)}</td>
-              <td>${escapeHtml(lg.contact_person || '—')}</td>
-              <td class="col-links">${buildLinks(lg)}</td>
-              <td class="col-actions">
-                <button class="btn-icon add-season-btn" data-id="${lg.id}" title="Add Season">${ADD_SEASON_ICON}</button>
-                <button class="btn-icon edit-btn" data-id="${lg.id}" title="Edit">${EDIT_ICON}</button>
-                <button class="btn-icon delete-btn" data-id="${lg.id}" title="Delete">${DELETE_ICON}</button>
-              </td>
-            </tr>`;
-          }).join('');
+          renderRows();
         } catch {
-          listEl.innerHTML = '<tr><td colspan="9" class="list-empty">Could not load leagues.</td></tr>';
+          listEl.innerHTML = '<tr><td colspan="10" class="list-empty">Could not load leagues.</td></tr>';
         }
       }
 
+      checkAll.addEventListener('change', () => {
+        listEl.querySelectorAll('.row-check').forEach(cb => cb.checked = checkAll.checked);
+        checkAll.indeterminate = false;
+      });
+
+      listEl.addEventListener('change', e => {
+        if (e.target.matches('.row-check')) syncMasterCheck();
+      });
+
+      bulkExecute.addEventListener('click', async () => {
+        const action = bulkAction.value;
+        if (!action) { alert('Select a bulk action first.'); return; }
+
+        const checked = [...listEl.querySelectorAll('.row-check:checked')];
+        if (!checked.length) { alert('No leagues selected.'); return; }
+
+        if (action === 'delete') {
+          const ids   = checked.map(cb => parseInt(cb.dataset.id));
+          const names = ids.map(id => leaguesCache.find(l => l.id === id)?.name ?? `#${id}`);
+          const preview = names.length <= 5
+            ? names.join('\n')
+            : names.slice(0, 5).join('\n') + `\n…and ${names.length - 5} more`;
+          if (!confirm(
+            `Delete ${ids.length} league(s)? This cannot be undone.\n\n${preview}\n\nLeagues with seasons cannot be deleted.`
+          )) return;
+
+          bulkExecute.disabled = true;
+          bulkExecute.textContent = 'Deleting…';
+          let deleted = 0;
+          const errors = [];
+          for (const [i, id] of ids.entries()) {
+            try {
+              const d = await fetch(`api/leagues/${id}`, { method: 'DELETE' }).then(r => r.json());
+              if (d.success) deleted++;
+              else errors.push(`${names[i]}: ${d.error}`);
+            } catch { errors.push(`${names[i]}: request failed`); }
+          }
+          await loadLeagues();
+          bulkAction.value = '';
+          bulkExecute.disabled = true;
+          bulkExecute.textContent = 'Execute';
+          alert(errors.length
+            ? `${deleted} deleted.\n\nSkipped:\n${errors.join('\n')}`
+            : `${deleted} league(s) deleted.`);
+        }
+
+        if (action === 'merge') {
+          const ids = [...new Set(checked.map(cb => parseInt(cb.dataset.id)))];
+          if (ids.length < 2) { alert('Select at least 2 leagues to merge.'); return; }
+          const mergeLeagues = ids.map(id => {
+            const lg = leaguesCache.find(l => l.id === id);
+            return { id, name: lg?.name ?? `#${id}`, label: lg?.name ?? `#${id}` };
+          });
+          LeagueMergeModal.open(mergeLeagues, async () => {
+            await loadLeagues();
+            bulkAction.value = '';
+            bulkExecute.disabled = true;
+          });
+        }
+      });
+
       document.getElementById('new-league-btn').addEventListener('click', () => {
-        LeagueModal.open(null, loadLeagues);
+        window.location.hash = '#/league-form?back=leagues';
       });
 
       listEl.addEventListener('click', async e => {
@@ -183,19 +280,19 @@ const pages = {
 
         if (nameBtn) {
           const league = leaguesCache.find(l => l.id === parseInt(nameBtn.dataset.id));
-          if (league) LeagueModal.open(league, loadLeagues);
+          if (league) window.location.hash = `#/league-form?id=${league.id}&back=leagues`;
           return;
         }
 
         if (addSeasonBtn) {
           const league = leaguesCache.find(l => l.id === parseInt(addSeasonBtn.dataset.id));
-          if (league) SeasonModal.open(null, loadLeagues, league.id);
+          if (league) window.location.hash = `#/season-form?league=${league.id}&back=leagues`;
           return;
         }
 
         if (editBtn) {
           const league = leaguesCache.find(l => l.id === parseInt(editBtn.dataset.id));
-          if (league) LeagueModal.open(league, loadLeagues);
+          if (league) window.location.hash = `#/league-form?id=${league.id}&back=leagues`;
         }
 
         if (deleteBtn) {
@@ -223,6 +320,230 @@ const pages = {
     }
   },
 
+  'league-form': {
+    menuRoute: 'leagues',
+    render() {
+      return `
+        <h2 class="page-title" id="lf-page-title">New League</h2>
+        <div class="card">
+          <form id="lf-form" novalidate style="padding:4px 0">
+            <div class="form-group">
+              <label for="lf-name">League Name <span style="color:var(--accent)">*</span></label>
+              <input type="text" id="lf-name" placeholder="e.g. City Basketball Association" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="form-group">
+              <label for="lf-founded">Founded Date</label>
+              <input type="date" id="lf-founded">
+            </div>
+            <p class="form-section-label">Contact</p>
+            <div class="form-group">
+              <label for="lf-contact-person">Contact Person</label>
+              <input type="text" id="lf-contact-person" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="two-col">
+              <div class="form-group">
+                <label for="lf-contact-phone">Phone</label>
+                <input type="tel" id="lf-contact-phone" autocomplete="off">
+              </div>
+              <div class="form-group">
+                <label for="lf-contact-email">Email</label>
+                <input type="email" id="lf-contact-email" spellcheck="false">
+              </div>
+            </div>
+            <p class="form-section-label">Online Presence</p>
+            <div class="form-group">
+              <label for="lf-website">Website URL</label>
+              <input type="url" id="lf-website" placeholder="https://" spellcheck="false">
+            </div>
+            <div class="three-col">
+              <div class="form-group">
+                <label for="lf-facebook">Facebook</label>
+                <input type="text" id="lf-facebook" placeholder="@handle" spellcheck="false">
+              </div>
+              <div class="form-group">
+                <label for="lf-x-handle">X (Twitter)</label>
+                <input type="text" id="lf-x-handle" placeholder="@handle" spellcheck="false">
+              </div>
+              <div class="form-group">
+                <label for="lf-instagram">Instagram</label>
+                <input type="text" id="lf-instagram" placeholder="@handle" spellcheck="false">
+              </div>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary" id="lf-save">Save</button>
+              <button type="button" class="btn btn-secondary" id="lf-cancel">Cancel</button>
+            </div>
+            <div class="status-msg" id="lf-status"></div>
+          </form>
+        </div>`;
+    },
+
+    async init(params = {}) {
+      const backHash = `#/${params.back || 'leagues'}`;
+      let league = null;
+      if (params.id) {
+        document.getElementById('lf-page-title').textContent = 'Edit League';
+        try {
+          const data = await fetch('api/leagues').then(r => r.json());
+          league = (data.leagues || []).find(l => String(l.id) === String(params.id)) ?? null;
+          if (league) {
+            setValue('lf-name',           league.name);
+            setValue('lf-founded',        league.founded_date ? String(league.founded_date).substring(0, 10) : '');
+            setValue('lf-contact-person', league.contact_person);
+            setValue('lf-contact-phone',  league.contact_phone);
+            setValue('lf-contact-email',  league.contact_email);
+            setValue('lf-website',        league.website_url);
+            setValue('lf-facebook',       league.facebook);
+            setValue('lf-x-handle',       league.x_handle);
+            setValue('lf-instagram',      league.instagram);
+          }
+        } catch {}
+      }
+
+      document.getElementById('lf-cancel').addEventListener('click', () => {
+        window.location.hash = backHash;
+      });
+
+      document.getElementById('lf-form').addEventListener('submit', async e => {
+        e.preventDefault();
+        const btn  = document.getElementById('lf-save');
+        const body = {
+          name:           document.getElementById('lf-name').value.trim(),
+          founded_date:   document.getElementById('lf-founded').value || null,
+          contact_person: document.getElementById('lf-contact-person').value.trim() || null,
+          contact_phone:  document.getElementById('lf-contact-phone').value.trim() || null,
+          contact_email:  document.getElementById('lf-contact-email').value.trim() || null,
+          website_url:    document.getElementById('lf-website').value.trim() || null,
+          facebook:       document.getElementById('lf-facebook').value.trim() || null,
+          x_handle:       document.getElementById('lf-x-handle').value.trim() || null,
+          instagram:      document.getElementById('lf-instagram').value.trim() || null,
+        };
+        if (!body.name) { showStatus('lf-status', 'error', 'League name is required.'); return; }
+        btn.disabled = true; btn.textContent = 'Saving…';
+        try {
+          const res  = await fetch(league ? `api/leagues/${league.id}` : 'api/leagues', {
+            method:  league ? 'PUT' : 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify(body),
+          });
+          const data = await res.json();
+          if (data.success || data.id) {
+            window.location.hash = backHash;
+          } else {
+            showStatus('lf-status', 'error', data.error || 'Save failed');
+          }
+        } catch {
+          showStatus('lf-status', 'error', 'Request failed — is the server running?');
+        } finally {
+          btn.disabled = false; btn.textContent = 'Save';
+        }
+      });
+
+      if (window.matchMedia('(hover: hover)').matches)
+        document.getElementById('lf-name').focus();
+    }
+  },
+
+  'team-form': {
+    menuRoute: 'teams',
+    render() {
+      return `
+        <h2 class="page-title" id="tf-page-title">New Team</h2>
+        <div class="card">
+          <form id="tf-form" novalidate style="padding:4px 0">
+            <div class="form-group">
+              <label for="tf-name">Team Name <span style="color:var(--accent)">*</span></label>
+              <input type="text" id="tf-name" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="two-col">
+              <div class="form-group">
+                <label for="tf-abbrev">Abbreviation</label>
+                <input type="text" id="tf-abbrev" maxlength="5" autocomplete="off" spellcheck="false">
+              </div>
+              <div class="form-group">
+                <label for="tf-nickname">Nickname</label>
+                <input type="text" id="tf-nickname" maxlength="25" autocomplete="off" spellcheck="false">
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="tf-gender">Gender</label>
+              <select id="tf-gender">
+                <option value="">Not specified</option>
+                <option value="0">Male</option>
+                <option value="1">Female</option>
+              </select>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary" id="tf-save">Save</button>
+              <button type="button" class="btn btn-secondary" id="tf-cancel">Cancel</button>
+            </div>
+            <div class="status-msg" id="tf-status"></div>
+          </form>
+        </div>
+      `;
+    },
+
+    async init(params = {}) {
+      const backQ = new URLSearchParams();
+      if (params.league) backQ.set('league', params.league);
+      if (params.season) backQ.set('season', params.season);
+      const backHash = `#/${params.back || 'teams'}${backQ.toString() ? '?' + backQ : ''}`;
+
+      let team = null;
+      if (params.id) {
+        document.getElementById('tf-page-title').textContent = 'Edit Team';
+        try {
+          const data = await fetch('api/teams').then(r => r.json());
+          team = (data.teams || []).find(t => String(t.id) === String(params.id)) ?? null;
+          if (team) {
+            setValue('tf-name',     team.name);
+            setValue('tf-abbrev',   team.abbrev);
+            setValue('tf-nickname', team.nickname);
+            document.getElementById('tf-gender').value =
+              team.gender != null ? String(Number(team.gender)) : '';
+          }
+        } catch {}
+      }
+
+      document.getElementById('tf-cancel').addEventListener('click', () => {
+        window.location.hash = backHash;
+      });
+
+      document.getElementById('tf-form').addEventListener('submit', async e => {
+        e.preventDefault();
+        const btn  = document.getElementById('tf-save');
+        const body = {
+          name:     document.getElementById('tf-name').value.trim(),
+          abbrev:   document.getElementById('tf-abbrev').value.trim(),
+          nickname: document.getElementById('tf-nickname').value.trim(),
+          gender:   document.getElementById('tf-gender').value,
+        };
+        if (!body.name) { showStatus('tf-status', 'error', 'Team name is required.'); return; }
+        btn.disabled = true; btn.textContent = 'Saving…';
+        try {
+          const res  = await fetch(team ? `api/teams/${team.id}` : 'api/teams', {
+            method:  team ? 'PUT' : 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify(body),
+          });
+          const data = await res.json();
+          if (data.success || data.id) {
+            window.location.hash = backHash;
+          } else {
+            showStatus('tf-status', 'error', data.error || 'Save failed');
+          }
+        } catch {
+          showStatus('tf-status', 'error', 'Request failed — is the server running?');
+        } finally {
+          btn.disabled = false; btn.textContent = 'Save';
+        }
+      });
+
+      if (window.matchMedia('(hover: hover)').matches)
+        document.getElementById('tf-name').focus();
+    }
+  },
+
   seasons: {
     render() {
       return `
@@ -234,13 +555,21 @@ const pages = {
               <select id="league-filter" class="filter-select">
                 <option value="">All Leagues</option>
               </select>
+              <select id="sm-bulk-action" class="filter-select">
+                <option value=""></option>
+                <option value="delete">Delete</option>
+                <option value="merge">Merge</option>
+              </select>
+              <button class="btn btn-secondary btn-sm" id="sm-bulk-execute" disabled>Execute</button>
               <button class="btn btn-primary btn-sm" id="new-season-btn">+ New Season</button>
             </div>
           </div>
+          <div id="sm-count" class="list-count"></div>
           <div class="table-wrap">
             <table class="data-table">
               <thead>
                 <tr>
+                  <th class="col-check"><input type="checkbox" id="sm-check-all" title="Select all"></th>
                   <th>Season</th>
                   <th class="col-num">Teams</th>
                   <th class="col-num">Games</th>
@@ -261,8 +590,16 @@ const pages = {
     async init(params = {}) {
       let seasonsCache = [];
 
-      const listEl    = document.getElementById('season-list');
-      const filterSel = document.getElementById('league-filter');
+      const listEl      = document.getElementById('season-list');
+      const countEl     = document.getElementById('sm-count');
+      const filterSel   = document.getElementById('league-filter');
+      const checkAll    = document.getElementById('sm-check-all');
+      const bulkAction  = document.getElementById('sm-bulk-action');
+      const bulkExecute = document.getElementById('sm-bulk-execute');
+
+      bulkAction.addEventListener('change', () => {
+        bulkExecute.disabled = !bulkAction.value;
+      });
 
       try {
         const res  = await fetch('api/leagues');
@@ -275,13 +612,21 @@ const pages = {
 
       const NAV_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>`;
 
+      function syncMasterCheck() {
+        const boxes   = [...listEl.querySelectorAll('.row-check')];
+        const checked = boxes.filter(cb => cb.checked).length;
+        checkAll.checked       = boxes.length > 0 && checked === boxes.length;
+        checkAll.indeterminate = checked > 0 && checked < boxes.length;
+      }
+
       function renderRows() {
         const leagueId = filterSel.value;
         const visible  = leagueId
           ? seasonsCache.filter(s => String(s.league_id) === leagueId)
           : seasonsCache;
+        countEl.textContent = `${visible.length} season${visible.length !== 1 ? 's' : ''}`;
         if (!visible.length) {
-          listEl.innerHTML = '<tr><td colspan="6" class="list-empty">No seasons found.</td></tr>';
+          listEl.innerHTML = '<tr><td colspan="7" class="list-empty">No seasons found.</td></tr>';
           return;
         }
         listEl.innerHTML = visible.map(s => {
@@ -291,6 +636,7 @@ const pages = {
             : teams;
           return `
           <tr>
+            <td class="col-check"><input type="checkbox" class="row-check" data-id="${s.id}"></td>
             <td><button class="tbl-link name-btn" data-id="${s.id}">${escapeHtml(s.name)} (${escapeHtml(s.league_name)})</button></td>
             <td class="col-num">${teamsCell}</td>
             <td class="col-num">${Number(s.game_count)}</td>
@@ -303,6 +649,7 @@ const pages = {
             </td>
           </tr>`;
         }).join('');
+        syncMasterCheck();
       }
 
       async function loadSeasons() {
@@ -317,14 +664,81 @@ const pages = {
           seasonsCache = data.seasons;
           renderRows();
         } catch {
-          listEl.innerHTML = '<tr><td colspan="6" class="list-empty">Could not load seasons.</td></tr>';
+          listEl.innerHTML = '<tr><td colspan="7" class="list-empty">Could not load seasons.</td></tr>';
         }
       }
+
+      checkAll.addEventListener('change', () => {
+        listEl.querySelectorAll('.row-check').forEach(cb => cb.checked = checkAll.checked);
+        checkAll.indeterminate = false;
+      });
+
+      listEl.addEventListener('change', e => {
+        if (e.target.matches('.row-check')) syncMasterCheck();
+      });
+
+      bulkExecute.addEventListener('click', async () => {
+        const action = bulkAction.value;
+        if (!action) { alert('Select a bulk action first.'); return; }
+
+        const checked = [...listEl.querySelectorAll('.row-check:checked')];
+        if (!checked.length) { alert('No seasons selected.'); return; }
+
+        if (action === 'delete') {
+          const ids   = checked.map(cb => parseInt(cb.dataset.id));
+          const names = ids.map(id => {
+            const s = seasonsCache.find(x => x.id === id);
+            return s ? `${s.league_name} — ${s.name}` : `#${id}`;
+          });
+          const preview = names.length <= 5
+            ? names.join('\n')
+            : names.slice(0, 5).join('\n') + `\n…and ${names.length - 5} more`;
+          if (!confirm(
+            `Delete ${ids.length} season(s)? This cannot be undone.\n\n${preview}\n\nSeasons with teams or games cannot be deleted.`
+          )) return;
+
+          bulkExecute.disabled = true;
+          bulkExecute.textContent = 'Deleting…';
+          let deleted = 0;
+          const errors = [];
+          for (const [i, id] of ids.entries()) {
+            try {
+              const d = await fetch(`api/seasons/${id}`, { method: 'DELETE' }).then(r => r.json());
+              if (d.success) deleted++;
+              else errors.push(`${names[i]}: ${d.error}`);
+            } catch { errors.push(`${names[i]}: request failed`); }
+          }
+          await loadSeasons();
+          bulkAction.value = '';
+          bulkExecute.disabled = true;
+          bulkExecute.textContent = 'Execute';
+          alert(errors.length
+            ? `${deleted} deleted.\n\nSkipped:\n${errors.join('\n')}`
+            : `${deleted} season(s) deleted.`);
+        }
+
+        if (action === 'merge') {
+          const ids = [...new Set(checked.map(cb => parseInt(cb.dataset.id)))];
+          if (ids.length < 2) { alert('Select at least 2 seasons to merge.'); return; }
+          const mergeSeasons = ids.map(id => {
+            const s = seasonsCache.find(x => x.id === id);
+            const label = s ? `${s.name} (${s.league_name})` : `#${id}`;
+            return { id, label };
+          });
+          SeasonMergeModal.open(mergeSeasons, async () => {
+            await loadSeasons();
+            bulkAction.value = '';
+            bulkExecute.disabled = true;
+          });
+        }
+      });
 
       filterSel.addEventListener('change', renderRows);
 
       document.getElementById('new-season-btn').addEventListener('click', () => {
-        SeasonModal.open(null, loadSeasons, filterSel.value || null);
+        const q = new URLSearchParams({ back: 'seasons' });
+        if (filterSel.value) q.set('league', filterSel.value);
+        window.location.hash = `#/season-form?${q}`;
       });
 
       listEl.addEventListener('click', async e => {
@@ -335,7 +749,11 @@ const pages = {
 
         if (nameBtn) {
           const season = seasonsCache.find(s => s.id === parseInt(nameBtn.dataset.id));
-          if (season) SeasonModal.open(season, loadSeasons);
+          if (season) {
+            const q = new URLSearchParams({ id: season.id, back: 'seasons' });
+            if (filterSel.value) q.set('league', filterSel.value);
+            window.location.hash = `#/season-form?${q}`;
+          }
         }
 
         if (addTeamBtn) {
@@ -344,7 +762,11 @@ const pages = {
 
         if (editBtn) {
           const season = seasonsCache.find(s => s.id === parseInt(editBtn.dataset.id));
-          if (season) SeasonModal.open(season, loadSeasons);
+          if (season) {
+            const q = new URLSearchParams({ id: season.id, back: 'seasons' });
+            if (filterSel.value) q.set('league', filterSel.value);
+            window.location.hash = `#/season-form?${q}`;
+          }
         }
 
         if (deleteBtn) {
@@ -373,6 +795,120 @@ const pages = {
     }
   },
 
+  'season-form': {
+    menuRoute: 'seasons',
+    render() {
+      return `
+        <h2 class="page-title" id="sf-page-title">New Season</h2>
+        <div class="card">
+          <form id="sf-form" novalidate style="padding:4px 0">
+            <div class="form-group">
+              <label for="sf-league">League <span style="color:var(--accent)">*</span></label>
+              <select id="sf-league">
+                <option value="">— Select League —</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="sf-name">Season Name <span style="color:var(--accent)">*</span></label>
+              <input type="text" id="sf-name" placeholder="e.g. 2025-26" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="two-col">
+              <div class="form-group">
+                <label for="sf-start-year">Start Year <span style="color:var(--accent)">*</span></label>
+                <input type="number" id="sf-start-year" placeholder="2025" min="1900" max="2100">
+              </div>
+              <div class="form-group">
+                <label for="sf-end-year">End Year <span style="color:var(--accent)">*</span></label>
+                <input type="number" id="sf-end-year" placeholder="2026" min="1900" max="2100">
+              </div>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary" id="sf-save">Save</button>
+              <button type="button" class="btn btn-secondary" id="sf-cancel">Cancel</button>
+            </div>
+            <div class="status-msg" id="sf-status"></div>
+          </form>
+        </div>`;
+    },
+
+    async init(params = {}) {
+      const backQ = new URLSearchParams();
+      if (params.league) backQ.set('league', params.league);
+      const backHash = `#/${params.back || 'seasons'}${backQ.toString() ? '?' + backQ : ''}`;
+
+      let leagues = [];
+      try {
+        const res  = await fetch('api/leagues');
+        const data = await res.json();
+        leagues = data.leagues || [];
+      } catch {}
+
+      let season = null;
+      if (params.id) {
+        document.getElementById('sf-page-title').textContent = 'Edit Season';
+        try {
+          const data = await fetch('api/seasons').then(r => r.json());
+          season = (data.seasons || []).find(s => String(s.id) === String(params.id)) ?? null;
+        } catch {}
+      }
+
+      const leagueId  = season?.league_id ?? params.league ?? '';
+      const leagueSel = document.getElementById('sf-league');
+      leagueSel.innerHTML = '<option value="">— Select League —</option>' +
+        leagues.map(l =>
+          `<option value="${l.id}"${String(l.id) === String(leagueId) ? ' selected' : ''}>${escapeHtml(l.name)}</option>`
+        ).join('');
+
+      if (params.league && !params.id) leagueSel.disabled = true;
+
+      if (season) {
+        setValue('sf-name',       season.name);
+        setValue('sf-start-year', season.start_year);
+        setValue('sf-end-year',   season.end_year);
+      }
+
+      document.getElementById('sf-cancel').addEventListener('click', () => {
+        window.location.hash = backHash;
+      });
+
+      document.getElementById('sf-form').addEventListener('submit', async e => {
+        e.preventDefault();
+        const btn  = document.getElementById('sf-save');
+        const body = {
+          league_id:  leagueSel.value,
+          name:       document.getElementById('sf-name').value.trim(),
+          start_year: document.getElementById('sf-start-year').value,
+          end_year:   document.getElementById('sf-end-year').value,
+        };
+        if (!body.league_id || !body.name || !body.start_year || !body.end_year) {
+          showStatus('sf-status', 'error', 'All fields are required.');
+          return;
+        }
+        btn.disabled = true; btn.textContent = 'Saving…';
+        try {
+          const res  = await fetch(season ? `api/seasons/${season.id}` : 'api/seasons', {
+            method:  season ? 'PUT' : 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify(body),
+          });
+          const data = await res.json();
+          if (data.success || data.id) {
+            window.location.hash = backHash;
+          } else {
+            showStatus('sf-status', 'error', data.error || 'Save failed');
+          }
+        } catch {
+          showStatus('sf-status', 'error', 'Request failed — is the server running?');
+        } finally {
+          btn.disabled = false; btn.textContent = 'Save';
+        }
+      });
+
+      if (window.matchMedia('(hover: hover)').matches)
+        document.getElementById('sf-name').focus();
+    }
+  },
+
   teams: {
     render() {
       return `
@@ -388,7 +924,7 @@ const pages = {
                 <option value="delete">Delete</option>
                 <option value="merge">Merge</option>
               </select>
-              <button class="btn btn-secondary btn-sm" id="tm-bulk-execute">Execute</button>
+              <button class="btn btn-secondary btn-sm" id="tm-bulk-execute" disabled>Execute</button>
               <button class="btn btn-primary btn-sm" id="new-team-btn">+ New Team</button>
             </div>
           </div>
@@ -423,6 +959,18 @@ const pages = {
       const checkAll    = document.getElementById('tm-check-all');
       const bulkAction  = document.getElementById('tm-bulk-action');
       const bulkExecute = document.getElementById('tm-bulk-execute');
+
+      bulkAction.addEventListener('change', () => {
+        bulkExecute.disabled = !bulkAction.value;
+      });
+
+      function teamFormHash(id = null) {
+        const q = new URLSearchParams({ back: 'teams' });
+        if (id)                  q.set('id',     id);
+        if (leagueFilt.value)    q.set('league', leagueFilt.value);
+        if (seasonFilt.value)    q.set('season', seasonFilt.value);
+        return `#/team-form?${q}`;
+      }
 
       function syncMasterCheck() {
         const boxes   = [...listEl.querySelectorAll('.row-check')];
@@ -473,7 +1021,8 @@ const pages = {
           if (sid && !String(t.season_ids || '').split(',').includes(sid)) return false;
           return true;
         });
-        countEl.textContent = `${visible.length} team${visible.length !== 1 ? 's' : ''}`;
+        const teamCount = lid ? visible.length : new Set(visible.map(t => t.id)).size;
+        countEl.textContent = `${teamCount} team${teamCount !== 1 ? 's' : ''}`;
         if (!visible.length) {
           listEl.innerHTML = '<tr><td colspan="7" class="list-empty">No teams found.</td></tr>';
           return;
@@ -484,7 +1033,7 @@ const pages = {
           const nameLabel = `${escapeHtml(t.name)} (${t.league_name ? escapeHtml(t.league_name) : 'Unassigned'})`;
           return `
           <tr>
-            <td class="col-check"><input type="checkbox" class="row-check" data-id="${t.id}"></td>
+            <td class="col-check"><input type="checkbox" class="row-check" data-id="${t.id}" data-league-id="${lid}"></td>
             <td><button class="tbl-link name-btn" data-id="${t.id}" data-league-id="${lid}">${nameLabel}</button></td>
             <td>${gl(t.gender)}</td>
             <td>${escapeHtml(t.coach || '—')}</td>
@@ -553,7 +1102,7 @@ const pages = {
           }
           await loadTeams();
           bulkAction.value = '';
-          bulkExecute.disabled = false;
+          bulkExecute.disabled = true;
           bulkExecute.textContent = 'Execute';
           alert(errors.length
             ? `${deleted} deleted.\n\nSkipped:\n${errors.join('\n')}`
@@ -562,7 +1111,20 @@ const pages = {
 
         if (action === 'merge') {
           const teamIds = [...new Set(checked.map(cb => parseInt(cb.dataset.id)))];
-          if (teamIds.length < 2) { alert('Select at least 2 teams to merge.'); return; }
+
+          if (teamIds.length < 2) {
+            if (checked.length >= 2) {
+              // Same team ID — check if it spans multiple leagues
+              const leagueIds = [...new Set(checked.map(cb => cb.dataset.leagueId).filter(Boolean))];
+              if (leagueIds.length >= 2) {
+                alert('Teams from different leagues cannot be merged.\n\nTo remove an incorrect league assignment, use the Delete button on that row.');
+                return;
+              }
+            }
+            alert('Select at least 2 teams to merge.');
+            return;
+          }
+
           const mergeTeams = teamIds.map(id => {
             const rows    = teamsCache.filter(x => x.id === id);
             const leagues = [...new Set(rows.map(x => x.league_name).filter(Boolean))];
@@ -575,12 +1137,13 @@ const pages = {
           TeamMergeModal.open(mergeTeams, async () => {
             await loadTeams();
             bulkAction.value = '';
+            bulkExecute.disabled = true;
           });
         }
       });
 
       document.getElementById('new-team-btn').addEventListener('click', () => {
-        TeamModal.open(null, loadTeams);
+        window.location.hash = teamFormHash();
       });
 
       listEl.addEventListener('click', async e => {
@@ -595,7 +1158,7 @@ const pages = {
         if (nameBtn || editBtn) {
           const id = parseInt((nameBtn || editBtn).dataset.id);
           const t  = teamsCache.find(x => x.id === id);
-          if (t) TeamModal.open(t, loadTeams);
+          if (t) window.location.hash = teamFormHash(t.id);
         }
         if (delBtn) {
           const teamId   = parseInt(delBtn.dataset.id);
@@ -651,66 +1214,10 @@ const pages = {
             </table>
           </div>
         </div>
-        <div class="card" id="game-form-card" style="display:none">
-          <h3 class="section-title" id="game-form-title">New Game</h3>
-          <form id="game-form" novalidate>
-            <div class="two-col">
-              <div class="form-group">
-                <label for="gf-league">League <span style="color:var(--accent)">*</span></label>
-                <select id="gf-league"><option value="">— Select League —</option></select>
-              </div>
-              <div class="form-group">
-                <label for="gf-season">Season <span style="color:var(--accent)">*</span></label>
-                <select id="gf-season"><option value="">— Select Season —</option></select>
-              </div>
-            </div>
-            <div class="form-group">
-              <label for="gf-date">Date <span style="color:var(--accent)">*</span></label>
-              <input type="date" id="gf-date">
-            </div>
-            <div class="two-col">
-              <div class="form-group">
-                <label for="gf-team">Team <span style="color:var(--accent)">*</span></label>
-                <select id="gf-team"><option value="">— Select Team —</option></select>
-              </div>
-              <div class="form-group">
-                <label for="gf-opponent">Opponent <span style="color:var(--accent)">*</span></label>
-                <select id="gf-opponent"><option value="">— Select Opponent —</option></select>
-              </div>
-            </div>
-            <div class="two-col">
-              <div class="form-group">
-                <label for="gf-location">Location</label>
-                <select id="gf-location">
-                  <option value="Home">Home</option>
-                  <option value="Away">Away</option>
-                  <option value="Neutral">Neutral</option>
-                </select>
-              </div>
-            </div>
-            <p class="form-section-label">Score (leave blank if not yet played)</p>
-            <div class="two-col">
-              <div class="form-group">
-                <label for="gf-team-score">Team Score</label>
-                <input type="number" id="gf-team-score" min="0" max="255" placeholder="—">
-              </div>
-              <div class="form-group">
-                <label for="gf-opp-score">Opponent Score</label>
-                <input type="number" id="gf-opp-score" min="0" max="255" placeholder="—">
-              </div>
-            </div>
-            <div class="form-actions">
-              <button type="submit" class="btn btn-primary" id="gf-save-btn">Save</button>
-              <button type="button" class="btn btn-secondary" id="gf-cancel-btn">Cancel</button>
-            </div>
-            <div class="status-msg" id="game-form-status"></div>
-          </form>
-        </div>
       `;
     },
 
     async init(params = {}) {
-      let editing = null;
       let gamesCache = [];
       let leaguesCache = [];
       let allSeasonsCache = [];
@@ -720,9 +1227,6 @@ const pages = {
       const leagueFilt  = document.getElementById('gm-league-filter');
       const seasonFilt  = document.getElementById('gm-season-filter');
       const teamFilt    = document.getElementById('gm-team-filter');
-      const formCard    = document.getElementById('game-form-card');
-      const formTitle   = document.getElementById('game-form-title');
-      const form        = document.getElementById('game-form');
 
       try {
         const [lr, sr, tr] = await Promise.all([fetch('api/leagues'), fetch('api/seasons'), fetch('api/teams')]);
@@ -808,66 +1312,22 @@ const pages = {
       seasonFilt.addEventListener('change', () => { refreshTeamFilter(); renderRows(); });
       teamFilt.addEventListener('change', renderRows);
 
-      function refreshFormSeasons(leagueId, selectedId = '') {
-        document.getElementById('gf-season').innerHTML = '<option value="">— Select Season —</option>' +
-          allSeasonsCache.filter(s => !leagueId || String(s.league_id) === leagueId)
-            .map(s => `<option value="${s.id}"${String(s.id) === String(selectedId) ? ' selected' : ''}>${escapeHtml(s.name)}</option>`)
-            .join('');
+      function gameFormHash(id = null) {
+        const q = new URLSearchParams({ back: 'games' });
+        if (id)               q.set('id',     id);
+        if (leagueFilt.value) q.set('league', leagueFilt.value);
+        if (seasonFilt.value) q.set('season', seasonFilt.value);
+        if (teamFilt.value)   q.set('team',   teamFilt.value);
+        return `#/game-form?${q}`;
       }
 
-      function refreshFormTeams(seasonId, selectedTeamId = '', selectedOppId = '') {
-        const seen = new Map();
-        for (const t of allTeamsCache) { if (!seen.has(t.id)) seen.set(t.id, t); }
-        const unique = [...seen.values()].filter(t =>
-          !seasonId || allTeamsCache.some(r => r.id === t.id && String(r.season_ids || '').split(',').includes(String(seasonId)))
-        );
-        const opts = '<option value="">— Select —</option>' +
-          unique.map(t => `<option value="${t.id}">${escapeHtml(t.name)}${t.abbrev ? ` (${t.abbrev})` : ''}</option>`)
-            .join('');
-        const teamSel = document.getElementById('gf-team');
-        const oppSel  = document.getElementById('gf-opponent');
-        teamSel.innerHTML = opts.replace('— Select —', '— Select Team —');
-        oppSel.innerHTML  = opts.replace('— Select —', '— Select Opponent —');
-        if (selectedTeamId) teamSel.value = String(selectedTeamId);
-        if (selectedOppId)  oppSel.value  = String(selectedOppId);
-      }
-
-      function showForm(game = null) {
-        editing = game;
-        form.reset();
-        formTitle.textContent = game ? 'Edit Game' : 'New Game';
-        const leagueId = game?.league_id ?? leagueFilt.value;
-        const seasonId = game?.season_id ?? seasonFilt.value;
-        document.getElementById('gf-league').innerHTML = '<option value="">— Select League —</option>' +
-          leaguesCache.map(l => `<option value="${l.id}"${String(l.id) === String(leagueId) ? ' selected' : ''}>${escapeHtml(l.name)}</option>`).join('');
-        refreshFormSeasons(leagueId, seasonId);
-        refreshFormTeams(seasonId, game?.team_id, game?.opponent_id);
-        if (game) {
-          setValue('gf-date', String(game.game_date).substring(0, 10));
-          document.getElementById('gf-location').value = game.location || 'Home';
-          if (game.team_score     != null) setValue('gf-team-score', game.team_score);
-          if (game.opponent_score != null) setValue('gf-opp-score',  game.opponent_score);
-        }
-        document.getElementById('game-form-status').className = 'status-msg';
-        formCard.style.display = '';
-        formCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }
-
-      function hideForm() { editing = null; formCard.style.display = 'none'; form.reset(); }
-
-      document.getElementById('gf-league').addEventListener('change', function () {
-        refreshFormSeasons(this.value);
-        refreshFormTeams('');
+      document.getElementById('new-game-btn').addEventListener('click', () => {
+        window.location.hash = gameFormHash();
       });
-      document.getElementById('gf-season').addEventListener('change', function () {
-        refreshFormTeams(this.value);
-      });
-      document.getElementById('new-game-btn').addEventListener('click', () => showForm());
-      document.getElementById('gf-cancel-btn').addEventListener('click', hideForm);
 
       listEl.addEventListener('click', async e => {
         const editBtn = e.target.closest('.edit-btn'), delBtn = e.target.closest('.delete-btn');
-        if (editBtn) { const g = gamesCache.find(x => x.id === parseInt(editBtn.dataset.id)); if (g) showForm(g); }
+        if (editBtn) { window.location.hash = gameFormHash(editBtn.dataset.id); }
         if (delBtn) {
           const id = parseInt(delBtn.dataset.id);
           const g  = gamesCache.find(x => x.id === id);
@@ -882,9 +1342,155 @@ const pages = {
         }
       });
 
-      form.addEventListener('submit', async e => {
+      await loadGames();
+    }
+  },
+
+  'game-form': {
+    menuRoute: 'games',
+    render() {
+      return `
+        <h2 class="page-title" id="gf-page-title">New Game</h2>
+        <div class="card">
+          <form id="gf-form" novalidate style="padding:4px 0">
+            <div class="two-col">
+              <div class="form-group">
+                <label for="gf-league">League <span style="color:var(--accent)">*</span></label>
+                <select id="gf-league"><option value="">— Select League —</option></select>
+              </div>
+              <div class="form-group">
+                <label for="gf-season">Season <span style="color:var(--accent)">*</span></label>
+                <select id="gf-season"><option value="">— Select Season —</option></select>
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="gf-date">Date <span style="color:var(--accent)">*</span></label>
+              <input type="date" id="gf-date">
+            </div>
+            <div class="two-col">
+              <div class="form-group">
+                <label for="gf-team">Team <span style="color:var(--accent)">*</span></label>
+                <select id="gf-team"><option value="">— Select Team —</option></select>
+              </div>
+              <div class="form-group">
+                <label for="gf-opponent">Opponent <span style="color:var(--accent)">*</span></label>
+                <select id="gf-opponent"><option value="">— Select Opponent —</option></select>
+              </div>
+            </div>
+            <div class="two-col">
+              <div class="form-group">
+                <label for="gf-location">Location</label>
+                <select id="gf-location">
+                  <option value="Home">Home</option>
+                  <option value="Away">Away</option>
+                  <option value="Neutral">Neutral</option>
+                </select>
+              </div>
+            </div>
+            <p class="form-section-label">Score (leave blank if not yet played)</p>
+            <div class="two-col">
+              <div class="form-group">
+                <label for="gf-team-score">Team Score</label>
+                <input type="number" id="gf-team-score" min="0" max="255" placeholder="—">
+              </div>
+              <div class="form-group">
+                <label for="gf-opp-score">Opponent Score</label>
+                <input type="number" id="gf-opp-score" min="0" max="255" placeholder="—">
+              </div>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary" id="gf-save">Save</button>
+              <button type="button" class="btn btn-secondary" id="gf-cancel">Cancel</button>
+            </div>
+            <div class="status-msg" id="gf-status"></div>
+          </form>
+        </div>`;
+    },
+
+    async init(params = {}) {
+      const backQ = new URLSearchParams();
+      if (params.league) backQ.set('league', params.league);
+      if (params.season) backQ.set('season', params.season);
+      if (params.team)   backQ.set('team',   params.team);
+      const backHash = `#/${params.back || 'games'}${backQ.toString() ? '?' + backQ : ''}`;
+
+      let leaguesCache = [], allSeasonsCache = [], allTeamsCache = [];
+      try {
+        const [lr, sr, tr] = await Promise.all([fetch('api/leagues'), fetch('api/seasons'), fetch('api/teams')]);
+        const [ld, sd, td] = await Promise.all([lr.json(), sr.json(), tr.json()]);
+        leaguesCache    = ld.leagues || [];
+        allSeasonsCache = sd.seasons || [];
+        allTeamsCache   = td.teams   || [];
+      } catch {}
+
+      let game = null;
+      if (params.id) {
+        document.getElementById('gf-page-title').textContent = 'Edit Game';
+        try {
+          const data = await fetch('api/games').then(r => r.json());
+          game = (data.games || []).find(g => String(g.id) === String(params.id)) ?? null;
+        } catch {}
+      }
+
+      const leagueId = game?.league_id ?? params.league ?? '';
+      const seasonId = game?.season_id ?? params.season ?? '';
+      const teamId   = game?.team_id   ?? params.team   ?? '';
+      const oppId    = game?.opponent_id ?? '';
+
+      document.getElementById('gf-league').innerHTML = '<option value="">— Select League —</option>' +
+        leaguesCache.map(l =>
+          `<option value="${l.id}"${String(l.id) === String(leagueId) ? ' selected' : ''}>${escapeHtml(l.name)}</option>`
+        ).join('');
+
+      function refreshFormSeasons(lid, selectedId = '') {
+        document.getElementById('gf-season').innerHTML = '<option value="">— Select Season —</option>' +
+          allSeasonsCache.filter(s => !lid || String(s.league_id) === lid)
+            .map(s => `<option value="${s.id}"${String(s.id) === String(selectedId) ? ' selected' : ''}>${escapeHtml(s.name)}</option>`)
+            .join('');
+      }
+
+      function refreshFormTeams(sid, selectedTeamId = '', selectedOppId = '') {
+        const seen = new Map();
+        for (const t of allTeamsCache) { if (!seen.has(t.id)) seen.set(t.id, t); }
+        const unique = [...seen.values()].filter(t =>
+          !sid || allTeamsCache.some(r => r.id === t.id && String(r.season_ids || '').split(',').includes(String(sid)))
+        );
+        const opts = '<option value="">— Select —</option>' +
+          unique.map(t => `<option value="${t.id}">${escapeHtml(t.name)}${t.abbrev ? ` (${t.abbrev})` : ''}</option>`)
+            .join('');
+        const teamSel = document.getElementById('gf-team');
+        const oppSel  = document.getElementById('gf-opponent');
+        teamSel.innerHTML = opts.replace('— Select —', '— Select Team —');
+        oppSel.innerHTML  = opts.replace('— Select —', '— Select Opponent —');
+        if (selectedTeamId) teamSel.value = String(selectedTeamId);
+        if (selectedOppId)  oppSel.value  = String(selectedOppId);
+      }
+
+      refreshFormSeasons(leagueId, seasonId);
+      refreshFormTeams(seasonId, teamId, oppId);
+
+      if (game) {
+        setValue('gf-date', String(game.game_date).substring(0, 10));
+        document.getElementById('gf-location').value = game.location || 'Home';
+        if (game.team_score     != null) setValue('gf-team-score', game.team_score);
+        if (game.opponent_score != null) setValue('gf-opp-score',  game.opponent_score);
+      }
+
+      document.getElementById('gf-league').addEventListener('change', function () {
+        refreshFormSeasons(this.value);
+        refreshFormTeams('');
+      });
+      document.getElementById('gf-season').addEventListener('change', function () {
+        refreshFormTeams(this.value);
+      });
+
+      document.getElementById('gf-cancel').addEventListener('click', () => {
+        window.location.hash = backHash;
+      });
+
+      document.getElementById('gf-form').addEventListener('submit', async e => {
         e.preventDefault();
-        const btn  = document.getElementById('gf-save-btn');
+        const btn  = document.getElementById('gf-save');
         const body = {
           season_id:      document.getElementById('gf-season').value,
           team_id:        document.getElementById('gf-team').value,
@@ -895,24 +1501,31 @@ const pages = {
           opponent_score: document.getElementById('gf-opp-score').value,
         };
         if (!body.season_id || !body.team_id || !body.opponent_id || !body.game_date) {
-          showStatus('game-form-status', 'error', 'Season, team, opponent and date are required.');
+          showStatus('gf-status', 'error', 'Season, team, opponent and date are required.');
           return;
         }
         btn.disabled = true; btn.textContent = 'Saving…';
         try {
-          const res  = await fetch(editing ? `api/games/${editing.id}` : 'api/games', {
-            method: editing ? 'PUT' : 'POST',
+          const res  = await fetch(game ? `api/games/${game.id}` : 'api/games', {
+            method: game ? 'PUT' : 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body)
           });
           const data = await res.json();
-          if (data.success || data.id) { hideForm(); await loadGames(); }
-          else showStatus('game-form-status', 'error', data.error || 'Save failed');
-        } catch { showStatus('game-form-status', 'error', 'Request failed — is the server running?'); }
-        finally { btn.disabled = false; btn.textContent = 'Save'; }
+          if (data.success || data.id) {
+            window.location.hash = backHash;
+          } else {
+            showStatus('gf-status', 'error', data.error || 'Save failed');
+          }
+        } catch {
+          showStatus('gf-status', 'error', 'Request failed — is the server running?');
+        } finally {
+          btn.disabled = false; btn.textContent = 'Save';
+        }
       });
 
-      await loadGames();
+      if (window.matchMedia('(hover: hover)').matches)
+        document.getElementById('gf-date').focus();
     }
   },
 
@@ -1758,6 +2371,198 @@ const TeamSeasonModal = (() => {
 })();
 
 // ── Team Merge Modal ──────────────────────────────────────────────────────────
+const SeasonMergeModal = (() => {
+  let _overlay = null;
+  let _onDone  = null;
+
+  const CLOSE_SVG = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+
+  function _onKey(e) { if (e.key === 'Escape') _close(); }
+
+  function _close() {
+    document.removeEventListener('keydown', _onKey);
+    if (_overlay) { _overlay.remove(); _overlay = null; }
+    _onDone = null;
+  }
+
+  function open(seasons, onDone = null) {
+    _close();
+    _onDone = onDone;
+
+    const opts = seasons.map(s =>
+      `<option value="${s.id}">${escapeHtml(s.label)}</option>`
+    ).join('');
+
+    const wrap = document.createElement('div');
+    wrap.innerHTML = `
+      <div class="modal-overlay" id="smrg-modal">
+        <div class="modal" role="dialog" aria-modal="true">
+          <div class="modal-header">
+            <span class="modal-title">Merge ${seasons.length} Seasons</span>
+            <button class="modal-close" id="smrg-x" aria-label="Close">${CLOSE_SVG}</button>
+          </div>
+          <p class="merge-desc">Select the master season. All teams, games, and players from the other season(s) will be moved into it, then the source seasons will be deleted. This cannot be undone.</p>
+          <div class="form-group">
+            <label for="smrg-master">Master Season</label>
+            <select id="smrg-master">${opts}</select>
+          </div>
+          <div class="form-actions">
+            <button class="btn btn-primary" id="smrg-confirm">Merge</button>
+            <button class="btn btn-secondary" id="smrg-cancel">Cancel</button>
+          </div>
+          <div class="status-msg" id="smrg-status"></div>
+        </div>
+      </div>`;
+    document.body.appendChild(wrap.firstElementChild);
+    _overlay = document.getElementById('smrg-modal');
+
+    const _openedAt = Date.now();
+    _overlay.addEventListener('click', e => {
+      if (Date.now() - _openedAt < 400) return;
+      if (e.target === _overlay) _close();
+    });
+    document.getElementById('smrg-x').addEventListener('click', _close);
+    document.getElementById('smrg-cancel').addEventListener('click', _close);
+    document.addEventListener('keydown', _onKey);
+
+    document.getElementById('smrg-confirm').addEventListener('click', async () => {
+      const masterId = parseInt(document.getElementById('smrg-master').value);
+      const master   = seasons.find(s => s.id === masterId);
+      const sources  = seasons.filter(s => s.id !== masterId);
+      if (!masterId || !sources.length) {
+        showStatus('smrg-status', 'error', 'Select a master season.'); return;
+      }
+      const btn = document.getElementById('smrg-confirm');
+      btn.disabled = true; btn.textContent = 'Merging…';
+      try {
+        const res  = await fetch('api/seasons/merge', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ masterId, sourceIds: sources.map(s => s.id) })
+        });
+        const data = await res.json();
+        if (data.success) {
+          const cb = _onDone;
+          _close();
+          await cb?.();
+          alert(
+            `Merge complete.\n\n` +
+            `Master: ${master.label}\n` +
+            `Merged in: ${sources.map(s => s.label).join(', ')}`
+          );
+        } else {
+          showStatus('smrg-status', 'error', data.error || 'Merge failed');
+          btn.disabled = false; btn.textContent = 'Merge';
+        }
+      } catch {
+        showStatus('smrg-status', 'error', 'Request failed — is the server running?');
+        btn.disabled = false; btn.textContent = 'Merge';
+      }
+    });
+
+    if (window.matchMedia('(hover: hover)').matches)
+      document.getElementById('smrg-master').focus();
+  }
+
+  return { open, close: _close };
+})();
+
+const LeagueMergeModal = (() => {
+  let _overlay = null;
+  let _onDone  = null;
+
+  const CLOSE_SVG = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+
+  function _onKey(e) { if (e.key === 'Escape') _close(); }
+
+  function _close() {
+    document.removeEventListener('keydown', _onKey);
+    if (_overlay) { _overlay.remove(); _overlay = null; }
+    _onDone = null;
+  }
+
+  function open(leagues, onDone = null) {
+    _close();
+    _onDone = onDone;
+
+    const opts = leagues.map(l =>
+      `<option value="${l.id}">${escapeHtml(l.label)}</option>`
+    ).join('');
+
+    const wrap = document.createElement('div');
+    wrap.innerHTML = `
+      <div class="modal-overlay" id="lgmrg-modal">
+        <div class="modal" role="dialog" aria-modal="true">
+          <div class="modal-header">
+            <span class="modal-title">Merge ${leagues.length} Leagues</span>
+            <button class="modal-close" id="lgmrg-x" aria-label="Close">${CLOSE_SVG}</button>
+          </div>
+          <p class="merge-desc">Select the master league. All seasons from the other league(s) will be moved into it, then the source leagues will be deleted. This cannot be undone.</p>
+          <div class="form-group">
+            <label for="lgmrg-master">Master League</label>
+            <select id="lgmrg-master">${opts}</select>
+          </div>
+          <div class="form-actions">
+            <button class="btn btn-primary" id="lgmrg-confirm">Merge</button>
+            <button class="btn btn-secondary" id="lgmrg-cancel">Cancel</button>
+          </div>
+          <div class="status-msg" id="lgmrg-status"></div>
+        </div>
+      </div>`;
+    document.body.appendChild(wrap.firstElementChild);
+    _overlay = document.getElementById('lgmrg-modal');
+
+    const _openedAt = Date.now();
+    _overlay.addEventListener('click', e => {
+      if (Date.now() - _openedAt < 400) return;
+      if (e.target === _overlay) _close();
+    });
+    document.getElementById('lgmrg-x').addEventListener('click', _close);
+    document.getElementById('lgmrg-cancel').addEventListener('click', _close);
+    document.addEventListener('keydown', _onKey);
+
+    document.getElementById('lgmrg-confirm').addEventListener('click', async () => {
+      const masterId = parseInt(document.getElementById('lgmrg-master').value);
+      const master   = leagues.find(l => l.id === masterId);
+      const sources  = leagues.filter(l => l.id !== masterId);
+      if (!masterId || !sources.length) {
+        showStatus('lgmrg-status', 'error', 'Select a master league.'); return;
+      }
+      const btn = document.getElementById('lgmrg-confirm');
+      btn.disabled = true; btn.textContent = 'Merging…';
+      try {
+        const res  = await fetch('api/leagues/merge', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ masterId, sourceIds: sources.map(l => l.id) })
+        });
+        const data = await res.json();
+        if (data.success) {
+          const cb = _onDone;
+          _close();
+          await cb?.();
+          alert(
+            `Merge complete.\n\n` +
+            `Master: ${master.label}\n` +
+            `Merged in: ${sources.map(l => l.label).join(', ')}`
+          );
+        } else {
+          showStatus('lgmrg-status', 'error', data.error || 'Merge failed');
+          btn.disabled = false; btn.textContent = 'Merge';
+        }
+      } catch {
+        showStatus('lgmrg-status', 'error', 'Request failed — is the server running?');
+        btn.disabled = false; btn.textContent = 'Merge';
+      }
+    });
+
+    if (window.matchMedia('(hover: hover)').matches)
+      document.getElementById('lgmrg-master').focus();
+  }
+
+  return { open, close: _close };
+})();
+
 const TeamMergeModal = (() => {
   let _overlay = null;
   let _onDone  = null;
@@ -1772,12 +2577,15 @@ const TeamMergeModal = (() => {
     _onDone = null;
   }
 
-  function open(teams, onDone = null) {
+  function open(teams, onDone = null, opts = {}) {
     _close();
     _onDone = onDone;
 
-    const opts = teams.map(t =>
-      `<option value="${t.id}">${escapeHtml(t.label)}</option>`
+    const keyOf      = opts.keyOf || (t => t.id);
+    const title      = opts.title || `Merge ${teams.length} Teams`;
+    const desc       = opts.description || 'Select the master team. All seasons and games from the other team(s) will be transferred into it, then the source teams will be deleted. This cannot be undone.';
+    const selectOpts = teams.map(t =>
+      `<option value="${keyOf(t)}">${escapeHtml(t.label)}</option>`
     ).join('');
 
     const wrap = document.createElement('div');
@@ -1785,13 +2593,13 @@ const TeamMergeModal = (() => {
       <div class="modal-overlay" id="mrg-modal">
         <div class="modal" role="dialog" aria-modal="true">
           <div class="modal-header">
-            <span class="modal-title">Merge ${teams.length} Teams</span>
+            <span class="modal-title">${escapeHtml(title)}</span>
             <button class="modal-close" id="mrg-x" aria-label="Close">${CLOSE_SVG}</button>
           </div>
-          <p class="merge-desc">Select the master team. All seasons and games from the other team(s) will be transferred into it, then the source teams will be deleted. This cannot be undone.</p>
+          <p class="merge-desc">${escapeHtml(desc)}</p>
           <div class="form-group">
             <label for="mrg-master">Master Team</label>
-            <select id="mrg-master">${opts}</select>
+            <select id="mrg-master">${selectOpts}</select>
           </div>
           <div class="form-actions">
             <button class="btn btn-primary" id="mrg-confirm">Merge</button>
@@ -1813,29 +2621,33 @@ const TeamMergeModal = (() => {
     document.addEventListener('keydown', _onKey);
 
     document.getElementById('mrg-confirm').addEventListener('click', async () => {
-      const masterId  = parseInt(document.getElementById('mrg-master').value);
-      const master    = teams.find(t => t.id === masterId);
-      const sources   = teams.filter(t => t.id !== masterId);
-      if (!masterId || !sources.length) {
+      const masterKey = String(document.getElementById('mrg-master').value);
+      const master    = teams.find(t => String(keyOf(t)) === masterKey);
+      const sources   = teams.filter(t => String(keyOf(t)) !== masterKey);
+      if (!masterKey || !master || (!opts.confirmFn && !sources.length)) {
         showStatus('mrg-status', 'error', 'Select a master team.'); return;
       }
       const btn = document.getElementById('mrg-confirm');
       btn.disabled = true; btn.textContent = 'Merging…';
       try {
-        const res  = await fetch('api/teams/merge', {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify({ masterId, sourceIds: sources.map(t => t.id) })
-        });
-        const data = await res.json();
+        let data;
+        if (opts.confirmFn) {
+          data = await opts.confirmFn(masterKey, master, sources);
+        } else {
+          const res = await fetch('api/teams/merge', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ masterId: parseInt(masterKey), sourceIds: sources.map(t => t.id) })
+          });
+          data = await res.json();
+        }
         if (data.success) {
           const cb = _onDone;
           _close();
           await cb?.();
-          alert(
-            `Merge complete.\n\n` +
-            `Master: ${master.label}\n` +
-            `Merged in: ${sources.map(t => t.label).join(', ')}`
+          alert(opts.successMsg
+            ? opts.successMsg(master, sources)
+            : `Merge complete.\n\nMaster: ${master.label}\nMerged in: ${sources.map(t => t.label).join(', ')}`
           );
         } else {
           showStatus('mrg-status', 'error', data.error || 'Merge failed');
@@ -1874,7 +2686,7 @@ function renderPage() {
   main.scrollTop = 0;
   window.scrollTo(0, 0);
   page.init?.(params);
-  buildMenu(route);
+  buildMenu(page.menuRoute || route);
 }
 
 // ── Sidebar ───────────────────────────────────────────────────────────────────
