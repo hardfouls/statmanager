@@ -1206,9 +1206,9 @@ const pages = {
               <thead>
                 <tr>
                   <th id="gm-date-sort" style="cursor:pointer;user-select:none;white-space:nowrap">Date <span id="gm-sort-icon" style="opacity:.6;font-size:.75em">▲</span></th>
-                  <th>Team</th>
+                  <th>Home</th>
                   <th style="white-space:nowrap">Score</th>
-                  <th>Opponent</th><th>Location</th><th>Actions</th>
+                  <th>Visitor</th><th>Location</th><th>Actions</th>
                 </tr>
               </thead>
               <tbody id="game-list">
@@ -1293,14 +1293,12 @@ const pages = {
           const score = g.team_score != null && g.opponent_score != null
             ? `${g.team_score}–${g.opponent_score}` : '—';
           const date = String(g.game_date).substring(0, 10);
-          const team = g.team_abbrev ? `${escapeHtml(g.team_name)} (${escapeHtml(g.team_abbrev)})` : escapeHtml(g.team_name);
-          const opp  = g.opponent_abbrev ? `${escapeHtml(g.opponent_name)} (${escapeHtml(g.opponent_abbrev)})` : escapeHtml(g.opponent_name);
           return `
             <tr>
-              <td>${date}</td>
-              <td>${team}</td>
+              <td style="white-space:nowrap">${date}</td>
+              <td>${escapeHtml(g.team_name)}</td>
               <td class="col-num" style="white-space:nowrap">${score}</td>
-              <td>${opp}</td>
+              <td>${escapeHtml(g.opponent_name)}</td>
               <td>${escapeHtml(g.location)}</td>
               <td class="col-actions">
                 <button class="btn-icon edit-btn" data-id="${g.id}" title="Edit">${EDIT_ICON}</button>
