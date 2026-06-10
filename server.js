@@ -734,7 +734,15 @@ app.get('/api/games', async (req, res) => {
              s.name AS season_name, s.league_id,
              l.name AS league_name,
              tm.name  AS team_name,     tm.abbrev AS team_abbrev,
-             opp.name AS opponent_name, opp.abbrev AS opponent_abbrev
+             opp.name AS opponent_name, opp.abbrev AS opponent_abbrev,
+             (SELECT s2.id FROM team_seasons ts2 JOIN seasons s2 ON ts2.season_id = s2.id
+               WHERE ts2.team_id = c.opponent_id
+                 AND s2.start_year = s.start_year AND s2.end_year = s.end_year
+               LIMIT 1) AS opponent_season_id,
+             (SELECT s2.league_id FROM team_seasons ts2 JOIN seasons s2 ON ts2.season_id = s2.id
+               WHERE ts2.team_id = c.opponent_id
+                 AND s2.start_year = s.start_year AND s2.end_year = s.end_year
+               LIMIT 1) AS opponent_league_id
       FROM competitions c
       JOIN seasons s   ON c.season_id   = s.id
       JOIN leagues l   ON s.league_id   = l.id
