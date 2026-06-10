@@ -1193,7 +1193,6 @@ const pages = {
         <div class="card">
           <div class="section-header">
             <h3 class="section-title">Game Manager</h3>
-            <div id="gm-count" class="list-count"></div>
             <div class="header-controls">
               <select id="gm-league-filter" class="filter-select"><option value="">All Leagues</option></select>
               <select id="gm-season-filter" class="filter-select"><option value="">All Seasons</option></select>
@@ -1201,6 +1200,7 @@ const pages = {
               <button class="btn btn-primary btn-sm" id="new-game-btn">+ New Game</button>
             </div>
           </div>
+          <div id="gm-count" class="list-count"></div>
           <div class="table-wrap">
             <table class="data-table">
               <thead>
