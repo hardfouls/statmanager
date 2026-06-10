@@ -1,0 +1,14 @@
+{
+  "name": "statmanager",
+  "version": "1.0.0",
+  "description": "Basketball Stats Manager",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "ini": "^4.1.1",
+    "mysql2": "^3.6.5"
+  }
+}

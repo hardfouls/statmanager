@@ -1,0 +1,275 @@
+"SEASON","TMID","TMACTIVE","ABBREV","LOCATION","NICKNAME","TEAMSHORT","TEAMCODE","GENDER","LEAGUE","DIVISION","CONFERENCE","COACH","LEAGUEID","COLLEGEID","CSTV_TMID","TMCITY","TMSTATE","TMLOCATION"
+"2012-2013",1,1,KVHS,Kennebecasis Valley High School,Crusaders,KVHS Crusaders,KVHS02,0,NBIAA,AAA SRB,South,Paul Vaughan,0,0,"1",Quispamais,NB, Kennebecasis Valley High
+"2012-2013",2,1,SJHS,Saint John High School,Greyhounds,Saint John Greyhounds,SJHS02,0,NBIAA,AAA SRB,South,Peter Vincent,0,1718,"1",Saint John,NB,Saint John High School
+"2012-2013",3,1,SHS,Simonds High School,Seabees,Simonds Seabees,SHS02,0,NBIAA,AAA SRB,South,Doug Deering,0,0,"1",Saint John,NB,Simonds High School
+"2012-2013",4,1,SRHS,Sussex Regional High School,Sonics,Suusex Sonics,SRHS02,0,NBIAA,AAA SRB,South,Byron Burton,0,0,"1",Sussex,NB,Sussex Regional High
+"2012-2013",5,1,STM,St. Malachy's Memorial High School,Saints,St. Malachy's Saints,STM02,0,NBIAA,AAA SRB,South,Jeff Matheson,0,0,"1",Saint John,NB,St. Malachy's Memorial
+"2012-2013",6,1,HVHS,Harbour View High School,Vikings,Harbour View Vikings,HVHS02,0,NBIAA,AAA SRB,South,TBD,0,0,"1",Saint John,NB,Harbour View High School
+"2012-2013",7,1,FHS,Fredericton High School,Kats,Fredericton Kats,FHS02,0,NBIAA,AAA SRB,West,Mike King,0,0,"1",Fredericton,NB,Fredericton High School
+"2012-2013",8,1,LHHS,Leo Hayes High School,Lions,Leo Hayes Lions,LHHS,0,NBIAA,AAA SRB,West,John Hickey,0,0,"1",Fredericton,NB,Leo Hayes High School
+"2012-2013",9,1,OHS,Oromocto High School,Blues,Oromocto Blue,OHS02,0,NBIAA,AAA SRB,West,TBD,0,0,"1",Oromocto,NB,Oromocto High School
+"2012-2013",10,1,SSHS,St. Stephen High School,Spartans,St. Stephen Spartans,SSHS02,0,NBIAA,AA SRB,South,Dave Taylor,0,0,"1",St. Stpehen,NB,St. Stephen High School
+"2012-2013",11,1,HTHS,Harrison Tremble High School,Trojans,Harrison Tremble Trojans,HTHS02,0,NBIAA,AAA SRB,East,Nick Earle,0,0,"1",Moncton,NB,Harrison Tremble High
+"2012-2013",12,1,ADHS,Auburn Drive High School,Eagles,Auburn Drive Eagles,ADHS02,0,NSSAF,D1, ,Lance Sparks,0,0,"1",Dartmouth,NS,Auburn Drive High School
+"2012-2013",13,1,CHS,Citadel High School,Phoenix,Citadel Phoenix,CHS02,0,NSSAF,D1, ,Mark Parker,0,0,"1",Halifax,NS,Citadel High School
+"2012-2013",14,1,RHS,Rothesay High School,Red Hawkes,Rothesay Red Hawks,ROTH2,0,NBIAA,AA SRB,South,Jay Lavigne,0,0,"1",Rothesay,NB,Rothesay High School
+"2012-2013",15,1,MHS,Moncton High School,Purple Knights,Moncton Purple Knights,MONC2,0,NBIAA,AAA SRB,East,Andrew MacPherson,0,0,"1",Moncton,NB,Moncton High School
+"2012-2013",16,1,CNHS,Carleton North High School,North Star,Carleton North Stars,CNHS02,0,NBIAA,AA SRB,West,Ian Dunlop,0,0,"1",Florenceville,NB,Carleton Noth High School
+"2012-2013",17,1,MVHS,Miramichi Valley High School,Pulamoo's,Miramichi Valley Pulamoo,MVHS02,0,NBIAA,AAA SRB,East,Jim Watters,0,0,"1",Miramichi,NB,Miramichi Valley High
+"2012-2013",18,1,MM,Mathieu-Martin, ,Mathieu-Martin,MM02,0,NBIAA,AAA SRB,East,Will Njoku,0,0,"1",Dieppe,NB,Ecole Mathieu-Martin
+"2012-2013",19,1,CHHS,Cole Harbour High School,Cavaliers,Cole Harbour Cavaliers,CHHS02,0,NSSAF,D1, ,Anton Berry,0,0,"1",Dartmouth,NS,Cole Harbour High School
+"2012-2013",20,1,WHS,Woodstock High School,Thunder,Woodstock Thunder,WHS02,0,NBIAA,AA SRB,West,Scott Jones,0,0,"1",Woodstock,NB,Woodstock High School
+"2012-2013",21,1,CPA,Charles P. Allen High School,Cheetahs,CP Allen Cheetahs,CPA02,0,NSSAF,D1, ,Danny Depalma,0,0,"1",Bedford,NS,Charles P. Allen High
+"2012-2013",22,1,HHS,Horton High School,Griffins,Horton High Griffins,HHS02,0,NSSAF,D1,,Kevin Veinot,0,0,"1",Wofville,NS,Horton High School
+"2013-2014",1,1,KVHS,Kennebecasis Valley High School,Crusaders,KVHS Crusaders,KVHS02,0,NBIAA,AAA SRB,South,Paul Vaughan,0,0,"1",Quispamsis,NB,Kennebecasis Valley High
+"2013-2014",2,1,HVHS,Harbour View High School,Vikings,Harbour View Vikings,HVHS02,0,NBIAA,AAA SRB,South,TBD,0,0,"1",Saint John,NB,Harbour View High School
+"2013-2014",3,1,SHS,Simonds High School,Seabees,Simonds Seabees,SHS02,0,NBIAA,AAA SRB,South,Doug Deering,0,0,"1",Saint John,NB,Simonds High School
+"2013-2014",4,1,STM,St. Malachy's Memorial High School,Saints,St. Malachy's Saints,STM02,0,NBIAA,AAA SRB,South,Jeff Matheson,0,0,"1",Saint John,NB,"St, Malachy's High"
+"2013-2014",5,1,SRHS,Sussex Regional High School,Sonics,Suusex Sonics,SRHS02,0,NBIAA,AAA SRB,South,Byron Barton,0,0,"1",Sussex,NB,Sussex High School
+"2013-2014",6,1,FHS,Fredericton High School,Kats,Fredericton Kats,FHS02,0,NBIAA,AAA SRB,West,Mike King,0,0,"1",Fredericton,NB,Fredericton High School
+"2013-2014",7,1,LHHS,Leo Hayes High School,Lions,Leo Hayes Lions,LHHS02,0,NBIAA,AAA SRB,West,John Hickey,0,0,"1",Fredericton,NB,Leo Hayes High School
+"2013-2014",8,1,SJHS,Saint John High School,Greyhounds,Saint John Greyhounds,SJHS02,0,NBIAA,AAA SRB,South,Peter Vincent,0,1718,"1",Saint John,NB,Saint John High
+"2013-2014",10,1,CNHS,Carleton North High School,North Star,Carleton North Stars,CNHS02,0,NBIAA,AA SRB,West,Jamie Gray,0,0,"1",Florenceville,NB,Carleton North High
+"2013-2014",11,1,HORT,Horton High School,Griffins,Horton Griffins,HORT02,0,NSSAF,D1, ,Kevin Veinot,0,0,"1",Wolfville,NS,Horton High School
+"2013-2014",12,1,ADHS,Auburn Drive High School,Eagles,Auburn Drive Eagles,ADHS02,0,NSSAF,D1, ,Jim Bowes,0,0,"1",Dartmouth,NS,Auburn Drive High School
+"2013-2014",13,1,RHS,Rothesay High School,Red Hawkes,Rothesay Red Hawks,ROTH02,0,NBIAA,AA SRB,South,Jay Lavigne,0,0,"1",Rothesay,NB,Rothesay High School
+"2013-2014",14,1,SJAM,Sir John A. MacDonald,Flames,Sir John A MacDonald,SJA02,0,NSSAF,D1, ,Grant Feltmate,0,0,"1",Halifax,NS,Sir John A MacDonald
+"2013-2014",15,1,CPA,Charles P. Allen High School,Cheetahs,CP Allen Cheetahs,CPA02,0,NSSAF,D1, ,Danny Depalma,0,0,"1",Bedford,NS,Charles P Allen High
+"2013-2014",16,1,HTHS,Harrison Tremble High School,Trojans,Harrison Tremble Trojans,HTHS02,0,NBIAA,AAA SRB,East,Nick Earle,0,0,"1",Moncton,NB,Harrison Trimble High
+"2013-2014",17,1,PAHS,Prince Andrew High School,Panthers,Prince Andrew Panthers,PAHS02,0,NSSAF,D1, , ,0,0,"1",Dartmouth,NS,Prince Andrew High School
+"2013-2014",19,1,CHS,Citadel High School,Phoenix,Citadel Phoenix,CHS02,0,NSSAF,D1, ,,0,0,"1",Halifax,NS,Citadel High School
+"2013-2014",20,1,DART,Dartmouth High School,Spartans,Dartmouth High Spartans,DART02,0,NSSAF,D1, , ,0,0,"1",Dartmouth,NS,Dartmouth High School
+"2013-2014",21,1,CEC,Cobequid Educational Centre, ,CEC Cougars,CEC02,0,NSSAF,D1, ,Marc Roberts,0,0,"1",Truro,NS,Cobequid Ed. Center
+"2013-2014",22,1,PVEC,Park View Ed. Center,Panthers,Park View Panthers,PVEC02,0,NSSAF,D1, , ,0,0,"1",Bridgewater,NS,Park View Education Ctr
+"2013-2014",23,1,SILV,Silverthorn, ,Silverthorn,SILV02,0, , , , ,0,0,"1", ,ON, 
+"2013-2014",24,1,ALMA,Alma Academy, ,Alma Academy,ALMA02,0, , , , ,0,0,"1", ,QC, 
+"2013-2014",25,1,JDBD,Jean-De-Brebeuf,Dynamiques,Jean-De-Brebeuf,BRE02,0, , , , ,0,0,"1", ,QC, 
+"2013-2014",26,1,OHS,Oromocto High School,Blues,Oromocto Blues,OHS02,0,NBIAA,AAA SRB,West, ,0,0,"1",Oromocto,NB,Oromocto High School
+"2013-2014",27,1,RHS,Riverview High School,Royals,Riverview Royals,RIV02,0,NBIAA,AAA SRB,East, ,0,0,"1",Riverview,NB,Riverview High School
+"2014-2015",2,1,KVHS,Kennebecasis Valley High School,Crusaders,KVHS Crusaders,KVHS02,0,NBIAA,AAA SRB,South,Paul Vaughan,0,0,"1",Quispamsis,NB,Kennebecasis Valley High
+"2014-2015",3,1,SHS,Simonds High School,Seabees,Simonds Seabees,SHS02,0,NBIAA,AAA SRB,South,Doug Deering,0,0,"1",Saint John,NB,Simonds High School
+"2014-2015",4,1,FHS,Fredericton High School,Black Kats,FHS Black Kats,FHS02,0,NBIAA,AAA SRB,West,Mike King,0,0,"1",Fredericton,NB,Fredericton High School
+"2014-2015",5,1,PAHS,Prince Andrew High School,Panthers,Prince Andrew,PAHS02,0, , , , ,0,0,"1",Dartmouth,NS,Prince Andrew High School
+"2014-2015",6,1,SJHS,Saint John High School,Greyhounds,Saint John High,SJHS02,0,NBIAA,AAA SRB,South,Peter Vincent,0,0,"1",Saint John,NB,Saint John High School
+"2014-2015",7,1,RHS,Rothesay High School,Red Hawks,Rothesay Red Hawks,ROTH02,0,NBIAA,AA SRB,South,Jay Lavigne,0,0,"1",Rothesay,NB,Rothesay High School
+"2014-2015",8,1,HGS,Halifax Grammar School,Gryphones,Halifax Grammar,HGS02,0, , , ,Tim McGarrigle,0,0,"1",Halifax,NB,Homburg Centre
+"2014-2015",9,1,LHS,Lockview High School,Dragons,Lockview High School,LOCK02,0, , , ,Scott Lancaster,0,0,"1",Halifax,NS,Homburg Centre
+"2014-2015",10,1,SHS,Sackville High School,Kingfishers,Sackville Kingfishers,SACK02,0, , , ,Jarrett Timmons,0,0,"1",Halifax,NS,Homburg Centre
+"2014-2015",11,1,CPA,Charles P. Allen High School,Cheetahs,CP Allan,CPA02,0, , , ,Gary Towle,0,0,"1",Bedford,NS,Homburg Centre
+"2014-2015",12,1,HVHS,Harbour View High School,Vikings,Harbour View Vikings,HVHS02,0,NBIAA,AAA SRB, , ,0,0,"1",Saint John,NB,Harbour View High School
+"2014-2015",13,1,STM,St. Malachy's Memorial High School,Saints,St. Malachy's,STM02,0,NBIAA,AAA SRB, , ,0,0,"1",Saint John,NB,St. Malachy's High School
+"2014-2015",14,1,SRHS,Sussex Regional High School,Sonics,Sussex Sonics,SRHS02,0,NBIAA,AAA SRB,South,Byron Barton,0,0,"1",Sussex,NB,Sussex Regional High Scho
+"2014-2015",15,1,HHS,Horton High School,Griffons,Horton High Griffons,HORT02,0, , , , ,0,0,"1",Wolfville,NS,Horton High School
+"2014-2015",16,1,WHS,Woodstock High School,Thunder,Woodstock High Thunder,WHS02,0,NBIAA,AA SRB,Western,Scott Jones,0,0,"1",Woodstock,NB,Woodstock High School
+"2014-2015",17,1,LHHS,Leo Hayes High School,Lions,Leo Hayes Lions,LHHS02,0,NBIAA,AAA SRB, ,John Hickey,0,0,"1",Fredericton,NB,Leo Hayes High School
+"2014-2015",18,1,MHS,Moncton High School,Purple Knights,Moncton Purple Knights,MONC02,0,NBIAA,AAA SRB, , ,0,0,"1",Moncton,NB,Moncton High School
+"2014-2015",19,1,CEC,Cobequid Educational Centre,Cougars,CEC Cougars,CEC02,0, , , , ,0,0,"1",Truro,NS,Cobiquid Ed. Center
+"2014-2015",20,1,SJA,Sir John A. MacDonald,Flames,SJA MacDonald,SJA02,0, , , , ,0,0,"1",Tantallon,NS,SJA MacDonald High School
+"2014-2015",21,1,RHS,Riverview High School,Royals,Riverview Royals,RIV02,0,NBIAA,AAA SRB, ,Gerard Reinders,0,0,"1",Riverview,NB,Riverview High School
+"2014-2015",22,1,MVHS,Miramichi Valley High School,Palamoo,Miramichi Valley,MVHS02,0,NBIAA,AAA SRB,East,Jim Watters,0,0,"1",Miramichi,NB,Miramichi Valley High
+"2015-2016",1,1,KVHS,Kennebecasis Valley High School,Crusaders,KVHS Crusaders,KVHS02,0,NBIAA,AAA SRB,South,Paul Vaughan,0,0,"1",Quispamsis,NB,Kennebecasis Valley High
+"2015-2016",2,1,SHS,Simonds High School,Seabees,Simonds Seabees,SHS02,0,NBIAA,AAA SRB,South,Doug Deering,0,0,"1",Saint John,NB,Simonds High School
+"2015-2016",3,1,HVHS,Harbour View High School,Vikings,Harbour View Vikings,HVHS02,0,NBIAA,AAA SRB, , ,0,0,"1",Saint John,NB,Harbour View High School
+"2015-2016",4,1,RHS,Rothesay High School,Red Hawks,Rothesay Red Hawks,ROTH02,0,NBIAA,AA SRB,South,Paul & Peter Hickey,0,0,"1",Rothesay,NB,Rothesay High School
+"2015-2016",5,1,SJHS,Saint John High School,Greyhounds,Saint John High,SJHS02,0,NBIAA,AAA SRB,South,Ryan Vaughan,0,0,"1",Saint John,NB,Saint John High School
+"2015-2016",7,1,FHS,Fredericton High School,Black Kats,FHS Black Kats,FHS02,0,NBIAA,AAA SRB,West,Mike King,0,0,"1",Fredericton,NB,Fredericton High School
+"2015-2016",8,1,LHHS,Leo Hayes High School,Lions,Leo Hayes Lions,LHHS02,0,NBIAA,AAA SRB, ,Keith Gross,0,0,"1",Fredericton,NB,Leo Hayes High School
+"2015-2016",9,1,SRHS,Sussex Regional High School,Sonics,Sussex Sonics,SRHS02,0,NBIAA,AAA SRB,South,Byron Barton,0,0,"1",Sussex,NB,Sussex Regional High Scho
+"2015-2016",10,1,STM,St. Malachy's Memorial High School,Saints,St. Malachy's,STM02,0,NBIAA,AAA SRB,South, ,0,0,"1",Saint John,NB,St. Malachy's High School
+"2015-2016",11,1,MHS,Moncton High School,Purple Knights,Moncton Purple Knights,MONC02,0,NBIAA,AAA SRB,East,Andrew McPherson,0,0,"1",Moncton,NB,Moncton High School
+"2015-2016",13,1,BMHS,Bernice McNaughton,Highlanders,BMHS Highlanders,BMHS01,0,NBIAA,AAA SRB,East,Steve Chapman,0,0,"1",Moncton,NB,Bernice McNaughton High
+"2015-2016",14,1,ADHS,Auburn Drive High School,Eagles,Auburn Drive Eagles,ADHS02,0,NSSAF,D1, ,Jim Bowes,0,0,"1",Dartmouth,NS,Auburn Drive High School
+"2015-2016",15,1,HHS,Harvey High School,Lakers,Harvey Lakers,HARV02,0,NBIAA,A SRB,South,David MacMullin,0,0,"1",Harvey Station,NB,Harvey High School
+"2015-2016",16,1,HWHS,Halifax West High School, ,Halifax West,WEST02,0, , , , ,0,0,"1",Halifax,NS,Halifax West High School
+"2015-2016",17,1,DHS,Dartmouth High School,Spartan,DHS Spartans,DART02,0,NSSAF,D1, , ,0,0,"1",Dartmouth,NS,Dartmouth High School
+"2015-2016",18,1,RNS,Rothesay Netherwood School,River Hawkes,RNS River Hawks,RNS02,0,NBIAA,Exhib,South,Damain Gay,0,0,"1",Rothesay,NB,Rothesay Netherwood
+"2015-2016",20,1,HGS,Halifax Grammar School,Gryphones,Halifax Grammar,HGS02,0, , , ,Tim McGarrigle,0,0,"1",Halifax,NB,Homburg Centre
+"2015-2016",21,1,CGHS,Colonel Gray High School,Colonels,Colonel Gray,GRAY02,0, , , ,J Hammer,0,0,"1",Charlottetown,PE,Colonel Gray High School
+"2015-2016",22,1,SHS,Sackville High School,Kingfishers,Sackville Kingfishers,SACK02,0, , , ,Jarrett Timmons,0,0,"1",Sackville,NS,Sackville High School
+"2015-2016",23,1,CNHS,Carleton North High School,North Stars,Carleton North Stars,CNHS02,0,NBIAA,AA SRB,West,Jamie Gray,0,0,"1",Florenceville,NB,Carleton North HS
+"2015-2016",25,1,HHS,Horton High School,Griffons,Horton High Griffons,HORT02,0, , , , ,0,0,"1",Wolfville,NS,Horton High School
+"2015-2016",26,1,FHS,Fundy High School,Mariners,Fundy High Mariners,FUN02,0,NBIAA,SRB AA,South, ,0,0,"1",St. George,NB,Fundy High School
+"2015-2016",27,1,RHS,Riverview High School,Royals,Riverview Royals,RIV02,0,NBIAA,AAA SRB, ,Gerard Reinders,0,0,"1",Riverview,NB,Riverview High School
+"2017-2018",1,1,KVHS,Kennebecasis Valley Crusaders,Crusaders,KVHS Crusaders,KVHS02,0,NBIAA,AAA,South,Paul Vaughan,0,0,"1",Quispamsis,NB,Kennebecasis Valley High
+"2017-2018",2,1,MVHS,Miramichi Valley High School,Palamoo,Miramichi Valley,MVHS02,0,NBIAA,AAA SRB,North,Jim Watters,0,0,"1",Miramichi,NB,Miramichi Valley High
+"2017-2018",3,1,WHS,Woodstock Thunder,Thunder,Woodstock Thunder,WHS02,0,NBIAA,AA SRB,West,Scott Jones,0,0,"1",Woodstock,NB,Woodstock High School
+"2017-2018",4,1,CNHS,Carleton North High School,North Stars,Carleton North Stars,CNHS02,0,NBIAA,AA SRB,West,Jamie Gray,0,0,"1",Florenceville,NB,Carleton North HS
+"2017-2018",5,1,RHS,Rothesay High School,Red Hawks,Rothesay Red Hawks,ROTH02,0,NBIAA,AA SRB,South,Paul & Peter Hickey,0,0,"1",Rothesay,NB,Rothesay High School
+"2017-2018",6,1,SJHS,Saint John High School,Greyhounds,Saint John High,SJHS02,0,NBIAA,AAA SRB,South,Jeff White,0,0,"1",Saint John,NB,Saint John High School
+"2017-2018",7,1,DHS,Dartmouth High School,Spartan,DHS Spartans,DART02,0,NSSAF,D1, , ,0,0,"1",Dartmouth,NS,Dartmouth High School
+"2017-2018",8,1,LHHS,Leo Hayes High School,Lions,Leo Hayes Lions,LHHS02,0,NBIAA,AAA SRB,West,Dan Goggin,0,0,"1",Fredericton,NB,Leo Hayes High School
+"2017-2018",9,1,SRHS,Sussex Regional High School,Sonics,Sussex Sonics,SRHS02,0,NBIAA,AAA SRB,South, ,0,0,"1",Sussex,NB,Sussex Regional High Scho
+"2017-2018",10,1,CGHS2,Colonel Gray #2 High School,Colonels,Colonel Gray #2,GRAY03,0, , , , ,0,0,"1",Charlottetown,PE,Colonel Gray High School
+"2017-2018",11,1,CGHS,Colonel Gray High School,Colonels,Colonel Gray,GRAY02,0, , , ,J Hammer,0,0,"1",Charlottetown,PE,Colonel Gray High School
+"2017-2018",12,1,PAHS,Prince Andrew High School,Panthers,Prince Andrew,PAHS02,0, , , , ,0,0,"1",Dartmouth,NS,Prince Andrew High School
+"2017-2018",13,1,STM,St. Malachy's Memorial High School,Saints,St. Malachy's,STM02,0,NBIAA,AAA SRB,South, ,0,0,"1",Saint John,NB,St. Malachy's High School
+"2017-2018",14,1,SHS,Simonds High School,Seabees,Simonds Seabees,SHS02,0,NBIAA,AAA SRB,South,Doug Deering,0,0,"1",Saint John,NB,Simonds High School
+"2017-2018",15,1,HVHS,Harbour View High School,Vikings,Harbour View Vikings,HVHS02,0,NBIAA,AAA SRB,West, ,0,0,"1",Saint John,NB,Harbour View High School
+"2017-2018",16,1,FHS,Fredericton High School,Black Kats,FHS Black Kats,FHS02,0,NBIAA,AAA SRB,West,Mike King,0,0,"1",Fredericton,NB,Fredericton High School
+"2017-2018",17,1,RHS,Riverview High School,Royals,Riverview Royals,RIV02,0,NBIAA,AAA SRB,East, ,0,0,"1",Riverview,NB,Riverview High School
+"2017-2018",18,1,RNS,Rothesay Netherwood School,River Hawkes,RNS River Hawks,RNS02,0,NBIAA,Exhib,South,Damain Gay,0,0,"1",Rothesay,NB,Rothesay Netherwood
+"2017-2018",19,1,TOHS,Three Oaks High School, ,Three Oaks,OAKS02,0, , , , ,0,0,"1", , , 
+"2018-2019",1,1,KVHS,Kennebecasis Valley Crusaders,Crusaders,KVHS Crusaders,KVHS02,0,NBIAA,AAA,South,Paul Vaughan,0,0,"1",Quispamsis,NB,Kennebecasis Valley High
+"2018-2019",2,1,STM,St. Malachy's Memorial High School,Saints,St. Malachy's,STM02,0,NBIAA,AAA SRB,South, ,0,0,"1",Saint John,NB,St. Malachy's High School
+"2018-2019",3,1,SJHS,Saint John High School,Greyhounds,Saint John High,SJHS02,0,NBIAA,AAA SRB,South,Jeff White,0,0,"1",Saint John,NB,Saint John High School
+"2018-2019",4,1,SRHS,Sussex Regional High School,Sonics,Sussex Sonics,SRHS02,0,NBIAA,AAA SRB,South,Byron Barton,0,0,"1",Sussex,NB,Sussex Regional High Scho
+"2018-2019",5,1,SHS,Simonds High School,Seabees,Simonds Seabees,SHS02,0,NBIAA,AAA SRB,South,Doug Deering,0,0,"1",Saint John,NB,Simonds High School
+"2018-2019",6,1,HVHS,Harbour View High School,Vikings,Harbour View Vikings,HVHS02,0,NBIAA,AAA SRB,West, ,0,0,"1",Saint John,NB,Harbour View High School
+"2018-2019",7,1,RHS,Rothesay High School,Red Hawks,Rothesay Red Hawks,ROTH02,0,NBIAA,AA SRB,South,Paul & Peter Hickey,0,0,"1",Rothesay,NB,Rothesay High School
+"2018-2019",9,1,JMH,James M. Hill,Tommies,JMH Tommies,JMH02,0, , , , ,0,0,"1",Miramichi,NB,James M. Hill
+"2018-2019",10,1,CNHS,Carleton North High School,North Stars,Carleton North Stars,CNHS02,0,NBIAA,AA SRB,West,Jamie Gray,0,0,"1",Florenceville,NB,Carleton North HS
+"2018-2019",11,1,MVHS,Miramichi Valley High School,Palamoo,Miramichi Valley,MVHS02,0,NBIAA,AAA SRB,North,Jim Watters,0,0,"1",Miramichi,NB,Miramichi Valley High
+"2018-2019",12,1,WHS,Woodstock Thunder,Thunder,Woodstock Thunder,WHS02,0,NBIAA,AA SRB,West,Scott Jones,0,0,"1",Woodstock,NB,Woodstock High School
+"2018-2019",13,1,FHS,Fredericton High School,Black Kats,FHS Black Kats,FHS02,0,NBIAA,AAA SRB,West,Mike King,0,0,"1",Fredericton,NB,Fredericton High School
+"2018-2019",14,1,RHS,Riverview High School,Royals,Riverview Royals,RIV02,0,NBIAA,AAA SRB,East, ,0,0,"1",Riverview,NB,Riverview High School
+"2018-2019",15,1,CGHS,Colonel Gray High School,Colonels,Colonel Gray,GRAY02,0, , , ,J Hammer,0,0,"1",Charlottetown,PE,Colonel Gray High School
+"2018-2019",16,1,PAHS,Prince Andrew High School,Panthers,Prince Andrew,PAHS02,0, , , , ,0,0,"1",Dartmouth,NS,Prince Andrew High School
+"2018-2019",17,1,YCMHS,Yarmouth Consolidated Memorial High,Vikings,Yarmouth Vikings,YCMHS02,0, , , , ,0,0,"1",Yarmouth,NS,Yarmouth Consolidated
+"2018-2019",18,1,RNS,Rothesay Netherwood School,River Hawkes,RNS River Hawks,RNS02,0,NBIAA,Exhib,South,Damain Gay,0,0,"1",Rothesay,NB,Rothesay Netherwood
+"2018-2019",19,1,LHHS,Leo Hayes High School,Lions,Leo Hayes Lions,LHHS02,0,NBIAA,AAA SRB,West,Dan Goggin,0,0,"1",Fredericton,NB,Leo Hayes High School
+"2018-2019",20,1,TOHS,Three Oaks High School, ,Three Oaks,OAKS02,0, , , , ,0,0,"1", , , 
+"2018-2019",21,1,LHS,Lockview High School,Dragons,Lockview,LOCK02,0, , , , ,0,0,"1",Fall River,NS,Lockview High School
+"2018-2019",23,1,HHS,Horton High School,Griffons,Horton High Griffons,HORT02,0, , , , ,0,0,"1",Wolfville,NS,Horton High School
+"2018-2019",24,1,MHS,Moncton High School,Purple Knights,Moncton Purple Knights,MONC02,0,NBIAA,AAA SRB,East,Andrew McPherson,0,0,"1",Moncton,NB,Moncton High School
+"2020-2021",1,1,KVHS,Kennebecasis Valley Crusaders,Crusaders,KVHS Crusaders,KVHS02,0,NBIAA,AAA,South,Paul Vaughan,0,0,"1",Quispamsis,NB,Kennebecasis Valley High
+"2020-2021",2,1,HVHS,Harbour View High School,Vikings,Harbour View Vikings,HVHS02,0,NBIAA,AAA SRB,South, ,0,0,"1",Saint John,NB,Harbour View High School
+"2020-2021",3,1,SHS,Simonds High School,Seabees,Simonds Seabees,SHS02,0,NBIAA,AAA SRB,South,Doug Deering,0,0,"1",Saint John,NB,Simonds High School
+"2020-2021",4,1,SJHS,Saint John High School,Greyhounds,Saint John High,SJHS02,0,NBIAA,AAA SRB,South,Jeff White,0,0,"1",Saint John,NB,Saint John High School
+"2020-2021",5,1,SRHS,Sussex Regional High School,Sonics,Sussex Sonics,SRHS02,0,NBIAA,AAA SRB,South,Mark Muscroft,0,0,"1",Sussex,NB,Sussex Regional High Scho
+"2020-2021",6,1,STM,St. Malachy's Memorial High School,Saints,St. Malachy's,STM02,0,NBIAA,AAA SRB,South, ,0,0,"1",Saint John,NB,St. Malachy's High School
+"2020-2021",7,1,RHS,Rothesay High School,Red Hawks,Rothesay Red Hawks,ROTH02,0,NBIAA,AA SRB,South,Paul & Peter Hickey,0,0,"1",Rothesay,NB,Rothesay High School
+"2019-2020",1,1,KVHS,Kennebecasis Valley Crusaders,Crusaders,KVHS Crusaders,KVHS02,0,NBIAA,AAA,South,Paul Vaughan,0,0,"1",Quispamsis,NB,Kennebecasis Valley High
+"2019-2020",2,1,HVHS,Harbour View High School,Vikings,Harbour View Vikings,HVHS02,0,NBIAA,AAA SRB,South, ,0,0,"1",Saint John,NB,Harbour View High School
+"2019-2020",3,1,RHS,Rothesay High School,Red Hawks,Rothesay Red Hawks,ROTH02,0,NBIAA,AA SRB,South,Paul & Peter Hickey,0,0,"1",Rothesay,NB,Rothesay High School
+"2019-2020",4,1,SHS,Simonds High School,Seabees,Simonds Seabees,SHS02,0,NBIAA,AAA SRB,South,Doug Deering,0,0,"1",Saint John,NB,Simonds High School
+"2019-2020",5,1,SJHS,Saint John High School,Greyhounds,Saint John High,SJHS02,0,NBIAA,AAA SRB,South,Jeff White,0,0,"1",Saint John,NB,Saint John High School
+"2019-2020",6,1,SRHS,Sussex Regional High School,Sonics,Sussex Sonics,SRHS02,0,NBIAA,AAA SRB,South,Byron Barton,0,0,"1",Sussex,NB,Sussex Regional High Scho
+"2019-2020",7,1,FHS,Fredericton High School,Black Kats,FHS Black Kats,FHS02,0,NBIAA,AAA SRB,West,Mike King,0,0,"1",Fredericton,NB,Fredericton High School
+"2019-2020",8,1,CGHS,Colonel Gray High School,Colonels,Colonel Gray,GRAY02,0, , , ,J Hammer,0,0,"1",Charlottetown,PE,Colonel Gray High School
+"2019-2020",9,1,WHS,Woodstock Thunder,Thunder,Woodstock Thunder,WHS02,0,NBIAA,AA SRB,West,Scott Jones,0,0,"1",Woodstock,NB,Woodstock High School
+"2019-2020",10,1,MVHS,Miramichi Valley High School,Palamoo,Miramichi Valley,MVHS02,0,NBIAA,AAA SRB,North,Jim Watters,0,0,"1",Miramichi,NB,Miramichi Valley High
+"2019-2020",11,1,MHS,Moncton High School,Purple Knights,Moncton Purple Knights,MONC02,0,NBIAA,AAA SRB,East,Neil Smith,0,0,"1",Moncton,NB,Moncton High School
+"2019-2020",12,1,HTHS,Harrison Trimble High School,Trogans,HTHS Trojans,HTHS02,0,NBIAA,AAA,East, ,0,0,"1",Moncton,NB,Harrison Trimble High
+"2019-2020",13,1,SSHS,Sugarloaf Sr. High School,Bruins,SSHS Bruins,SUG02,0,NBIAA,A,North, ,0,0,"1",Campbelton,NB,Sugarloaf Sr. High
+"2019-2020",14,1,ARHS,Amherst Regional High School,Vikings,ARHS Vikings,ARHS02DakS,0, , , , ,0,0,"1",Amherst,NS,Amherst Region High
+"2019-2020",15,1,HGS,Halifax Grammar School,Gryphones,Halifax Grammar,HGS02,0, , , ,Tim McGarrigle,0,0,"1",Halifax,NB,Homburg Centre
+"2019-2020",16,1,ADHS,Auburn Drive High School,Eagles,Auburn Drive Eagles,ADHS02,0,NSSAF,D1, ,Colter Simmonds,0,0,"1",Dartmouth,NS,Auburn Drive High School
+"2019-2020",17,1,SJA,Sir John A Macdonald,Flames,SJA Flames,SJA02,0,D1, , , ,0,0,"1",Halifax,NS,SJA Macdonald High School
+"2019-2020",18,1,LHHS,Leo Hayes High School,Lions,Leo Hayes Lions,LHHS02,0,NBIAA,AAA SRB,West,Dan Goggin,0,0,"1",Fredericton,NB,Leo Hayes High School
+"2019-2020",19,1,SSF,St. Francois,St. Francois,St. Francois,SSF02,0, , , , ,0,0,"1", , , 
+"2019-2020",20,1,TOHS,Three Oaks High School, ,Three Oaks,OAKS02,0, , , , ,0,0,"1", , , 
+"2019-2020",21,1,RHS,Riverview High School,Royals,Riverview Royals,RIV02,0,NBIAA,AAA SRB,East, ,0,0,"1",Riverview,NB,Riverview High School
+"2022-2023",1,1,KVHS,Kennebecasis Valley Blue Knights,Blue Knights,KVHS Blue Knights,KVHS02,0,NBIAA,AAA,South,Paul Vaughan,0,0,"1",Quispamsis,NB,Kennebecasis Valley High
+"2022-2023",2,1,RHS,Rothesay High School,Red Hawks,Rothesay Red Hawks,ROTH02,0,NBIAA,AAA SRB,South,Paul & Peter Hickey,0,0,"1",Rothesay,NB,Rothesay High School
+"2022-2023",3,1,SRHS,Sussex Regional High School,Sonics,Sussex Sonics,SRHS02,0,NBIAA,AAA SRB,South,Mark Muscroft,0,0,"1",Sussex,NB,Sussex Regional High Scho
+"2022-2023",4,1,SHS,Simonds High School,Seabees,Simonds Seabees,SHS02,0,NBIAA,AAA SRB,South,Doug Deering,0,0,"1",Saint John,NB,Simonds High School
+"2022-2023",5,1,HVHS,Harbour View High School,Vikings,Harbour View Vikings,HVHS02,0,NBIAA,AAA SRB,South,JP Craig,0,0,"1",Saint John,NB,Harbour View High School
+"2022-2023",6,1,SJHS,Saint John High School,Greyhounds,Saint John High,SJHS02,0,NBIAA,AAA SRB,South, ,0,0,"1",Saint John,NB,Saint John High School
+"2022-2023",7,1,STM,St. Malachy's Memorial High School,Saints,St. Malachy's,STM02,0,NBIAA,AAA SRB,South,Steve Roderick,0,0,"1",Saint John,NB,St. Malachy's High School
+"2022-2023",8,1,FHS,Fredericton High School,Black Kats,FHS Black Kats,FHS02,0,NBIAA,AAA SRB,West,Mike King,0,0,"1",Fredericton,NB,Fredericton High School
+"2022-2023",9,1,RHS,Riverview High School,Royals,Riverview Royals,RIV02,0,NBIAA,AAA SRB,East, ,0,0,"1",Riverview,NB,Riverview High School
+"2022-2023",10,1,HTHS,Harrison Trimble High School,Trogans,HTHS Trojans,HTHS02,0,NBIAA,AAA,East, ,0,0,"1",Moncton,NB,Harrison Trimble High
+"2022-2023",11,1,CNHS,Carleton North High School,North Stars,Carleton North Stars,CNHS02,0,NBIAA,AA SRB,West,Jamie Gray,0,0,"1",Florenceville,NB,Carleton North HS
+"2022-2023",12,1,BHS,Bluefield High School,Bobcats,Bluefield Bobcats,BFHS02,0, , , , ,0,0,"1",Hampshire,PE,Bluefield High School
+"2022-2023",13,1,SHS,Sackville High School,Kingfishers,Sackville Kingfishers,SAC02,0, , , , ,0,0,"1",Lower Sackville,NS,Sackville High School
+"2022-2023",14,1,CGHS,Colonel Gray High School,Colonels,Colonel Gray Colonels,CGHS02,0, , , , ,0,0,"1",Charlottetown,PE,Colonel Gray High School
+"2022-2023",15,1,HGS,Halifax Grammar School,Gryphones,Halifax Grammar,HGS02,0, , , ,Tim McGarrigle,0,0,"1",Halifax,NB,Homburg Centre
+"2022-2023",16,1,BHS,Brebeuf,Brebeuf,Brebeuf,BRE02,0, , , , ,0,0,"1",Montreal,QC, 
+"2022-2023",17,1,LHHS,Leo Hayes High School,Lions,Leo Hayes Lions,LHHS02,0,NBIAA,AAA SRB,West,Dan Goggin,0,0,"1",Fredericton,NB,Leo Hayes High School
+"2022-2023",18,1,DHS,Dartmouth High School,Spartan,DHS Spartans,DART02,0,NSSAF,D1, , ,0,0,"1",Dartmouth,NS,Dartmouth High School
+"2022-2023",19,1,ESA,Ecole Sainte-Anne,Castors,ESA Castors,ESA02,0, , , , ,0,0,"1",Fredericton,NB,Ecole Sainte-Anne
+"2022-2023",20,1,BMHS,Bernice McNaughton,Highlanders,BMHS Highlanders,BMHS02,0,NBIAA,AAA SRB,East,Orlando Palmer,0,0,"1",Moncton,NB,Bernice McNaughton High
+"2022-2023",21,1,Add,TBD, ,TBD,TBD02,0, , , , ,0,0,"1", , , 
+"2023-2024",1,1,KVHS,Kennebecasis Valley Blue Knights,Blue Knights,KVHS Blue Knights,KVHS02,0,NBIAA,AAA,South,Ryan Vaughan,0,0,"1",Quispamsis,NB,Kennebecasis Valley High
+"2023-2024",2,1,CNHS,Carleton North High School,North Stars,Carleton North Stars,CNHS02,0,NBIAA,AA SRB,West,Jamie Gray,0,0,"1",Florenceville,NB,Carleton North HS
+"2023-2024",3,1,FHS,Fredericton High School,Black Kats,FHS Black Kats,FHS02,0,NBIAA,AAA SRB,West,Mike King,0,0,"1",Fredericton,NB,Fredericton High School
+"2023-2024",4,1,HVHS,Harbour View High School,Vikings,Harbour View Vikings,HVHS02,0,NBIAA,AAA SRB,South,JP Craig,0,0,"1",Saint John,NB,Harbour View High School
+"2023-2024",5,1,LHHS,Leo Hayes High School,Lions,Leo Hayes Lions,LHHS02,0,NBIAA,AAA SRB,West,Dan Goggin,0,0,"1",Fredericton,NB,Leo Hayes High School
+"2023-2024",6,1,RHS,Rothesay High School,Red Hawks,Rothesay Red Hawks,ROTH02,0,NBIAA,AAA SRB,South,Paul & Peter Hickey,0,0,"1",Rothesay,NB,Rothesay High School
+"2023-2024",7,1,SHS,Simonds High School,Seabees,Simonds Seabees,SHS02,0,NBIAA,AAA SRB,South,Doug Deering,0,0,"1",Saint John,NB,Simonds High School
+"2023-2024",8,1,SJHS,Saint John High School,Greyhounds,Saint John High,SJHS02,0,NBIAA,AAA SRB,South, ,0,0,"1",Saint John,NB,Saint John High School
+"2023-2024",9,1,SRHS,Sussex Regional High School,Sonics,Sussex Sonics,SRHS02,0,NBIAA,AAA SRB,South,Mark Muscroft,0,0,"1",Sussex,NB,Sussex Regional High Scho
+"2023-2024",10,1,STM,St. Malachy's Memorial High School,Saints,St. Malachy's,STM02,0,NBIAA,AAA SRB,South, ,0,0,"1",Saint John,NB,St. Malachy's High School
+"2023-2024",11,1,FHS,Fundy High School,Mariners,Fundy High Mariners,FUN02,0,NBIAA,SRB AA,South, ,0,0,"1",St. George,NB,Fundy High School
+"2023-2024",12,1,HTHS,Harrison Trimble High School,Trogans,HTHS Trojans,HTHS02,0,NBIAA,AAA,East, ,0,0,"1",Moncton,NB,Harrison Trimble High
+"2023-2024",13,1,MILLW,Millwood Knights,Millwood Knights,Millwood Knights, ,0, , , , ,0,0,"1", , , 
+"2023-2024",14,1,ARMBR,Armbrae Academy Ospreys,Armbrae Academy Ospreys,Armbrae Academy Ospreys, ,0, , , , ,0,0,"1", , , 
+"2023-2024",15,1,HORTO,Horton Griffins,Horton Griffins,Horton Griffins, ,0, , , , ,0,0,"1", , , 
+"2023-2024",17,1,ADHS,Auburn Drive High School,Eagles,Auburn Drive Eagles,ADHS02,0,NSSAF,D1, ,Colter Simmonds,0,0,"1",Dartmouth,NS,Auburn Drive High School
+"2023-2024",18,1,CPA,CP Allen Cheetahs,Cheetahs,CP Allen Cheetahs,CPA02,0, , , , ,0,0,"1",Bedford,NS,CP Allen High School
+"2023-2024",19,1,BREBE,Brebeuf,Brebeuf,Brebeuf, ,0, , , , ,0,0,"1", , , 
+"2023-2024",20,1,EMM,Mathieu-Martin,Mathieu-Martin,Mathieu-Martin, ,0, , , , ,0,0,"1", , , 
+"2024-2025",1,1,HVHS,Harbour View High School,Vikings,Harbour View Vikings,HVHS02,0,NBIAA,AAA SRB,South,JP Craig,0,0,"1",Saint John,NB,Harbour View High School
+"2024-2025",2,1,KVHS,Kennebecasis Valley Blue Knights,Blue Knights,KVHS Blue Knights,KVHS02,0,NBIAA,AAA,South,Ryan Vaughan,0,0,"1",Quispamsis,NB,Kennebecasis Valley High
+"2024-2025",3,1,RHS,Riverview High School,Royals,Riverview Royals,RIV02,0,NBIAA,AAA SRB,East, ,0,0,"1",Riverview,NB,Riverview High School
+"2024-2025",5,1,STM,St. Malachy's Memorial High School,Saints,St. Malachy's,STM02,0,NBIAA,AAA SRB,South, ,0,0,"1",Saint John,NB,St. Malachy's High School
+"2024-2025",6,1,RHS,Rothesay High School,Red Hawks,Rothesay Red Hawks,ROTH02,0,NBIAA,AAA SRB,South,Paul & Peter Hickey,0,0,"1",Rothesay,NB,Rothesay High School
+"2024-2025",7,1,SJHS,Saint John High School,Greyhounds,Saint John High,SJHS02,0,NBIAA,AAA SRB,South, ,0,0,"1",Saint John,NB,Saint John High School
+"2024-2025",8,1,SHS,Simonds High School,Seabees,Simonds Seabees,SHS02,0,NBIAA,AAA SRB,South,Doug Deering,0,0,"1",Saint John,NB,Simonds High School
+"2024-2025",9,1,CPA,CP Allen Cheetahs,Cheetahs,CP Allen Cheetahs,CPA02,0, , , , ,0,0,"1",Bedford,NS,CP Allen High School
+"2024-2025",10,1,FHS,Fredericton High School,Black Kats,FHS Black Kats,FHS02,0,NBIAA,AAA SRB,West,Mike King,0,0,"1",Fredericton,NB,Fredericton High School
+"2024-2025",11,1,SRHS,Sussex Regional High School,Sonics,Sussex Sonics,SRHS02,0,NBIAA,AAA SRB,South,Mark Muscroft,0,0,"1",Sussex,NB,Sussex Regional High Scho
+"2024-2025",12,1,CGHS,Colonel Gray High School,Colonels,Colonel Gray Colonels,CGHS02,0, , , , ,0,0,"1",Charlottetown,PE,Colonel Gray High School
+"2024-2025",13,1,NNEC,North Nova Educational Center,Gryphons,NNEC Gryphons,NNEC02,0, , , , ,0,0,"1",New Glasgow,NS,North Nova School
+"2024-2025",14,1,LHHS,Leo Hayes High School,Lions,Leo Hayes Lions,LHHS02,0,NBIAA,AAA SRB,West,Dan Goggin,0,0,"1",Fredericton,NB,Leo Hayes High School
+"2024-2025",15,1,HTHS,Harrison Trimble High School,Trogans,HTHS Trojans,HTHS02,0,NBIAA,AAA,East, ,0,0,"1",Moncton,NB,Harrison Trimble High
+"2024-2025",16,1,BHS,Bayview High School,Sharks,Bayview Sharks,BVHS02,0, , , , ,0,0,"1", , , 
+"2024-2025",17,1,ARMBR,Armbrae Academy Ospreys,Armbrae Academy Ospreys,Armbrae Academy Ospreys, ,0, , , , ,0,0,"1", , , 
+"2021-2022",1,1,KVHS,Kennebecasis Valley Crusaders,Crusaders,KVHS Crusaders,KVHS02,0,NBIAA,AAA,South,Paul Vaughan,0,0,"1",Quispamsis,NB,Kennebecasis Valley High
+"2021-2022",2,1,HVHS,Harbour View High School,Vikings,Harbour View Vikings,HVHS02,0,NBIAA,AAA SRB,South, ,0,0,"1",Saint John,NB,Harbour View High School
+"2021-2022",3,1,RHS,Rothesay High School,Red Hawks,Rothesay Red Hawks,ROTH02,0,NBIAA,AA SRB,South,Paul & Peter Hickey,0,0,"1",Rothesay,NB,Rothesay High School
+"2021-2022",4,1,SHS,Simonds High School,Seabees,Simonds Seabees,SHS02,0,NBIAA,AAA SRB,South,Doug Deering,0,0,"1",Saint John,NB,Simonds High School
+"2021-2022",5,1,SJHS,Saint John High School,Greyhounds,Saint John High,SJHS02,0,NBIAA,AAA SRB,South,Jeff White,0,0,"1",Saint John,NB,Saint John High School
+"2021-2022",6,1,SRHS,Sussex Regional High School,Sonics,Sussex Sonics,SRHS02,0,NBIAA,AAA SRB,South,Byron Barton,0,0,"1",Sussex,NB,Sussex Regional High Scho
+"2021-2022",7,1,STM,St. Malachy's Memorial High School,Saints,St. Malachy's,STM02,0,NBIAA,AAA SRB,South, ,0,0,"1",Saint John,NB,St. Malachy's High School
+"2021-2022",8,1,RNS,Rothesay Netherwood School,River Hawkes,RNS River Hawks,RNS02,0,NBIAA,Exhib,South,Damain Gay,0,0,"1",Rothesay,NB,Rothesay Netherwood
+"2021-2022",9,1,RHS,Riverview High School,Royals,Riverview Royals,RIV02,0,NBIAA,AAA SRB,East, ,0,0,"1",Riverview,NB,Riverview High School
+"2021-2022",10,1,FHS,Fredericton High School,Black Kats,FHS Black Kats,FHS02,0,NBIAA,AAA SRB,West,Mike King,0,0,"1",Fredericton,NB,Fredericton High School
+"2021-2022",11,1,WHS,Woodstock Thunder,Thunder,Woodstock Thunder,WHS02,0,NBIAA,AA SRB,West,Scott Jones,0,0,"1",Woodstock,NB,Woodstock High School
+"2021-2022",12,1,LHHS,Leo Hayes High School,Lions,Leo Hayes Lions,LHHS02,0,NBIAA,AAA SRB,West,Dan Goggin,0,0,"1",Fredericton,NB,Leo Hayes High School
+"2021-2022",13,1,MHS,Moncton High School,Purple Knights,Moncton Purple Knights,MONC02,0,NBIAA,AAA SRB,East,Neil Smith,0,0,"1",Moncton,NB,Moncton High School
+"2021-2022",14,1,HTHS,Harrison Trimble High School,Trogans,HTHS Trojans,HTHS02,0,NBIAA,AAA,East, ,0,0,"1",Moncton,NB,Harrison Trimble High
+"2016-2017",1,1,KVHS,Kennebecasis Valley Crusaders,Crusaders,KVHS Crusaders,KVHS02,0,NBIAA,AAA,South,Paul Vaughan,0,0,"1",Quispamsis,NB,Kennebecasis Valley High
+"2016-2017",2,1,DHS,Dartmouth High School,Spartan,DHS Spartans,DART02,0,NSSAF,D1, , ,0,0,"1",Dartmouth,NS,Dartmouth High School
+"2016-2017",3,1,FHS,Fredericton High School,Black Kats,FHS Black Kats,FHS02,0,NBIAA,AAA SRB,West,Mike King,0,0,"1",Fredericton,NB,Fredericton High School
+"2016-2017",4,1,HHS,Horton High School,Griffons,Horton High Griffons,HORT02,0, , , , ,0,0,"1",Wolfville,NS,Horton High School
+"2016-2017",5,1,HVHS,Harbour View High School,Vikings,Harbour View Vikings,HVHS02,0,NBIAA,AAA SRB,West, ,0,0,"1",Saint John,NB,Harbour View High School
+"2016-2017",6,1,LHHS,Leo Hayes High School,Lions,Leo Hayes Lions,LHHS02,0,NBIAA,AAA SRB,West,Keith Gross,0,0,"1",Fredericton,NB,Leo Hayes High School
+"2016-2017",7,1,MHS,Moncton High School,Purple Knights,Moncton Purple Knights,MONC02,0,NBIAA,AAA SRB,East,Andrew McPherson,0,0,"1",Moncton,NB,Moncton High School
+"2016-2017",8,1,RHS,Riverview High School,Royals,Riverview Royals,RIV02,0,NBIAA,AAA SRB,East, ,0,0,"1",Riverview,NB,Riverview High School
+"2016-2017",9,1,RNS,Rothesay Netherwood School,River Hawkes,RNS River Hawks,RNS02,0,NBIAA,Exhib,South,Damain Gay,0,0,"1",Rothesay,NB,Rothesay Netherwood
+"2016-2017",10,1,RHS,Rothesay High School,Red Hawks,Rothesay Red Hawks,ROTH02,0,NBIAA,AA SRB,South,Paul & Peter Hickey,0,0,"1",Rothesay,NB,Rothesay High School
+"2016-2017",11,1,SHS,Simonds High School,Seabees,Simonds Seabees,SHS02,0,NBIAA,AAA SRB,South,Doug Deering,0,0,"1",Saint John,NB,Simonds High School
+"2016-2017",12,1,SJHS,Saint John High School,Greyhounds,Saint John High,SJHS02,0,NBIAA,AAA SRB,South,Jeff White,0,0,"1",Saint John,NB,Saint John High School
+"2016-2017",13,1,SRHS,Sussex Regional High School,Sonics,Sussex Sonics,SRHS02,0,NBIAA,AAA SRB,South,Byron Barton,0,0,"1",Sussex,NB,Sussex Regional High Scho
+"2016-2017",14,1,STM,St. Malachy's Memorial High School,Saints,St. Malachy's,STM02,0,NBIAA,AAA SRB,South, ,0,0,"1",Saint John,NB,St. Malachy's High School
+"2016-2017",15,1,MVHS,Miramichi Valley High School,Palamoo,Miramichi Valley,MVHS02,0,NBIAA,AAA SRB,North,Jim Watters,0,0,"1",Miramichi,NB,Miramichi Valley High
+"2016-2017",16,1,ARHS,Amherst Regional High School,Vikings,Amherst Viking,ARHS02,0, , , , ,0,0,"1",Amherst,NS,Amherst Regional High
+"2016-2017",17,1,JMH,James M. Hill,Tommies,JMH Tommies,JMH02,0, , , , ,0,0,"1",Miramichi,NB,James M. Hill
+"2016-2017",18,1,CRHS,Charlottetown Rural,Raiders,Charlottetown Rural,RURAL02,0, , , , ,0,0,"1",Charlottetown,PE,Charlottetown Rural
+"2016-2017",19,1,HTHS,Harrison Trimble,Trojans,HTHS Trojans,HTHS02,0,NBIAA,AAA East, , ,0,0,"1",Moncton,NB,Harrison Trimble High
+"2016-2017",21,1,CNHS,Carleton North High School,North Stars,Carleton North Stars,CNHS02,0,NBIAA,AA SRB,West,Jamie Gray,0,0,"1",Florenceville,NB,Carleton North HS
+"2016-2017",22,1,BMHS,Bernice McNaughton,Highlanders,BMHS Highlanders,BMHS02,0,NBIAA,AAA SRB,East,Steve Chapman,0,0,"1",Moncton,NB,Bernice McNaughton High
+"2016-2017",23,1,BHS,Brebeuf,Brebeuf,Brebeuf,BRE02,0, , , , ,0,0,"1",Montreal,QC, 
+"2016-2017",24,1,OHS,Oromocto High School,Blues,Oromocto Blues,OHS02,0,NBIAA,AAA SRB,West, ,0,0,"1",Oromocto,NB,Oromocto High School
+"2025-2026",1,1,KVHS,Kennebecasis Valley Blue Knights,Blue Knights,KVHS Blue Knights,KVHS02,0,NBIAA,AAA,South,Ryan Vaughan,0,0,"1",Quispamsis,NB,Kennebecasis Valley High
+"2025-2026",2,1,RHS,Rothesay High School,Red Hawks,Rothesay Red Hawks,ROTH02,0,NBIAA,AAA SRB,South,Paul & Peter Hickey,0,0,"1",Rothesay,NB,Rothesay High School
+"2025-2026",3,1,SRHS,Sussex Regional High School,Sonics,Sussex Sonics,SRHS02,0,NBIAA,AAA SRB,South,Mark Muscroft,0,0,"1",Sussex,NB,Sussex Regional High Scho
+"2025-2026",4,1,MHS,Millwood Knights,Knights,Millwood Knights,MILL02,0, , , , ,0,0,"1",Halifax,NS,Millwood High School
+"2025-2026",5,1,ADHS,Auburn Eagles,Eagles,Auburn Eagles,ADHS02,0, , , , ,0,0,"1",Dartmouth,NS,Auburn Drive High School
+"2025-2026",6,1,BHS,Bayview High School,Sharks,Bayview Sharks,BVHS02,0, , , , ,0,0,"1",Halifax,NS,Bayview High School
+"2025-2026",7,1,CEC,Cobequid Educational Centre,Cougars,CEC Cougars,CEC02,0, , , , ,0,0,"1",Truro,NS,Cobiquid Ed. Center
+"2025-2026",8,1,HVHS,Harbour View High School,Vikings,Harbour View Vikings,HVHS02,0,NBIAA,AAA SRB,South,JP Craig,0,0,"1",Saint John,NB,Harbour View High School
+"2025-2026",9,1,LHHS,Leo Hayes High School,Lions,Leo Hayes Lions,LHHS02,0,NBIAA,AAA SRB,West,Dan Goggin,0,0,"1",Fredericton,NB,Leo Hayes High School
+"2025-2026",10,1,STM,St. Malachy's Memorial High School,Saints,St. Malachy's,STM02,0,NBIAA,AAA SRB,South, ,0,0,"1",Saint John,NB,St. Malachy's High School
+"2025-2026",11,1,WHS,Woodstock Thunder,Thunder,Woodstock Thunder,WHS02,0,NBIAA,AA SRB,West,Scott Jones,0,0,"1",Woodstock,NB,Woodstock High School
+"2025-2026",12,1,BMHS,Bernice McNaughton,Highlanders,BMHS Highlanders,BMHS02,0,NBIAA,AAA SRB,East,Orlando Palmer,0,0,"1",Moncton,NB,Bernice McNaughton High
+"2025-2026",13,1,HORTO,Horton Griffins,Horton Griffins,Horton Griffins, ,0, , , , ,0,0,"1", , , 
+"2025-2026",14,1,HTHS,Harrison Trimble High School,Trogans,HTHS Trojans,HTHS02,0,NBIAA,AAA,East, ,0,0,"1",Moncton,NB,Harrison Trimble High
+"2025-2026",15,1,DHS,Dartmouth High School,Spartan,DHS Spartans,DART02,0,NSSAF,D1, , ,0,0,"1",Dartmouth,NS,Dartmouth High School
+"2025-2026",16,1,CGHS,Colonel Gray High School,Colonels,Colonel Gray Colonels,CGHS02,0, , , , ,0,0,"1",Charlottetown,PE,Colonel Gray High School
+"2025-2026",17,1,RHS,Riverview High School,Royals,Riverview Royals,RIV02,0,NBIAA,AAA SRB,East, ,0,0,"1",Riverview,NB,Riverview High School
+"2025-2026",18,1,FHS,Fredericton High School,Black Kats,FHS Black Kats,FHS02,0,NBIAA,AAA SRB,West,Mike King,0,0,"1",Fredericton,NB,Fredericton High School
+"2025-2026",19,1,SJHS,Saint John High School,Greyhounds,Saint John High,SJHS02,0,NBIAA,AAA SRB,South, ,0,0,"1",Saint John,NB,Saint John High School
+"2025-2026",20,1,CHS,Citadel High School,Phoenix,Citadel Phoenix,CHS02,0,NSSAF,D1, , ,0,0,"1",Halifax,NS,Citadel High School
+"2025-2026",21,1,ARMBR,Armbrae Academy Ospreys,Armbrae Academy Ospreys,Armbrae Academy Ospreys, ,0, , , , ,0,0,"1", , , 
