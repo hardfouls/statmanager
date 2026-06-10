@@ -525,21 +525,63 @@ app.post('/api/teams/merge', async (req, res) => {
     await conn.execute('START TRANSACTION');
 
     for (const srcId of sourceIds) {
-      // Migrate all games globally first — catches any game regardless of
-      // whether a matching team_seasons row exists for the source team.
-      await conn.execute(
-        'UPDATE competitions SET team_id = ? WHERE team_id = ?',
-        [masterId, srcId]
-      );
-      await conn.execute(
-        'UPDATE competitions SET opponent_id = ? WHERE opponent_id = ?',
-        [masterId, srcId]
-      );
+      const id = parseInt(srcId);
 
-      // Migrate season assignments, skipping any already held by the master.
+      // ── Season-aware home-game migration ──────────────────────────────
+      // For each season the source appears in as home team, check whether
+      // the master already has a season with the same name.  If so, move
+      // the competitions to that master season (keeps league grouping
+      // correct).  If not, create a team_seasons entry for the master in
+      // the source's season so the games are still reachable.
+      const [srcHomeSeasons] = await conn.execute(`
+        SELECT DISTINCT c.season_id, s.name
+        FROM   competitions c
+        JOIN   seasons s ON c.season_id = s.id
+        WHERE  c.team_id = ?
+      `, [id]);
+
+      for (const { season_id: srcSeasonId, name: seasonName } of srcHomeSeasons) {
+        const [[masterSeason]] = await conn.execute(`
+          SELECT s.id
+          FROM   team_seasons ts
+          JOIN   seasons s ON ts.season_id = s.id
+          WHERE  ts.team_id = ? AND s.name = ?
+          LIMIT  1
+        `, [masterId, seasonName]);
+
+        if (masterSeason) {
+          await conn.execute(
+            'UPDATE competitions SET season_id = ? WHERE team_id = ? AND season_id = ?',
+            [masterSeason.id, id, srcSeasonId]
+          );
+        } else {
+          const [[{ has }]] = await conn.execute(
+            'SELECT COUNT(*) AS has FROM team_seasons WHERE team_id = ? AND season_id = ?',
+            [masterId, srcSeasonId]
+          );
+          if (!has) {
+            const [[srcTs]] = await conn.execute(
+              'SELECT coach, active FROM team_seasons WHERE team_id = ? AND season_id = ?',
+              [id, srcSeasonId]
+            );
+            await conn.execute(
+              'INSERT INTO team_seasons (team_id, season_id, coach, active) VALUES (?, ?, ?, ?)',
+              [masterId, srcSeasonId, srcTs?.coach ?? null, srcTs?.active ?? null]
+            );
+          }
+        }
+      }
+
+      // ── Migrate competitions ───────────────────────────────────────────
+      await conn.execute('UPDATE competitions SET team_id     = ? WHERE team_id     = ?', [masterId, id]);
+      await conn.execute('UPDATE competitions SET opponent_id = ? WHERE opponent_id = ?', [masterId, id]);
+
+      // ── Migrate periods ────────────────────────────────────────────────
+      await conn.execute('UPDATE periods SET team_id = ? WHERE team_id = ?', [masterId, id]);
+
+      // ── Migrate any remaining team_seasons not yet handled ────────────
       const [srcSeasons] = await conn.execute(
-        'SELECT season_id, coach, active FROM team_seasons WHERE team_id = ?',
-        [srcId]
+        'SELECT season_id, coach, active FROM team_seasons WHERE team_id = ?', [id]
       );
       for (const { season_id, coach, active } of srcSeasons) {
         const [[{ has }]] = await conn.execute(
@@ -554,9 +596,9 @@ app.post('/api/teams/merge', async (req, res) => {
         }
       }
 
-      // Copy null fields from source to master.
+      // ── Copy null fields from source to master ────────────────────────
       const [[src]] = await conn.execute(
-        'SELECT abbrev, nickname, gender + 0 AS gender FROM teams WHERE id = ?', [srcId]
+        'SELECT abbrev, nickname, gender + 0 AS gender FROM teams WHERE id = ?', [id]
       );
       if (src) {
         await conn.execute(
@@ -569,16 +611,16 @@ app.post('/api/teams/merge', async (req, res) => {
         );
       }
 
-      // Safety check — all games must be gone from source before deleting it.
+      // ── Safety check ──────────────────────────────────────────────────
       const [[{ remaining }]] = await conn.execute(
         'SELECT COUNT(*) AS remaining FROM competitions WHERE team_id = ? OR opponent_id = ?',
-        [srcId, srcId]
+        [id, id]
       );
       if (remaining)
-        throw new Error(`Team #${srcId} still has ${remaining} game(s) that could not be migrated`);
+        throw new Error(`Team #${id} still has ${remaining} game(s) that could not be migrated`);
 
-      await conn.execute('DELETE FROM team_seasons WHERE team_id = ?', [srcId]);
-      await conn.execute('DELETE FROM teams WHERE id = ?', [srcId]);
+      await conn.execute('DELETE FROM team_seasons WHERE team_id = ?', [id]);
+      await conn.execute('DELETE FROM teams WHERE id = ?', [id]);
     }
 
     await conn.execute('COMMIT');
