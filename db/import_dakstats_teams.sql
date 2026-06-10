@@ -1,7 +1,8 @@
 -- ============================================================
 -- Import dakstats_history → statmanager
---   • dakstats_history.teams      → leagues, seasons, teams, team_seasons
+--   • dakstats_history.teams        → leagues, seasons, teams, team_seasons
 --   • dakstats_history.competitions → competitions
+--   • dakstats_history.periods      → periods
 --
 -- Prerequisites:
 --   • Both databases must be on the same MariaDB/MySQL instance.
@@ -154,6 +155,68 @@ WHERE  comp.DATE    IS NOT NULL
              AND  ex.opponent_id = vt.id
        );
 
+-- ── Step 6: Periods ─────────────────────────────────────────
+-- Each row records points scored by one team in one period of a
+-- game. Two sets of rows per game: one for the home team, one for
+-- the visiting team. The sum per (competition_id, team_id) gives
+-- the final score, replacing the removed team_score / opponent_score
+-- columns on competitions.
+--
+-- Resolve path:
+--   periods.COMPID + SEASON → dakstats competitions
+--   → home/visit team names → statmanager competition id
+--   periods.TMID + SEASON   → team name → statmanager team id
+INSERT INTO periods (competition_id, team_id, period_num, score)
+SELECT
+    sm_comp.id  AS competition_id,
+    t.id        AS team_id,
+    p.PERIODNUM AS period_num,
+    p.SCORE     AS score
+FROM       dakstats_history.periods       p
+INNER JOIN dakstats_history.competitions  dcomp
+        ON dcomp.COMPID              = p.COMPID
+       AND TRIM(dcomp.SEASON)        = TRIM(p.SEASON)
+INNER JOIN dakstats_history.teams         h_src
+        ON h_src.TMID                = dcomp.H_TMID
+       AND TRIM(h_src.SEASON)        = TRIM(dcomp.SEASON)
+INNER JOIN dakstats_history.teams         v_src
+        ON v_src.TMID                = dcomp.V_TMID
+       AND TRIM(v_src.SEASON)        = TRIM(dcomp.SEASON)
+INNER JOIN dakstats_history.teams         tm_src
+        ON tm_src.TMID               = p.TMID
+       AND TRIM(tm_src.SEASON)       = TRIM(p.SEASON)
+INNER JOIN leagues  l
+        ON l.name                    = TRIM(h_src.LEAGUE)
+INNER JOIN seasons  s
+        ON s.league_id               = l.id
+       AND s.name                    = TRIM(dcomp.SEASON)
+INNER JOIN teams    ht
+        ON ht.name                   = TRIM(h_src.LOCATION)
+       AND ht.gender                <=> h_src.GENDER + 0
+INNER JOIN teams    vt
+        ON vt.name                   = TRIM(v_src.LOCATION)
+       AND vt.gender                <=> v_src.GENDER + 0
+INNER JOIN competitions sm_comp
+        ON sm_comp.season_id         = s.id
+       AND sm_comp.team_id           = ht.id
+       AND sm_comp.game_date         = DATE(dcomp.DATE)
+       AND sm_comp.opponent_id       = vt.id
+INNER JOIN teams    t
+        ON t.name                    = TRIM(tm_src.LOCATION)
+       AND t.gender                 <=> tm_src.GENDER + 0
+WHERE  p.COMPID    IS NOT NULL
+  AND  p.SEASON    IS NOT NULL
+  AND  p.TMID      IS NOT NULL
+  AND  p.PERIODNUM IS NOT NULL
+  AND  p.SCORE     IS NOT NULL
+  AND  NOT EXISTS (
+           SELECT 1
+           FROM   periods ex
+           WHERE  ex.competition_id = sm_comp.id
+             AND  ex.team_id        = t.id
+             AND  ex.period_num     = p.PERIODNUM
+       );
+
 COMMIT;
 
 -- ── Verification queries (run manually after import) ─────────
@@ -167,11 +230,15 @@ SELECT 'teams',               COUNT(*)        FROM teams
 UNION ALL
 SELECT 'team_seasons',        COUNT(*)        FROM team_seasons
 UNION ALL
-SELECT 'competitions',        COUNT(*)        FROM competitions;
+SELECT 'competitions',        COUNT(*)        FROM competitions
+UNION ALL
+SELECT 'periods',             COUNT(*)        FROM periods;
 
 SELECT 'source team rows'        AS tbl, COUNT(*) AS n FROM dakstats_history.teams
 UNION ALL
-SELECT 'source competition rows',        COUNT(*)        FROM dakstats_history.competitions;
+SELECT 'source competition rows',        COUNT(*)        FROM dakstats_history.competitions
+UNION ALL
+SELECT 'source period rows',             COUNT(*)        FROM dakstats_history.periods;
 
 -- Source rows that produced no team_seasons entry
 -- (unmatched LOCATION, LEAGUE, or SEASON)
@@ -197,4 +264,21 @@ LEFT JOIN  teams                          vt    ON vt.name    = TRIM(v_src.LOCAT
 WHERE  comp.DATE   IS NOT NULL
   AND  comp.SEASON IS NOT NULL
   AND  (s.id IS NULL OR ht.id IS NULL OR vt.id IS NULL);
+
+-- Source period rows that were skipped (unresolved competition or team)
+SELECT p.SEASON, p.COMPID, p.TMID, p.PERIODNUM
+FROM       dakstats_history.periods       p
+LEFT JOIN  dakstats_history.competitions  dcomp  ON dcomp.COMPID  = p.COMPID AND TRIM(dcomp.SEASON) = TRIM(p.SEASON)
+LEFT JOIN  dakstats_history.teams         h_src  ON h_src.TMID    = dcomp.H_TMID AND TRIM(h_src.SEASON) = TRIM(dcomp.SEASON)
+LEFT JOIN  dakstats_history.teams         v_src  ON v_src.TMID    = dcomp.V_TMID AND TRIM(v_src.SEASON) = TRIM(dcomp.SEASON)
+LEFT JOIN  dakstats_history.teams         tm_src ON tm_src.TMID   = p.TMID  AND TRIM(tm_src.SEASON) = TRIM(p.SEASON)
+LEFT JOIN  leagues    l       ON l.name        = TRIM(h_src.LEAGUE)
+LEFT JOIN  seasons    s       ON s.league_id   = l.id AND s.name = TRIM(dcomp.SEASON)
+LEFT JOIN  teams      ht      ON ht.name       = TRIM(h_src.LOCATION) AND ht.gender <=> h_src.GENDER + 0
+LEFT JOIN  teams      vt      ON vt.name       = TRIM(v_src.LOCATION) AND vt.gender <=> v_src.GENDER + 0
+LEFT JOIN  competitions sm_c  ON sm_c.season_id = s.id AND sm_c.team_id = ht.id
+                              AND sm_c.game_date = DATE(dcomp.DATE) AND sm_c.opponent_id = vt.id
+LEFT JOIN  teams      t       ON t.name        = TRIM(tm_src.LOCATION) AND t.gender <=> tm_src.GENDER + 0
+WHERE  p.COMPID IS NOT NULL AND p.SEASON IS NOT NULL
+  AND  (sm_c.id IS NULL OR t.id IS NULL);
 */

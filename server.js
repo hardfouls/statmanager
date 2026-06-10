@@ -728,7 +728,9 @@ app.get('/api/games', async (req, res) => {
     conn = await dbConnect();
     const [rows] = await conn.execute(`
       SELECT c.id, c.season_id, c.team_id, c.opponent_id,
-             c.game_date, c.location, c.team_score, c.opponent_score,
+             c.game_date, c.location,
+             ts.score AS team_score,
+             os.score AS opponent_score,
              s.name AS season_name, s.league_id,
              l.name AS league_name,
              tm.name  AS team_name,     tm.abbrev AS team_abbrev,
@@ -738,6 +740,12 @@ app.get('/api/games', async (req, res) => {
       JOIN leagues l   ON s.league_id   = l.id
       JOIN teams tm    ON c.team_id     = tm.id
       JOIN teams opp   ON c.opponent_id = opp.id
+      LEFT JOIN (SELECT competition_id, team_id, SUM(score) AS score
+                 FROM periods GROUP BY competition_id, team_id) ts
+             ON ts.competition_id = c.id AND ts.team_id = c.team_id
+      LEFT JOIN (SELECT competition_id, team_id, SUM(score) AS score
+                 FROM periods GROUP BY competition_id, team_id) os
+             ON os.competition_id = c.id AND os.team_id = c.opponent_id
       ORDER BY s.start_year DESC, c.game_date DESC
     `);
     res.json({ games: rows });
@@ -749,16 +757,15 @@ app.get('/api/games', async (req, res) => {
 });
 
 app.post('/api/games', async (req, res) => {
-  const { season_id, team_id, opponent_id, game_date, location, team_score, opponent_score } = req.body;
+  const { season_id, team_id, opponent_id, game_date, location } = req.body;
   if (!season_id || !team_id || !opponent_id || !game_date)
     return res.status(400).json({ error: 'Season, team, opponent and date are required' });
-  const toScore = v => (v === '' || v == null) ? null : parseInt(v);
   let conn;
   try {
     conn = await dbConnect();
     const [result] = await conn.execute(
-      'INSERT INTO competitions (season_id, team_id, game_date, opponent_id, location, team_score, opponent_score) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [parseInt(season_id), parseInt(team_id), game_date, parseInt(opponent_id), location || 'Home', toScore(team_score), toScore(opponent_score)]
+      'INSERT INTO competitions (season_id, team_id, game_date, opponent_id, location) VALUES (?, ?, ?, ?, ?)',
+      [parseInt(season_id), parseInt(team_id), game_date, parseInt(opponent_id), location || 'Home']
     );
     res.json({ success: true, id: result.insertId });
   } catch (err) {
@@ -769,16 +776,15 @@ app.post('/api/games', async (req, res) => {
 });
 
 app.put('/api/games/:id', async (req, res) => {
-  const { season_id, team_id, opponent_id, game_date, location, team_score, opponent_score } = req.body;
+  const { season_id, team_id, opponent_id, game_date, location } = req.body;
   if (!season_id || !team_id || !opponent_id || !game_date)
     return res.status(400).json({ error: 'Season, team, opponent and date are required' });
-  const toScore = v => (v === '' || v == null) ? null : parseInt(v);
   let conn;
   try {
     conn = await dbConnect();
     const [result] = await conn.execute(
-      'UPDATE competitions SET season_id=?, team_id=?, game_date=?, opponent_id=?, location=?, team_score=?, opponent_score=? WHERE id=?',
-      [parseInt(season_id), parseInt(team_id), game_date, parseInt(opponent_id), location || 'Home', toScore(team_score), toScore(opponent_score), parseInt(req.params.id)]
+      'UPDATE competitions SET season_id=?, team_id=?, game_date=?, opponent_id=?, location=? WHERE id=?',
+      [parseInt(season_id), parseInt(team_id), game_date, parseInt(opponent_id), location || 'Home', parseInt(req.params.id)]
     );
     if (result.affectedRows === 0) return res.status(404).json({ error: 'Game not found' });
     res.json({ success: true });

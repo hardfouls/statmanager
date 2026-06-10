@@ -4,6 +4,7 @@
 SET FOREIGN_KEY_CHECKS = 0;
 
 DROP TABLE IF EXISTS boxscores;
+DROP TABLE IF EXISTS periods;
 DROP TABLE IF EXISTS competitions;
 DROP TABLE IF EXISTS player_seasons;
 DROP TABLE IF EXISTS players;
@@ -105,8 +106,6 @@ CREATE TABLE competitions (
     game_date       DATE                NOT NULL,
     opponent_id     SMALLINT UNSIGNED   NOT NULL,
     location        ENUM('Home','Away','Neutral') NOT NULL DEFAULT 'Home',
-    team_score      TINYINT UNSIGNED    NULL,
-    opponent_score  TINYINT UNSIGNED    NULL,
     PRIMARY KEY (id),
     KEY idx_competitions_season (season_id),
     KEY idx_competitions_team   (team_id),
@@ -119,6 +118,24 @@ CREATE TABLE competitions (
         ON UPDATE CASCADE ON DELETE RESTRICT,
     CONSTRAINT fk_competitions_opponent
         FOREIGN KEY (opponent_id) REFERENCES teams (id)
+        ON UPDATE CASCADE ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+
+CREATE TABLE periods (
+    id              INT UNSIGNED        NOT NULL AUTO_INCREMENT,
+    competition_id  INT UNSIGNED        NOT NULL,
+    team_id         SMALLINT UNSIGNED   NOT NULL,
+    period_num      SMALLINT UNSIGNED   NOT NULL,
+    score           TINYINT UNSIGNED    NOT NULL DEFAULT 0,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_periods_comp_team_period (competition_id, team_id, period_num),
+    KEY idx_periods_competition (competition_id),
+    CONSTRAINT fk_periods_competition
+        FOREIGN KEY (competition_id) REFERENCES competitions (id)
+        ON UPDATE CASCADE ON DELETE CASCADE,
+    CONSTRAINT fk_periods_team
+        FOREIGN KEY (team_id) REFERENCES teams (id)
         ON UPDATE CASCADE ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

@@ -1387,15 +1387,17 @@ const pages = {
                 </select>
               </div>
             </div>
-            <p class="form-section-label">Score (leave blank if not yet played)</p>
-            <div class="two-col">
-              <div class="form-group">
-                <label for="gf-team-score">Team Score</label>
-                <input type="number" id="gf-team-score" min="0" max="255" placeholder="—">
-              </div>
-              <div class="form-group">
-                <label for="gf-opp-score">Opponent Score</label>
-                <input type="number" id="gf-opp-score" min="0" max="255" placeholder="—">
+            <div id="gf-score-display" style="display:none">
+              <p class="form-section-label">Score (calculated from period data)</p>
+              <div class="two-col">
+                <div class="form-group">
+                  <label>Team Score</label>
+                  <div class="read-only-field" id="gf-team-score-val">—</div>
+                </div>
+                <div class="form-group">
+                  <label>Opponent Score</label>
+                  <div class="read-only-field" id="gf-opp-score-val">—</div>
+                </div>
               </div>
             </div>
             <div class="form-actions">
@@ -1472,8 +1474,10 @@ const pages = {
       if (game) {
         setValue('gf-date', String(game.game_date).substring(0, 10));
         document.getElementById('gf-location').value = game.location || 'Home';
-        if (game.team_score     != null) setValue('gf-team-score', game.team_score);
-        if (game.opponent_score != null) setValue('gf-opp-score',  game.opponent_score);
+        const scoreDisplay = document.getElementById('gf-score-display');
+        scoreDisplay.style.display = '';
+        document.getElementById('gf-team-score-val').textContent = game.team_score != null ? game.team_score : '—';
+        document.getElementById('gf-opp-score-val').textContent  = game.opponent_score != null ? game.opponent_score : '—';
       }
 
       document.getElementById('gf-league').addEventListener('change', function () {
@@ -1492,13 +1496,11 @@ const pages = {
         e.preventDefault();
         const btn  = document.getElementById('gf-save');
         const body = {
-          season_id:      document.getElementById('gf-season').value,
-          team_id:        document.getElementById('gf-team').value,
-          opponent_id:    document.getElementById('gf-opponent').value,
-          game_date:      document.getElementById('gf-date').value,
-          location:       document.getElementById('gf-location').value,
-          team_score:     document.getElementById('gf-team-score').value,
-          opponent_score: document.getElementById('gf-opp-score').value,
+          season_id:   document.getElementById('gf-season').value,
+          team_id:     document.getElementById('gf-team').value,
+          opponent_id: document.getElementById('gf-opponent').value,
+          game_date:   document.getElementById('gf-date').value,
+          location:    document.getElementById('gf-location').value,
         };
         if (!body.season_id || !body.team_id || !body.opponent_id || !body.game_date) {
           showStatus('gf-status', 'error', 'Season, team, opponent and date are required.');
