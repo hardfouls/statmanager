@@ -1193,6 +1193,7 @@ const pages = {
         <div class="card">
           <div class="section-header">
             <h3 class="section-title">Game Manager</h3>
+            <div id="gm-count" class="list-count"></div>
             <div class="header-controls">
               <select id="gm-league-filter" class="filter-select"><option value="">All Leagues</option></select>
               <select id="gm-season-filter" class="filter-select"><option value="">All Seasons</option></select>
@@ -1264,6 +1265,8 @@ const pages = {
       refreshSeasonFilter(params.season);
       refreshTeamFilter(params.team);
 
+      const countEl = document.getElementById('gm-count');
+
       function renderRows() {
         const lid = leagueFilt.value, sid = seasonFilt.value, tid = teamFilt.value;
         const visible = gamesCache.filter(g =>
@@ -1271,6 +1274,7 @@ const pages = {
           (!sid || String(g.season_id) === sid) &&
           (!tid || String(g.team_id) === tid || String(g.opponent_id) === tid)
         );
+        countEl.textContent = `${visible.length} game${visible.length !== 1 ? 's' : ''}`;
         if (!visible.length) {
           listEl.innerHTML = '<tr><td colspan="7" class="list-empty">No games found.</td></tr>';
           return;
