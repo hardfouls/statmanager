@@ -9,8 +9,7 @@
   <script>
     (function(){
       const t = localStorage.getItem('sm-theme'); if (t) document.documentElement.setAttribute('data-theme', t);
-      const c = localStorage.getItem('sm-sidebar-collapsed'), p = localStorage.getItem('sm-sidebar-pinned');
-      if (c === '1' && p !== '1') document.body.classList.add('sidebar-collapsed');
+      if (localStorage.getItem('sm-sidebar-collapsed') === '1') document.body.classList.add('sidebar-collapsed');
     })();
   </script>
   <style>
@@ -239,11 +238,8 @@
       transition: color 0.15s, background 0.15s;
     }
 
-    .sidebar-btn:hover:not(:disabled) { background: rgba(255,255,255,0.06); color: var(--text); }
-    .sidebar-btn:disabled { opacity: 0.25; cursor: not-allowed; }
-    .sidebar-pin.pinned { color: var(--accent); }
+    .sidebar-btn:hover { background: rgba(255,255,255,0.06); color: var(--text); }
 
-    body.sidebar-collapsed .sidebar-pin { display: none; }
     body.sidebar-collapsed .menu-label { display: none; }
     body.sidebar-collapsed .menu-item a { justify-content: center; padding: 11px 0; }
 
@@ -739,7 +735,6 @@
 <div class="layout">
   <nav class="sidebar" id="sidebar">
     <div class="sidebar-header">
-      <button class="sidebar-btn sidebar-pin"    id="sidebar-pin"></button>
       <button class="sidebar-btn sidebar-toggle" id="sidebar-toggle"></button>
     </div>
     <ul class="menu" id="menu"></ul>

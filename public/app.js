@@ -2729,41 +2729,23 @@ function initSidebar() {
   const sidebar       = document.getElementById('sidebar');
   const overlay       = document.getElementById('overlay');
   const sidebarToggle = document.getElementById('sidebar-toggle');
-  const sidebarPin    = document.getElementById('sidebar-pin');
 
   const ICON_COLLAPSE = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/><path d="m16 15-3-3 3-3"/></svg>`;
   const ICON_EXPAND   = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/><path d="m14 9 3 3-3 3"/></svg>`;
-  const ICON_PIN      = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1z"/></svg>`;
 
-  let pinned    = localStorage.getItem('sm-sidebar-pinned')    === '1';
   let collapsed = localStorage.getItem('sm-sidebar-collapsed') === '1';
 
-  sidebarPin.innerHTML = ICON_PIN;
-
   function applySidebarState() {
-    if (pinned) collapsed = false;
     document.body.classList.toggle('sidebar-collapsed', collapsed);
-    sidebarPin.classList.toggle('pinned', pinned);
-    sidebarPin.title        = pinned    ? 'Unpin sidebar'    : 'Pin sidebar open';
-    sidebarToggle.innerHTML = collapsed ? ICON_EXPAND        : ICON_COLLAPSE;
-    sidebarToggle.title     = collapsed ? 'Expand sidebar'   : 'Collapse sidebar';
-    sidebarToggle.disabled  = pinned;
+    sidebarToggle.innerHTML = collapsed ? ICON_EXPAND      : ICON_COLLAPSE;
+    sidebarToggle.title     = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
   }
 
   applySidebarState();
 
   sidebarToggle.addEventListener('click', () => {
-    if (pinned) return;
     collapsed = !collapsed;
     localStorage.setItem('sm-sidebar-collapsed', collapsed ? '1' : '0');
-    applySidebarState();
-  });
-
-  sidebarPin.addEventListener('click', () => {
-    pinned = !pinned;
-    if (pinned) collapsed = false;
-    localStorage.setItem('sm-sidebar-pinned',    pinned    ? '1' : '0');
-    localStorage.setItem('sm-sidebar-collapsed', '0');
     applySidebarState();
   });
 
