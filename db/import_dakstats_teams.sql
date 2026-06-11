@@ -21,7 +21,7 @@
 --     occurrence of  src.GENDER + 0  to  1 - (src.GENDER + 0).
 --   • dakstats_history.teams has a TMID column that is referenced
 --     by V_TMID and H_TMID in dakstats_history.competitions.
---   • Team names are taken from SHORTNAME, not LOCATION.
+--   • Team names are taken from TEAMSHORT, not LOCATION.
 --   • No source ID fields are used.  All statmanager IDs are
 --     auto-generated and resolved by joining on name values only.
 -- ============================================================
@@ -55,29 +55,29 @@ WHERE  src.SEASON IS NOT NULL
 ORDER  BY l.id, TRIM(src.SEASON);
 
 -- ── Step 3: Teams ────────────────────────────────────────────
--- One row per unique (SHORTNAME, GENDER) — matches the statmanager
+-- One row per unique (TEAMSHORT, GENDER) — matches the statmanager
 -- unique key uq_teams_name_gender.
 -- Where the same team appears across multiple seasons, take
 -- abbrev and nickname from the most recent season.
 INSERT IGNORE INTO teams (name, abbrev, nickname, gender)
 SELECT
-    TRIM(src.SHORTNAME),
+    TRIM(src.TEAMSHORT),
     NULLIF(TRIM(src.ABBREV),   ''),
     NULLIF(TRIM(src.NICKNAME), ''),
     src.GENDER + 0
 FROM       dakstats_history.teams src
 INNER JOIN (
     SELECT
-        TRIM(SHORTNAME) AS loc,
+        TRIM(TEAMSHORT) AS loc,
         GENDER + 0      AS gen,
         MAX(SEASON)     AS latest_season
     FROM   dakstats_history.teams
-    WHERE  SHORTNAME IS NOT NULL AND TRIM(SHORTNAME) <> ''
-    GROUP  BY TRIM(SHORTNAME), GENDER + 0
-) lv ON  TRIM(src.SHORTNAME) = lv.loc
+    WHERE  TEAMSHORT IS NOT NULL AND TRIM(TEAMSHORT) <> ''
+    GROUP  BY TRIM(TEAMSHORT), GENDER + 0
+) lv ON  TRIM(src.TEAMSHORT) = lv.loc
      AND src.GENDER + 0      = lv.gen
      AND src.SEASON          = lv.latest_season
-WHERE  src.SHORTNAME IS NOT NULL AND TRIM(src.SHORTNAME) <> '';
+WHERE  src.TEAMSHORT IS NOT NULL AND TRIM(src.TEAMSHORT) <> '';
 
 -- ── Step 4: team_seasons ─────────────────────────────────────
 -- Join every source row to the statmanager IDs resolved purely
@@ -92,16 +92,16 @@ FROM       dakstats_history.teams src
 INNER JOIN leagues l  ON  l.name      = TRIM(src.LEAGUE)
 INNER JOIN seasons s  ON  s.league_id = l.id
                       AND s.name      = TRIM(src.SEASON)
-INNER JOIN teams   t  ON  t.name      = TRIM(src.SHORTNAME)
+INNER JOIN teams   t  ON  t.name      = TRIM(src.TEAMSHORT)
                       AND t.gender   <=> src.GENDER + 0
-WHERE  src.SHORTNAME IS NOT NULL AND TRIM(src.SHORTNAME) <> ''
+WHERE  src.TEAMSHORT IS NOT NULL AND TRIM(src.TEAMSHORT) <> ''
   AND  src.LEAGUE    IS NOT NULL AND TRIM(src.LEAGUE)    <> ''
   AND  src.SEASON    IS NOT NULL;
 
 -- ── Step 5: Competitions ─────────────────────────────────────
 -- H_TMID (home team) and V_TMID (visiting team) are resolved to
 -- team names by joining to dakstats_history.teams, which already
--- maps TMID → SHORTNAME (team name), LEAGUE, and GENDER.
+-- maps TMID → TEAMSHORT (team name), LEAGUE, and GENDER.
 -- Those names then resolve to statmanager IDs the same way
 -- Steps 1–4 do — no source ID columns flow into statmanager.
 --
@@ -138,10 +138,10 @@ INNER JOIN seasons                        s
         ON s.league_id           = l.id
        AND s.name                = TRIM(comp.SEASON)
 INNER JOIN teams                          ht
-        ON ht.name               = TRIM(h_src.SHORTNAME)
+        ON ht.name               = TRIM(h_src.TEAMSHORT)
        AND ht.gender            <=> h_src.GENDER + 0
 INNER JOIN teams                          vt
-        ON vt.name               = TRIM(v_src.SHORTNAME)
+        ON vt.name               = TRIM(v_src.TEAMSHORT)
        AND vt.gender            <=> v_src.GENDER + 0
 WHERE  comp.DATE    IS NOT NULL
   AND  comp.SEASON  IS NOT NULL
@@ -192,10 +192,10 @@ INNER JOIN seasons  s
         ON s.league_id               = l.id
        AND s.name                    = TRIM(dcomp.SEASON)
 INNER JOIN teams    ht
-        ON ht.name                   = TRIM(h_src.SHORTNAME)
+        ON ht.name                   = TRIM(h_src.TEAMSHORT)
        AND ht.gender                <=> h_src.GENDER + 0
 INNER JOIN teams    vt
-        ON vt.name                   = TRIM(v_src.SHORTNAME)
+        ON vt.name                   = TRIM(v_src.TEAMSHORT)
        AND vt.gender                <=> v_src.GENDER + 0
 INNER JOIN competitions sm_comp
         ON sm_comp.season_id         = s.id
@@ -203,7 +203,7 @@ INNER JOIN competitions sm_comp
        AND sm_comp.game_date         = DATE(dcomp.DATE)
        AND sm_comp.opponent_id       = vt.id
 INNER JOIN teams    t
-        ON t.name                    = TRIM(tm_src.SHORTNAME)
+        ON t.name                    = TRIM(tm_src.TEAMSHORT)
        AND t.gender                 <=> tm_src.GENDER + 0
 WHERE  p.COMPID    IS NOT NULL
   AND  p.SEASON    IS NOT NULL
@@ -242,16 +242,16 @@ UNION ALL
 SELECT 'source period rows',             COUNT(*)        FROM dakstats_history.periods;
 
 -- Source rows that produced no team_seasons entry
--- (unmatched SHORTNAME, LEAGUE, or SEASON)
-SELECT src.SHORTNAME, src.LEAGUE, src.SEASON, src.GENDER + 0 AS gender
+-- (unmatched TEAMSHORT, LEAGUE, or SEASON)
+SELECT src.TEAMSHORT, src.LEAGUE, src.SEASON, src.GENDER + 0 AS gender
 FROM       dakstats_history.teams src
 LEFT JOIN  leagues l  ON  l.name      = TRIM(src.LEAGUE)
 LEFT JOIN  seasons s  ON  s.league_id = l.id AND s.name = TRIM(src.SEASON)
-LEFT JOIN  teams   t  ON  t.name      = TRIM(src.SHORTNAME)
+LEFT JOIN  teams   t  ON  t.name      = TRIM(src.TEAMSHORT)
                       AND t.gender   <=> src.GENDER + 0
 LEFT JOIN  team_seasons ts ON ts.team_id = t.id AND ts.season_id = s.id
 WHERE  ts.team_id IS NULL
-  AND  src.SHORTNAME IS NOT NULL AND TRIM(src.SHORTNAME) <> '';
+  AND  src.TEAMSHORT IS NOT NULL AND TRIM(src.TEAMSHORT) <> '';
 
 -- Source competitions that were skipped (unresolved team or season)
 SELECT comp.SEASON, comp.H_TMID, comp.V_TMID, DATE(comp.DATE) AS game_date
@@ -260,8 +260,8 @@ LEFT JOIN  dakstats_history.teams         h_src ON h_src.TMID = comp.H_TMID AND 
 LEFT JOIN  dakstats_history.teams         v_src ON v_src.TMID = comp.V_TMID AND TRIM(v_src.SEASON) = TRIM(comp.SEASON)
 LEFT JOIN  leagues                        l     ON l.name     = TRIM(h_src.LEAGUE)
 LEFT JOIN  seasons                        s     ON s.league_id = l.id AND s.name = TRIM(comp.SEASON)
-LEFT JOIN  teams                          ht    ON ht.name    = TRIM(h_src.SHORTNAME) AND ht.gender <=> h_src.GENDER + 0
-LEFT JOIN  teams                          vt    ON vt.name    = TRIM(v_src.SHORTNAME) AND vt.gender <=> v_src.GENDER + 0
+LEFT JOIN  teams                          ht    ON ht.name    = TRIM(h_src.TEAMSHORT) AND ht.gender <=> h_src.GENDER + 0
+LEFT JOIN  teams                          vt    ON vt.name    = TRIM(v_src.TEAMSHORT) AND vt.gender <=> v_src.GENDER + 0
 WHERE  comp.DATE   IS NOT NULL
   AND  comp.SEASON IS NOT NULL
   AND  (s.id IS NULL OR ht.id IS NULL OR vt.id IS NULL);
@@ -275,11 +275,11 @@ LEFT JOIN  dakstats_history.teams         v_src  ON v_src.TMID    = dcomp.V_TMID
 LEFT JOIN  dakstats_history.teams         tm_src ON tm_src.TMID   = p.TMID  AND TRIM(tm_src.SEASON) = TRIM(p.SEASON)
 LEFT JOIN  leagues    l       ON l.name        = TRIM(h_src.LEAGUE)
 LEFT JOIN  seasons    s       ON s.league_id   = l.id AND s.name = TRIM(dcomp.SEASON)
-LEFT JOIN  teams      ht      ON ht.name       = TRIM(h_src.SHORTNAME) AND ht.gender <=> h_src.GENDER + 0
-LEFT JOIN  teams      vt      ON vt.name       = TRIM(v_src.SHORTNAME) AND vt.gender <=> v_src.GENDER + 0
+LEFT JOIN  teams      ht      ON ht.name       = TRIM(h_src.TEAMSHORT) AND ht.gender <=> h_src.GENDER + 0
+LEFT JOIN  teams      vt      ON vt.name       = TRIM(v_src.TEAMSHORT) AND vt.gender <=> v_src.GENDER + 0
 LEFT JOIN  competitions sm_c  ON sm_c.season_id = s.id AND sm_c.team_id = ht.id
                               AND sm_c.game_date = DATE(dcomp.DATE) AND sm_c.opponent_id = vt.id
-LEFT JOIN  teams      t       ON t.name        = TRIM(tm_src.SHORTNAME) AND t.gender <=> tm_src.GENDER + 0
+LEFT JOIN  teams      t       ON t.name        = TRIM(tm_src.TEAMSHORT) AND t.gender <=> tm_src.GENDER + 0
 WHERE  p.COMPID IS NOT NULL AND p.SEASON IS NOT NULL
   AND  (sm_c.id IS NULL OR t.id IS NULL);
 */
