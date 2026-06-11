@@ -107,7 +107,7 @@ WHERE  src.TEAMSHORT IS NOT NULL AND TRIM(src.TEAMSHORT) <> ''
 --
 -- Notes:
 --   • team_id  = home team (H_TMID);  opponent_id = visiting team (V_TMID).
---   • location is taken directly from comp.LOCATION as-is.
+--   • location is populated from comp.ARENA.
 --   • team_score and opponent_score are left NULL — score data is not
 --     present in dakstats_history.competitions.
 --   • Competitions where either team, the season, or the league cannot
@@ -122,7 +122,7 @@ SELECT
     ht.id                                                                 AS team_id,
     DATE(comp.DATE)                                                       AS game_date,
     vt.id                                                                 AS opponent_id,
-    comp.LOCATION                                                             AS location
+    comp.ARENA                                                                AS location
 FROM       dakstats_history.competitions  comp
 INNER JOIN dakstats_history.teams         h_src
         ON h_src.TMID            = comp.H_TMID

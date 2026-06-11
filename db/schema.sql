@@ -105,7 +105,7 @@ CREATE TABLE competitions (
     team_id         SMALLINT UNSIGNED   NOT NULL,
     game_date       DATE                NOT NULL,
     opponent_id     SMALLINT UNSIGNED   NOT NULL,
-    location        VARCHAR(10)         NOT NULL DEFAULT 'Home',
+    location        VARCHAR(25)         NULL,
     PRIMARY KEY (id),
     KEY idx_competitions_season (season_id),
     KEY idx_competitions_team   (team_id),
