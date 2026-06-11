@@ -107,9 +107,7 @@ WHERE  src.TEAMSHORT IS NOT NULL AND TRIM(src.TEAMSHORT) <> ''
 --
 -- Notes:
 --   • team_id  = home team (H_TMID);  opponent_id = visiting team (V_TMID).
---   • location = 'Home' for normal home games; 'Neutral' when the
---     source LOCATION column = 'N'.  Away games are not directly
---     encoded in this source (each game is stored once, home-team first).
+--   • location is taken directly from comp.LOCATION as-is.
 --   • team_score and opponent_score are left NULL — score data is not
 --     present in dakstats_history.competitions.
 --   • Competitions where either team, the season, or the league cannot
@@ -124,7 +122,7 @@ SELECT
     ht.id                                                                 AS team_id,
     DATE(comp.DATE)                                                       AS game_date,
     vt.id                                                                 AS opponent_id,
-    CASE UPPER(TRIM(comp.LOCATION)) WHEN 'N' THEN 'Neutral' ELSE 'Home' END AS location
+    comp.LOCATION                                                             AS location
 FROM       dakstats_history.competitions  comp
 INNER JOIN dakstats_history.teams         h_src
         ON h_src.TMID            = comp.H_TMID
