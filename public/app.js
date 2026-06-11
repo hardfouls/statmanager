@@ -2770,6 +2770,10 @@ function initSidebar() {
 window.addEventListener('hashchange', renderPage);
 
 document.addEventListener('DOMContentLoaded', () => {
+  fetch('api/version').then(r => r.json()).then(d => {
+    if (d.version) document.getElementById('app-version').textContent = `v${d.version}`;
+  }).catch(() => {});
+
   initSidebar();
   renderPage();
 

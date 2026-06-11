@@ -11,6 +11,9 @@ const CONFIG_PATH = path.join(__dirname, 'statmanager.ini');
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+const { version } = require('./package.json');
+app.get('/api/version', (_req, res) => res.json({ version }));
+
 function readConfig() {
   if (!fs.existsSync(CONFIG_PATH)) return {};
   return ini.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
