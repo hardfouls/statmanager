@@ -23,17 +23,33 @@ function writeConfig(config) {
   fs.writeFileSync(CONFIG_PATH, ini.stringify(config), 'utf-8');
 }
 
-app.get('/api/settings', (req, res) => {
+// Returns DB config from env vars (container) or ini file (local dev).
+function getDbConfig() {
+  if (process.env.DB_HOST) {
+    return {
+      host:     process.env.DB_HOST,
+      port:     process.env.DB_PORT     || '3306',
+      name:     process.env.DB_NAME     || '',
+      user:     process.env.DB_USER     || '',
+      password: process.env.DB_PASSWORD || '',
+      ssl:      process.env.DB_SSL === 'true'
+    };
+  }
   const config = readConfig();
-  const db = config.database || {};
+  return config.database || {};
+}
+
+app.get('/api/settings', (req, res) => {
+  const db = getDbConfig();
   res.json({
     database: {
-      host: db.host || 'localhost',
-      port: parseInt(db.port) || 3306,
-      name: db.name || '',
-      user: db.user || '',
+      host:        db.host     || 'localhost',
+      port:        parseInt(db.port) || 3306,
+      name:        db.name     || '',
+      user:        db.user     || '',
       passwordSet: !!db.password
-    }
+    },
+    envConfigured: !!process.env.DB_HOST
   });
 });
 
@@ -62,16 +78,16 @@ app.post('/api/settings', (req, res) => {
 
 app.post('/api/settings/test', async (req, res) => {
   const { database } = req.body;
-  const config = readConfig();
-  const stored = config.database || {};
+  const stored = getDbConfig();
 
   const connConfig = {
-    host: database?.host || stored.host || 'localhost',
-    port: parseInt(database?.port || stored.port) || 3306,
-    database: database?.name || stored.name || undefined,
-    user: database?.user || stored.user || '',
+    host:     database?.host     || stored.host     || 'localhost',
+    port:     parseInt(database?.port || stored.port) || 3306,
+    database: database?.name     || stored.name     || undefined,
+    user:     database?.user     || stored.user     || '',
     password: database?.password || stored.password || '',
-    connectTimeout: 5000
+    connectTimeout: 5000,
+    ...(stored.ssl ? { ssl: {} } : {})
   };
 
   if (!connConfig.user) {
@@ -91,8 +107,7 @@ app.post('/api/settings/test', async (req, res) => {
 });
 
 app.get('/api/summary', async (req, res) => {
-  const config = readConfig();
-  const db = config.database || {};
+  const db = getDbConfig();
 
   if (!db.host || !db.user) {
     return res.json({ configured: false });
@@ -106,7 +121,8 @@ app.get('/api/summary', async (req, res) => {
       database: db.name || undefined,
       user: db.user,
       password: db.password || '',
-      connectTimeout: 5000
+      connectTimeout: 5000,
+      ...(db.ssl ? { ssl: {} } : {})
     });
     const [[row]] = await conn.execute(`
       SELECT
@@ -126,8 +142,7 @@ app.get('/api/summary', async (req, res) => {
 });
 
 app.post('/api/db/create', async (req, res) => {
-  const config = readConfig();
-  const db = config.database || {};
+  const db = getDbConfig();
 
   if (!db.host || !db.user || !db.name) {
     return res.json({ success: false, error: 'Database connection is not fully configured' });
@@ -147,7 +162,8 @@ app.post('/api/db/create', async (req, res) => {
       user: db.user,
       password: db.password || '',
       connectTimeout: 5000,
-      multipleStatements: true
+      multipleStatements: true,
+      ...(db.ssl ? { ssl: {} } : {})
     });
     const safeName = db.name.replace(/`/g, '');
     await conn.query(`CREATE DATABASE IF NOT EXISTS \`${safeName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
@@ -163,19 +179,20 @@ app.post('/api/db/create', async (req, res) => {
 
 // ── DB helper ─────────────────────────────────────────────────────────────────
 async function dbConnect() {
-  const config = readConfig();
-  const db = config.database || {};
+  const db = getDbConfig();
   if (!db.host || !db.user || !db.name) {
     throw Object.assign(new Error('Database not configured'), { code: 'NOT_CONFIGURED' });
   }
-  return mysql.createConnection({
+  const connConfig = {
     host: db.host,
     port: parseInt(db.port) || 3306,
     database: db.name,
     user: db.user,
     password: db.password || '',
     connectTimeout: 5000
-  });
+  };
+  if (db.ssl) connConfig.ssl = {};
+  return mysql.createConnection(connConfig);
 }
 
 // ── Leagues CRUD ──────────────────────────────────────────────────────────────
