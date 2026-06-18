@@ -44,6 +44,14 @@ const MENU_ITEMS = [
     </svg>`
   },
   {
+    label: 'Players',
+    route: 'players',
+    icon: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+      <circle cx="12" cy="7" r="4"/>
+    </svg>`
+  },
+  {
     label: 'Settings',
     route: 'settings',
     icon: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -486,6 +494,7 @@ const pages = {
     async init(params = {}) {
       const backQ = new URLSearchParams();
       if (params.league) backQ.set('league', params.league);
+      if (params.team)   backQ.set('team',   params.team);
       if (params.season) backQ.set('season', params.season);
       const backHash = `#/${params.back || 'teams'}${backQ.toString() ? '?' + backQ : ''}`;
 
@@ -579,7 +588,7 @@ const pages = {
                 </tr>
               </thead>
               <tbody id="season-list">
-                <tr><td colspan="7" class="list-empty">Loading…</td></tr>
+                <tr><td colspan="10" class="list-empty">Loading…</td></tr>
               </tbody>
             </table>
           </div>
@@ -653,7 +662,7 @@ const pages = {
       }
 
       async function loadSeasons() {
-        listEl.innerHTML = '<tr><td colspan="7" class="list-empty">Loading…</td></tr>';
+        listEl.innerHTML = '<tr><td colspan="10" class="list-empty">Loading…</td></tr>';
         try {
           const res  = await fetch('api/seasons');
           const data = await res.json();
@@ -917,7 +926,8 @@ const pages = {
           <div class="section-header">
             <h3 class="section-title">Team Manager</h3>
             <div class="header-controls">
-              <select id="tm-league-filter" class="filter-select"><option value="">All Teams</option></select>
+              <select id="tm-league-filter" class="filter-select"><option value="">All Leagues</option></select>
+              <select id="tm-team-filter"   class="filter-select" disabled><option value="">All Teams</option></select>
               <select id="tm-season-filter" class="filter-select" disabled><option value="">All Seasons</option></select>
               <select id="tm-bulk-action" class="filter-select">
                 <option value=""></option>
@@ -940,7 +950,7 @@ const pages = {
                 </tr>
               </thead>
               <tbody id="team-list">
-                <tr><td colspan="7" class="list-empty">Loading…</td></tr>
+                <tr><td colspan="10" class="list-empty">Loading…</td></tr>
               </tbody>
             </table>
           </div>
@@ -955,6 +965,7 @@ const pages = {
 
       const listEl      = document.getElementById('team-list');
       const leagueFilt  = document.getElementById('tm-league-filter');
+      const teamFilt    = document.getElementById('tm-team-filter');
       const seasonFilt  = document.getElementById('tm-season-filter');
       const checkAll    = document.getElementById('tm-check-all');
       const bulkAction  = document.getElementById('tm-bulk-action');
@@ -968,6 +979,7 @@ const pages = {
         const q = new URLSearchParams({ back: 'teams' });
         if (id)                  q.set('id',     id);
         if (leagueFilt.value)    q.set('league', leagueFilt.value);
+        if (teamFilt.value)      q.set('team',   teamFilt.value);
         if (seasonFilt.value)    q.set('season', seasonFilt.value);
         return `#/team-form?${q}`;
       }
@@ -986,38 +998,54 @@ const pages = {
         allSeasonsCache = sd.seasons || [];
       } catch {}
 
-      leagueFilt.innerHTML = '<option value="">All Teams</option>' +
-        '<option value="unassigned">Unassigned</option>' +
+      leagueFilt.innerHTML = '<option value="">All Leagues</option>' +
         leaguesCache.map(l =>
           `<option value="${l.id}"${String(l.id) === String(params.league) ? ' selected' : ''}>${escapeHtml(l.name)}</option>`
         ).join('');
 
-      function refreshSeasonFilter(selectedId = '') {
+      function refreshTeamFilter(selectedId = '') {
         const lid = leagueFilt.value;
-        const leagueSeasons = (lid && lid !== 'unassigned')
-          ? allSeasonsCache.filter(s => String(s.league_id) === lid)
-          : [];
-        if (leagueSeasons.length > 0) {
-          seasonFilt.disabled = false;
-          seasonFilt.innerHTML = '<option value="">All Seasons</option>' +
-            leagueSeasons.map(s =>
-              `<option value="${s.id}"${String(s.id) === String(selectedId) ? ' selected' : ''}>${escapeHtml(s.name)}</option>`
-            ).join('');
-        } else {
-          seasonFilt.disabled = true;
-          seasonFilt.innerHTML = '<option value="">All Seasons</option>';
+        if (!lid) {
+          teamFilt.disabled = true;
+          teamFilt.innerHTML = '<option value="">All Teams</option>';
+          return;
         }
+        teamFilt.disabled = false;
+        teamFilt.innerHTML = '<option value="">All Teams</option>' +
+          teamsCache
+            .filter(t => String(t.league_id) === lid)
+            .map(t =>
+              `<option value="${t.id}"${String(t.id) === String(selectedId) ? ' selected' : ''}>${escapeHtml(t.name)}</option>`
+            ).join('');
       }
 
-      refreshSeasonFilter(params.season);
+      function refreshSeasonFilter(selectedId = '') {
+        const lid = leagueFilt.value, tid = teamFilt.value;
+        if (!lid) {
+          seasonFilt.disabled = true;
+          seasonFilt.innerHTML = '<option value="">All Seasons</option>';
+          return;
+        }
+        seasonFilt.disabled = false;
+        let leagueSeasons = allSeasonsCache.filter(s => String(s.league_id) === lid);
+        if (tid) {
+          const teamRow = teamsCache.find(t => t.id === parseInt(tid) && String(t.league_id) === lid);
+          const teamSeasonIds = String(teamRow?.season_ids || '').split(',').filter(Boolean);
+          leagueSeasons = leagueSeasons.filter(s => teamSeasonIds.includes(String(s.id)));
+        }
+        seasonFilt.innerHTML = '<option value="">All Seasons</option>' +
+          leagueSeasons.map(s =>
+            `<option value="${s.id}"${String(s.id) === String(selectedId) ? ' selected' : ''}>${escapeHtml(s.name)}</option>`
+          ).join('');
+      }
 
       const countEl = document.getElementById('tm-count');
 
       function renderRows() {
-        const lid = leagueFilt.value, sid = seasonFilt.value;
+        const lid = leagueFilt.value, tid = teamFilt.value, sid = seasonFilt.value;
         const visible = teamsCache.filter(t => {
-          if (lid === 'unassigned') return !t.league_id;
           if (lid && String(t.league_id) !== lid) return false;
+          if (tid && String(t.id) !== String(tid)) return false;
           if (sid && !String(t.season_ids || '').split(',').includes(sid)) return false;
           return true;
         });
@@ -1029,20 +1057,20 @@ const pages = {
         }
         const gl = g => g == null ? '—' : Number(g) === 0 ? 'Male' : 'Female';
         listEl.innerHTML = visible.map(t => {
-          const lid = t.league_id || '';
+          const rowLid = t.league_id || '';
           const nameLabel = `${escapeHtml(t.name)} (${t.league_name ? escapeHtml(t.league_name) : 'Unassigned'})`;
           return `
           <tr>
-            <td class="col-check"><input type="checkbox" class="row-check" data-id="${t.id}" data-league-id="${lid}"></td>
-            <td><button class="tbl-link name-btn" data-id="${t.id}" data-league-id="${lid}">${nameLabel}</button></td>
+            <td class="col-check"><input type="checkbox" class="row-check" data-id="${t.id}" data-league-id="${rowLid}"></td>
+            <td><button class="tbl-link name-btn" data-id="${t.id}" data-league-id="${rowLid}">${nameLabel}</button></td>
             <td>${gl(t.gender)}</td>
             <td>${escapeHtml(t.coach || '—')}</td>
             <td class="col-num">${Number(t.season_count)}</td>
             <td class="col-num">${Number(t.game_count)}</td>
             <td class="col-actions">
-              <button class="btn-icon add-season-btn" data-id="${t.id}" data-league-id="${lid}" title="Add to Season">${ADD_SEASON_ICON}</button>
-              <button class="btn-icon edit-btn" data-id="${t.id}" data-league-id="${lid}" title="Edit">${EDIT_ICON}</button>
-              <button class="btn-icon delete-btn" data-id="${t.id}" data-league-id="${lid}" title="Delete">${DELETE_ICON}</button>
+              <button class="btn-icon add-season-btn" data-id="${t.id}" data-league-id="${rowLid}" title="Add to Season">${ADD_SEASON_ICON}</button>
+              <button class="btn-icon edit-btn" data-id="${t.id}" data-league-id="${rowLid}" title="Edit">${EDIT_ICON}</button>
+              <button class="btn-icon delete-btn" data-id="${t.id}" data-league-id="${rowLid}" title="Delete">${DELETE_ICON}</button>
             </td>
           </tr>`;
         }).join('');
@@ -1050,17 +1078,19 @@ const pages = {
       }
 
       async function loadTeams() {
-        listEl.innerHTML = '<tr><td colspan="7" class="list-empty">Loading…</td></tr>';
+        listEl.innerHTML = '<tr><td colspan="10" class="list-empty">Loading…</td></tr>';
         try {
           const res  = await fetch('api/teams');
           const data = await res.json();
           if (data.error) { listEl.innerHTML = `<tr><td colspan="7" class="list-empty">${escapeHtml(data.error)}</td></tr>`; return; }
           teamsCache = data.teams;
+          refreshTeamFilter(teamFilt.value);
           renderRows();
         } catch { listEl.innerHTML = '<tr><td colspan="7" class="list-empty">Could not load teams.</td></tr>'; }
       }
 
-      leagueFilt.addEventListener('change', () => { refreshSeasonFilter(); renderRows(); });
+      leagueFilt.addEventListener('change', () => { refreshTeamFilter(); refreshSeasonFilter(); renderRows(); });
+      teamFilt.addEventListener('change',   () => { refreshSeasonFilter(); renderRows(); });
       seasonFilt.addEventListener('change', renderRows);
 
       checkAll.addEventListener('change', () => {
@@ -1114,7 +1144,6 @@ const pages = {
 
           if (teamIds.length < 2) {
             if (checked.length >= 2) {
-              // Same team ID — check if it spans multiple leagues
               const leagueIds = [...new Set(checked.map(cb => cb.dataset.leagueId).filter(Boolean))];
               if (leagueIds.length >= 2) {
                 alert('Teams from different leagues cannot be merged.\n\nTo remove an incorrect league assignment, use the Delete button on that row.');
@@ -1183,6 +1212,11 @@ const pages = {
       });
 
       await loadTeams();
+      if (params.team || params.season) {
+        refreshTeamFilter(params.team);
+        refreshSeasonFilter(params.season);
+        renderRows();
+      }
     }
   },
 
@@ -1548,6 +1582,585 @@ const pages = {
     }
   },
 
+  players: {
+    render() {
+      return `
+        <h2 class="page-title">Players</h2>
+        <div class="card">
+          <div class="section-header">
+            <h3 class="section-title">Player Manager</h3>
+            <div class="header-controls">
+              <select id="pl-league-filter" class="filter-select"><option value="">All Leagues</option></select>
+              <select id="pl-team-filter"   class="filter-select" disabled><option value="">All Teams</option></select>
+              <select id="pl-season-filter" class="filter-select" disabled><option value="">All Seasons</option></select>
+              <button class="btn btn-primary btn-sm" id="new-player-btn">+ New Player</button>
+            </div>
+          </div>
+          <div id="pl-count" class="list-count"></div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th class="col-num">Teams</th>
+                  <th class="col-num">Seasons</th>
+                  <th class="col-num">Games</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="player-list">
+                <tr><td colspan="5" class="list-empty">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    },
+
+    async init(params = {}) {
+      let playersCache    = [];
+      let leaguesCache    = [];
+      let allSeasonsCache = [];
+      let allTeamsCache   = [];
+
+      const listEl     = document.getElementById('player-list');
+      const leagueFilt = document.getElementById('pl-league-filter');
+      const seasonFilt = document.getElementById('pl-season-filter');
+      const teamFilt   = document.getElementById('pl-team-filter');
+      const countEl    = document.getElementById('pl-count');
+
+      try {
+        const [lr, sr, tr] = await Promise.all([fetch('api/leagues'), fetch('api/seasons'), fetch('api/teams')]);
+        const [ld, sd, td] = await Promise.all([lr.json(), sr.json(), tr.json()]);
+        leaguesCache    = ld.leagues || [];
+        allSeasonsCache = sd.seasons || [];
+        allTeamsCache   = td.teams   || [];
+      } catch {}
+
+      leagueFilt.innerHTML = '<option value="">All Leagues</option>' +
+        leaguesCache.map(l =>
+          `<option value="${l.id}"${String(l.id) === String(params.league) ? ' selected' : ''}>${escapeHtml(l.name)}</option>`
+        ).join('');
+
+      function refreshSeasonFilter(selectedId = '') {
+        const lid = leagueFilt.value;
+        const filtered = lid ? allSeasonsCache.filter(s => String(s.league_id) === lid) : [];
+        if (filtered.length) {
+          seasonFilt.disabled = false;
+          seasonFilt.innerHTML = '<option value="">All Seasons</option>' +
+            filtered.map(s =>
+              `<option value="${s.id}"${String(s.id) === String(selectedId) ? ' selected' : ''}>${escapeHtml(s.name)}</option>`
+            ).join('');
+        } else {
+          seasonFilt.disabled = true;
+          seasonFilt.innerHTML = '<option value="">All Seasons</option>';
+        }
+      }
+
+      function refreshTeamFilter(selectedId = '') {
+        const lid = leagueFilt.value, sid = seasonFilt.value;
+        const leagueSeasonIds = lid
+          ? allSeasonsCache.filter(s => String(s.league_id) === lid).map(s => String(s.id))
+          : [];
+        const seen = new Map();
+        for (const t of allTeamsCache) { if (!seen.has(t.id)) seen.set(t.id, t); }
+        const unique = [...seen.values()].filter(t => {
+          if (!lid && !sid) return false;
+          const rowSeasonIds = allTeamsCache
+            .filter(r => r.id === t.id)
+            .flatMap(r => String(r.season_ids || '').split(',').filter(Boolean));
+          if (sid) return rowSeasonIds.includes(String(sid));
+          return rowSeasonIds.some(s => leagueSeasonIds.includes(s));
+        });
+        if (lid || sid) {
+          teamFilt.disabled = false;
+          teamFilt.innerHTML = '<option value="">All Teams</option>' +
+            unique.map(t =>
+              `<option value="${t.id}"${String(t.id) === String(selectedId) ? ' selected' : ''}>${escapeHtml(t.name)}</option>`
+            ).join('');
+        } else {
+          teamFilt.disabled = true;
+          teamFilt.innerHTML = '<option value="">All Teams</option>';
+        }
+      }
+
+      refreshSeasonFilter(params.season);
+      refreshTeamFilter(params.team);
+
+      function renderRows() {
+        const lid = leagueFilt.value, sid = seasonFilt.value, tid = teamFilt.value;
+        const visible = playersCache.filter(p => {
+          if (lid && !String(p.league_ids || '').split(',').includes(lid)) return false;
+          if (sid && !String(p.season_ids || '').split(',').includes(sid)) return false;
+          if (tid && !String(p.team_ids   || '').split(',').includes(tid)) return false;
+          return true;
+        });
+        countEl.textContent = `${visible.length} player${visible.length !== 1 ? 's' : ''}`;
+        if (!visible.length) {
+          listEl.innerHTML = '<tr><td colspan="5" class="list-empty">No players found.</td></tr>';
+          return;
+        }
+        listEl.innerHTML = visible.map(p => `
+          <tr>
+            <td><button class="tbl-link prof-btn" data-id="${p.id}">${escapeHtml(p.last_name)}, ${escapeHtml(p.first_name)}</button></td>
+            <td class="col-num">${Number(p.team_count)}</td>
+            <td class="col-num">${Number(p.season_count)}</td>
+            <td class="col-num">${Number(p.game_count)}</td>
+            <td class="col-actions">
+              <button class="btn-icon edit-btn" data-id="${p.id}" title="Edit">${EDIT_ICON}</button>
+              <button class="btn-icon delete-btn" data-id="${p.id}" title="Delete">${DELETE_ICON}</button>
+            </td>
+          </tr>`).join('');
+      }
+
+      async function loadPlayers() {
+        listEl.innerHTML = '<tr><td colspan="5" class="list-empty">Loading…</td></tr>';
+        try {
+          const res  = await fetch('api/players');
+          const data = await res.json();
+          if (data.error) { listEl.innerHTML = `<tr><td colspan="5" class="list-empty">${escapeHtml(data.error)}</td></tr>`; return; }
+          playersCache = data.players;
+          renderRows();
+        } catch { listEl.innerHTML = '<tr><td colspan="5" class="list-empty">Could not load players.</td></tr>'; }
+      }
+
+      function playerFormHash(id = null) {
+        const q = new URLSearchParams({ back: 'players' });
+        if (id)               q.set('id',     id);
+        if (leagueFilt.value) q.set('league', leagueFilt.value);
+        if (seasonFilt.value) q.set('season', seasonFilt.value);
+        if (teamFilt.value)   q.set('team',   teamFilt.value);
+        return `#/player-form?${q}`;
+      }
+
+      function playerProfileHash(id) {
+        const q = new URLSearchParams({ id });
+        if (leagueFilt.value) q.set('league', leagueFilt.value);
+        if (seasonFilt.value) q.set('season', seasonFilt.value);
+        if (teamFilt.value)   q.set('team',   teamFilt.value);
+        return `#/player-profile?${q}`;
+      }
+
+      leagueFilt.addEventListener('change', () => { refreshSeasonFilter(); refreshTeamFilter(); renderRows(); });
+      seasonFilt.addEventListener('change', () => { refreshTeamFilter(teamFilt.value); renderRows(); });
+      teamFilt.addEventListener('change', renderRows);
+
+      document.getElementById('new-player-btn').addEventListener('click', () => {
+        window.location.hash = playerFormHash();
+      });
+
+      listEl.addEventListener('click', async e => {
+        const profBtn = e.target.closest('.prof-btn');
+        const editBtn = e.target.closest('.edit-btn');
+        const delBtn  = e.target.closest('.delete-btn');
+        if (profBtn) {
+          window.location.hash = playerProfileHash(profBtn.dataset.id);
+        }
+        if (editBtn) {
+          window.location.hash = playerFormHash(editBtn.dataset.id);
+        }
+        if (delBtn) {
+          const id = parseInt(delBtn.dataset.id);
+          const p  = playersCache.find(x => x.id === id);
+          const label = p ? `${p.last_name}, ${p.first_name}` : 'this player';
+          if (!confirm(`Delete "${label}"?\n\nPlayers with game stats cannot be deleted.`)) return;
+          delBtn.disabled = true;
+          try {
+            const res = await fetch(`api/players/${id}`, { method: 'DELETE' });
+            const d   = await res.json();
+            if (d.success) { await loadPlayers(); } else { alert(d.error || 'Delete failed'); delBtn.disabled = false; }
+          } catch { alert('Request failed'); delBtn.disabled = false; }
+        }
+      });
+
+      await loadPlayers();
+    }
+  },
+
+  'player-form': {
+    menuRoute: 'players',
+    render() {
+      return `
+        <h2 class="page-title" id="pf-page-title">New Player</h2>
+        <div class="card">
+          <form id="pf-form" novalidate style="padding:4px 0">
+            <div class="two-col">
+              <div class="form-group">
+                <label for="pf-first-name">First Name <span style="color:var(--accent)">*</span></label>
+                <input type="text" id="pf-first-name" autocomplete="off" spellcheck="false">
+              </div>
+              <div class="form-group">
+                <label for="pf-last-name">Last Name <span style="color:var(--accent)">*</span></label>
+                <input type="text" id="pf-last-name" autocomplete="off" spellcheck="false">
+              </div>
+            </div>
+            <div class="two-col">
+              <div class="form-group">
+                <label for="pf-position">Position</label>
+                <input type="text" id="pf-position" autocomplete="off" spellcheck="false" maxlength="10">
+              </div>
+              <div class="form-group">
+                <label for="pf-height">Height</label>
+                <input type="text" id="pf-height" autocomplete="off" spellcheck="false" maxlength="8">
+              </div>
+            </div>
+            <div class="two-col">
+              <div class="form-group">
+                <label for="pf-year">Year</label>
+                <input type="text" id="pf-year" autocomplete="off" spellcheck="false" maxlength="10">
+              </div>
+              <div class="form-group">
+                <label for="pf-misc1">Misc</label>
+                <input type="text" id="pf-misc1" autocomplete="off" maxlength="30">
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="pf-notes">Notes</label>
+              <input type="text" id="pf-notes" autocomplete="off">
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary" id="pf-save">Save</button>
+              <button type="button" class="btn btn-secondary" id="pf-cancel">Cancel</button>
+            </div>
+            <div class="status-msg" id="pf-status"></div>
+          </form>
+        </div>`;
+    },
+
+    async init(params = {}) {
+      const backQ = new URLSearchParams();
+      if (params.league) backQ.set('league', params.league);
+      if (params.season) backQ.set('season', params.season);
+      if (params.team)   backQ.set('team',   params.team);
+      if (params.back === 'player-profile' && params.id) backQ.set('id', params.id);
+      const backHash = `#/${params.back || 'players'}${backQ.toString() ? '?' + backQ : ''}`;
+
+      let player = null;
+      if (params.id) {
+        document.getElementById('pf-page-title').textContent = 'Edit Player';
+        try {
+          const data = await fetch(`api/players/${params.id}`).then(r => r.json());
+          player = data.player ?? null;
+        } catch {}
+      }
+
+      if (player) {
+        setValue('pf-first-name', player.first_name);
+        setValue('pf-last-name',  player.last_name);
+        setValue('pf-position',   player.position);
+        setValue('pf-height',     player.height);
+        setValue('pf-year',       player.year);
+        setValue('pf-misc1',      player.misc1);
+        setValue('pf-notes',      player.notes);
+      }
+
+      document.getElementById('pf-cancel').addEventListener('click', () => {
+        window.location.hash = backHash;
+      });
+
+      document.getElementById('pf-form').addEventListener('submit', async e => {
+        e.preventDefault();
+        const btn  = document.getElementById('pf-save');
+        const body = {
+          first_name: document.getElementById('pf-first-name').value.trim(),
+          last_name:  document.getElementById('pf-last-name').value.trim(),
+          position:   document.getElementById('pf-position').value.trim() || null,
+          height:     document.getElementById('pf-height').value.trim()   || null,
+          year:       document.getElementById('pf-year').value.trim()     || null,
+          misc1:      document.getElementById('pf-misc1').value.trim()    || null,
+          notes:      document.getElementById('pf-notes').value.trim()    || null,
+        };
+        if (!body.first_name || !body.last_name) {
+          showStatus('pf-status', 'error', 'First name and last name are required.');
+          return;
+        }
+        btn.disabled = true; btn.textContent = 'Saving…';
+        try {
+          const res  = await fetch(player ? `api/players/${player.id}` : 'api/players', {
+            method:  player ? 'PUT' : 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify(body)
+          });
+          const data = await res.json();
+          if (data.success || data.id) {
+            window.location.hash = backHash;
+          } else {
+            showStatus('pf-status', 'error', data.error || 'Save failed');
+          }
+        } catch {
+          showStatus('pf-status', 'error', 'Request failed — is the server running?');
+        } finally {
+          btn.disabled = false; btn.textContent = 'Save';
+        }
+      });
+
+      if (window.matchMedia('(hover: hover)').matches)
+        document.getElementById('pf-first-name').focus();
+    }
+  },
+
+  'player-profile': {
+    menuRoute: 'players',
+    render() {
+      return `
+        <style>
+          #pp-season-tbody tr { cursor: pointer; }
+          #pp-season-tbody tr:hover { background: var(--surface2); }
+          #pp-season-tbody tr.pp-selected { background: var(--surface2); box-shadow: inset 3px 0 0 var(--accent); }
+        </style>
+        <div class="header-controls" style="margin-bottom:12px">
+          <h2 class="page-title" style="margin:0">Player Profile</h2>
+          <button class="btn btn-secondary btn-sm" id="pp-back">← Players</button>
+        </div>
+        <div class="card" style="margin-bottom:12px">
+          <div style="display:flex;align-items:center;gap:16px">
+            <div style="flex-shrink:0;width:56px;height:56px;background:var(--surface2);border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--text-muted)">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                <circle cx="12" cy="7" r="4"/>
+              </svg>
+            </div>
+            <div style="flex:1;min-width:0">
+              <div id="pp-player-name" style="font-size:1.1em;font-weight:600;color:var(--accent)">Loading…</div>
+              <div id="pp-player-attrs" style="color:var(--text-muted);font-size:0.85em;margin-top:4px;display:none"></div>
+              <div id="pp-player-notes" style="color:var(--text-muted);margin-top:4px;display:none"></div>
+            </div>
+            <button class="btn btn-secondary btn-sm" id="pp-edit-btn" style="align-self:flex-start">Edit Player</button>
+          </div>
+        </div>
+        <div class="card" style="margin-bottom:12px">
+          <h3 class="section-title">Seasons</h3>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Season</th>
+                <th>Team</th>
+                <th class="col-num">#</th>
+                <th class="col-num">GP</th>
+                <th class="col-num">GS</th>
+                <th class="col-num">PPG</th>
+                <th class="col-num">RBG</th>
+                <th class="col-num">APG</th>
+                <th class="col-num">SPG</th>
+                <th class="col-num">TO</th>
+              </tr>
+            </thead>
+            <tbody id="pp-season-tbody">
+              <tr><td colspan="10" class="list-empty">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div id="pp-games-card" class="card" style="display:none">
+          <h3 class="section-title" id="pp-games-title">Games</h3>
+          <div style="overflow-x:auto">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Opponent</th>
+                  <th class="col-num">MIN</th>
+                  <th class="col-num">PTS</th>
+                  <th class="col-num">REB</th>
+                  <th class="col-num">AST</th>
+                  <th class="col-num">STL</th>
+                  <th class="col-num">BLK</th>
+                  <th class="col-num">TO</th>
+                  <th class="col-num">PF</th>
+                  <th>FG</th>
+                  <th>3P</th>
+                  <th>FT</th>
+                </tr>
+              </thead>
+              <tbody id="pp-games-tbody">
+                <tr><td colspan="13" class="list-empty">Select a season to view games.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>`;
+    },
+
+    async init(params = {}) {
+      const backQ = new URLSearchParams();
+      if (params.league) backQ.set('league', params.league);
+      if (params.season) backQ.set('season', params.season);
+      if (params.team)   backQ.set('team',   params.team);
+      const backHash = `#/players${backQ.toString() ? '?' + backQ : ''}`;
+
+      document.getElementById('pp-back').addEventListener('click', () => {
+        window.location.hash = backHash;
+      });
+
+      if (!params.id) {
+        document.getElementById('pp-player-name').textContent = 'No player specified.';
+        document.getElementById('pp-season-tbody').innerHTML =
+          '<tr><td colspan="5" class="list-empty">No player specified.</td></tr>';
+        return;
+      }
+
+      try {
+        const data = await fetch(`api/players/${params.id}`).then(r => r.json());
+        if (data.error || !data.player) {
+          document.getElementById('pp-player-name').textContent = data.error || 'Player not found.';
+          document.getElementById('pp-season-tbody').innerHTML =
+            `<tr><td colspan="10" class="list-empty">${escapeHtml(data.error || 'Player not found.')}</td></tr>`;
+          return;
+        }
+
+        const { player, seasons } = data;
+
+        document.getElementById('pp-player-name').textContent =
+          `${player.first_name} ${player.last_name}`;
+
+        const attrs = [player.position, player.height, player.year, player.misc1].filter(Boolean);
+        if (attrs.length) {
+          const attrsEl = document.getElementById('pp-player-attrs');
+          attrsEl.textContent = attrs.join('  ·  ');
+          attrsEl.style.display = '';
+        }
+
+        if (player.notes) {
+          const notesEl = document.getElementById('pp-player-notes');
+          notesEl.textContent = player.notes;
+          notesEl.style.display = '';
+        }
+
+        document.getElementById('pp-edit-btn').addEventListener('click', () => {
+          const q = new URLSearchParams({ id: params.id, back: 'player-profile' });
+          if (params.league) q.set('league', params.league);
+          if (params.season) q.set('season', params.season);
+          if (params.team)   q.set('team',   params.team);
+          window.location.hash = `#/player-form?${q}`;
+        });
+
+        const seasonsEl = document.getElementById('pp-season-tbody');
+        const gamesCard = document.getElementById('pp-games-card');
+        const gamesTbody = document.getElementById('pp-games-tbody');
+        const gamesTitle = document.getElementById('pp-games-title');
+
+        if (!seasons.length) {
+          seasonsEl.innerHTML = '<tr><td colspan="10" class="list-empty">No seasons on record.</td></tr>';
+        } else {
+          const totalGames = seasons.reduce((sum, s) => sum + Number(s.game_count), 0);
+          const totalGs    = seasons.reduce((sum, s) => sum + Number(s.gs       || 0), 0);
+          const totalPts   = seasons.reduce((sum, s) => sum + Number(s.total_pts || 0), 0);
+          const totalReb   = seasons.reduce((sum, s) => sum + Number(s.total_reb || 0), 0);
+          const totalAst   = seasons.reduce((sum, s) => sum + Number(s.total_ast || 0), 0);
+          const totalStl   = seasons.reduce((sum, s) => sum + Number(s.total_stl || 0), 0);
+          const totalTo    = seasons.reduce((sum, s) => sum + Number(s.total_to  || 0), 0);
+          const cavg = (n) => totalGames > 0 ? (n / totalGames).toFixed(1) : '—';
+          seasonsEl.innerHTML = seasons.map(s => {
+            const gp   = Number(s.game_count) || 0;
+            const avg  = n => gp > 0 ? (Number(n || 0) / gp).toFixed(1) : '—';
+            return `
+            <tr data-season-id="${s.season_id}" data-team-id="${s.team_id}"
+                data-label="${escapeHtml(s.season_name)} — ${escapeHtml(s.team_name)}">
+              <td>${escapeHtml(s.season_name)}</td>
+              <td>${escapeHtml(s.team_name)}</td>
+              <td class="col-num">${s.jersey_number}</td>
+              <td class="col-num">${gp}</td>
+              <td class="col-num">${Number(s.gs || 0)}</td>
+              <td class="col-num">${s.ppg !== null ? Number(s.ppg).toFixed(1) : '—'}</td>
+              <td class="col-num">${avg(s.total_reb)}</td>
+              <td class="col-num">${avg(s.total_ast)}</td>
+              <td class="col-num">${avg(s.total_stl)}</td>
+              <td class="col-num">${avg(s.total_to)}</td>
+            </tr>`;
+          }).join('') + `
+            <tr data-season-id="all" style="border-top:1px solid var(--border);font-weight:600;color:var(--text-muted);cursor:pointer">
+              <td>Career</td>
+              <td></td>
+              <td></td>
+              <td class="col-num">${totalGames}</td>
+              <td class="col-num">${totalGs}</td>
+              <td class="col-num">${cavg(totalPts)}</td>
+              <td class="col-num">${cavg(totalReb)}</td>
+              <td class="col-num">${cavg(totalAst)}</td>
+              <td class="col-num">${cavg(totalStl)}</td>
+              <td class="col-num">${cavg(totalTo)}</td>
+            </tr>`;
+
+          seasonsEl.addEventListener('click', async e => {
+            const row = e.target.closest('tr[data-season-id]');
+            if (!row) return;
+
+            seasonsEl.querySelectorAll('tr').forEach(r => r.classList.remove('pp-selected'));
+            row.classList.add('pp-selected');
+
+            const sid   = row.dataset.seasonId;
+            const tid   = row.dataset.teamId;
+            const label = row.dataset.label || 'All Seasons';
+
+            gamesTitle.textContent = `Games — ${label}`;
+            gamesCard.style.display = '';
+            gamesTbody.innerHTML = '<tr><td colspan="13" class="list-empty">Loading…</td></tr>';
+
+            try {
+              const url = sid === 'all'
+                ? `api/players/${params.id}/games`
+                : `api/players/${params.id}/games?season_id=${sid}&team_id=${tid}`;
+              const gd = await fetch(url).then(r => r.json());
+              if (gd.error || !gd.games.length) {
+                gamesTbody.innerHTML = `<tr><td colspan="13" class="list-empty">${escapeHtml(gd.error || 'No games found.')}</td></tr>`;
+                return;
+              }
+              const totals = { min:0, pts:0, reb:0, ast:0, stl:0, blk:0, to:0, pf:0 };
+              const rows = gd.games.map(g => {
+                totals.min += Number(g.min) || 0;
+                totals.pts += Number(g.pts) || 0;
+                totals.reb += Number(g.reb) || 0;
+                totals.ast += Number(g.ast) || 0;
+                totals.stl += Number(g.stl) || 0;
+                totals.blk += Number(g.blk) || 0;
+                totals.to  += Number(g.to)  || 0;
+                totals.pf  += Number(g.pf)  || 0;
+                const date = g.game_date ? String(g.game_date).slice(0, 10) : '—';
+                const opp  = (g.home_away === 'H' ? 'vs. ' : '@ ') + escapeHtml(g.opponent_name);
+                return `<tr>
+                  <td style="white-space:nowrap">${date}</td>
+                  <td>${opp}</td>
+                  <td class="col-num">${fmtMin(g.min)}</td>
+                  <td class="col-num">${g.pts}</td>
+                  <td class="col-num">${g.reb}</td>
+                  <td class="col-num">${g.ast}</td>
+                  <td class="col-num">${g.stl}</td>
+                  <td class="col-num">${g.blk}</td>
+                  <td class="col-num">${g.to}</td>
+                  <td class="col-num">${g.pf}</td>
+                  <td>${g.fgm}/${g.fga}</td>
+                  <td>${g.tpm}/${g.tpa}</td>
+                  <td>${g.ftm}/${g.fta}</td>
+                </tr>`;
+              });
+              const summaryRow = `
+                <tr style="border-top:1px solid var(--border);font-weight:600;color:var(--text-muted)">
+                  <td>Total</td>
+                  <td></td>
+                  <td class="col-num">${fmtMin(totals.min)}</td>
+                  <td class="col-num">${totals.pts}</td>
+                  <td class="col-num">${totals.reb}</td>
+                  <td class="col-num">${totals.ast}</td>
+                  <td class="col-num">${totals.stl}</td>
+                  <td class="col-num">${totals.blk}</td>
+                  <td class="col-num">${totals.to}</td>
+                  <td class="col-num">${totals.pf}</td>
+                  <td></td><td></td><td></td>
+                </tr>`;
+              gamesTbody.innerHTML = rows.join('') + summaryRow;
+            } catch {
+              gamesTbody.innerHTML = '<tr><td colspan="13" class="list-empty">Could not load games.</td></tr>';
+            }
+          });
+
+          seasonsEl.querySelector('tr[data-season-id="all"]').click();
+        }
+      } catch {
+        document.getElementById('pp-player-name').textContent = 'Could not load player profile.';
+        document.getElementById('pp-season-tbody').innerHTML =
+          '<tr><td colspan="10" class="list-empty">Could not load player profile.</td></tr>';
+      }
+    }
+  },
+
   home: {
     render() {
       return `
@@ -1567,18 +2180,18 @@ const pages = {
               <span class="summary-count" id="s-teams">—</span>
               <span class="summary-label">Teams</span>
             </a>
-            <div class="summary-tile">
+            <a class="summary-tile is-link" href="#/games">
               <span class="summary-count" id="s-competitions">—</span>
-              <span class="summary-label">Competitions</span>
-            </div>
+              <span class="summary-label">Games</span>
+            </a>
             <div class="summary-tile">
               <span class="summary-count" id="s-boxscores">—</span>
               <span class="summary-label">Boxscores</span>
             </div>
-            <div class="summary-tile">
+            <a class="summary-tile is-link" href="#/players">
               <span class="summary-count" id="s-players">—</span>
               <span class="summary-label">Players</span>
-            </div>
+            </a>
           </div>
           <p class="summary-msg" id="summary-msg"></p>
         </div>
@@ -1836,6 +2449,11 @@ function applyTheme(theme) {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+function fmtMin(sec) {
+  const s = Number(sec) || 0;
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
 function escapeHtml(str) {
   if (!str) return '';
   return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');

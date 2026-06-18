@@ -77,6 +77,10 @@ CREATE TABLE players (
     first_name  VARCHAR(50)         NOT NULL,
     last_name   VARCHAR(50)         NOT NULL,
     notes       VARCHAR(255)        NULL,
+    position    VARCHAR(10)         NULL,
+    height      VARCHAR(8)          NULL,
+    `year`      VARCHAR(10)         NULL,
+    misc1       VARCHAR(30)         NULL,
     PRIMARY KEY (id),
     KEY idx_players_name (last_name, first_name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -87,14 +91,19 @@ CREATE TABLE players (
 CREATE TABLE player_seasons (
     player_id       INT UNSIGNED        NOT NULL,
     season_id       SMALLINT UNSIGNED   NOT NULL,
+    team_id         SMALLINT UNSIGNED   NOT NULL,
     jersey_number   TINYINT UNSIGNED    NOT NULL,
-    PRIMARY KEY (player_id, season_id),
+    PRIMARY KEY (player_id, season_id, team_id),
     KEY idx_player_seasons_season (season_id),
+    KEY idx_player_seasons_team   (team_id),
     CONSTRAINT fk_ps_player
         FOREIGN KEY (player_id) REFERENCES players (id)
         ON UPDATE CASCADE ON DELETE RESTRICT,
     CONSTRAINT fk_ps_season
         FOREIGN KEY (season_id) REFERENCES seasons (id)
+        ON UPDATE CASCADE ON DELETE RESTRICT,
+    CONSTRAINT fk_ps_team
+        FOREIGN KEY (team_id) REFERENCES teams (id)
         ON UPDATE CASCADE ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -145,7 +154,7 @@ CREATE TABLE boxscores (
     competition_id  INT UNSIGNED        NOT NULL,
     player_id       INT UNSIGNED        NOT NULL,
     jersey_number   TINYINT UNSIGNED    NOT NULL,       -- number actually worn in this game
-    min             TINYINT UNSIGNED    NOT NULL DEFAULT 0,
+    min             SMALLINT UNSIGNED   NOT NULL DEFAULT 0,  -- stored as total seconds
     fgm             TINYINT UNSIGNED    NOT NULL DEFAULT 0,
     fga             TINYINT UNSIGNED    NOT NULL DEFAULT 0,
     tpm             TINYINT UNSIGNED    NOT NULL DEFAULT 0,   -- 3-pointers made
