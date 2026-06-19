@@ -78,8 +78,6 @@ CREATE TABLE players (
     last_name   VARCHAR(50)         NOT NULL,
     notes       VARCHAR(255)        NULL,
     position    VARCHAR(10)         NULL,
-    height      VARCHAR(8)          NULL,
-    `year`      VARCHAR(10)         NULL,
     misc1       VARCHAR(30)         NULL,
     PRIMARY KEY (id),
     KEY idx_players_name (last_name, first_name)
@@ -93,6 +91,8 @@ CREATE TABLE player_seasons (
     season_id       SMALLINT UNSIGNED   NOT NULL,
     team_id         SMALLINT UNSIGNED   NOT NULL,
     jersey_number   TINYINT UNSIGNED    NOT NULL,
+    height          VARCHAR(8)          NULL,
+    `year`          VARCHAR(10)         NULL,
     PRIMARY KEY (player_id, season_id, team_id),
     KEY idx_player_seasons_season (season_id),
     KEY idx_player_seasons_team   (team_id),
@@ -153,6 +153,8 @@ CREATE TABLE boxscores (
     id              INT UNSIGNED        NOT NULL AUTO_INCREMENT,
     competition_id  INT UNSIGNED        NOT NULL,
     player_id       INT UNSIGNED        NOT NULL,
+    period          TINYINT UNSIGNED    NOT NULL DEFAULT 0,  -- 0 = full game; 1+ = period number
+    started         TINYINT UNSIGNED    NOT NULL DEFAULT 0,  -- 1 if player was on floor to start this period
     jersey_number   TINYINT UNSIGNED    NOT NULL,       -- number actually worn in this game
     min             SMALLINT UNSIGNED   NOT NULL DEFAULT 0,  -- stored as total seconds
     fgm             TINYINT UNSIGNED    NOT NULL DEFAULT 0,
@@ -171,7 +173,7 @@ CREATE TABLE boxscores (
     pf              TINYINT UNSIGNED    NOT NULL DEFAULT 0,
     pts             TINYINT UNSIGNED    NOT NULL DEFAULT 0,
     PRIMARY KEY (id),
-    UNIQUE KEY uq_boxscores_game_player (competition_id, player_id),
+    UNIQUE KEY uq_boxscores_game_player (competition_id, player_id, period),
     KEY idx_boxscores_player      (player_id),
     CONSTRAINT fk_boxscores_competition
         FOREIGN KEY (competition_id) REFERENCES competitions (id)

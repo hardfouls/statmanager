@@ -130,7 +130,7 @@ app.get('/api/summary', async (req, res) => {
         (SELECT COUNT(*) FROM seasons)      AS seasons,
         (SELECT COUNT(*) FROM teams)        AS teams,
         (SELECT COUNT(*) FROM competitions) AS competitions,
-        (SELECT COUNT(*) FROM boxscores)    AS boxscores,
+        (SELECT COUNT(DISTINCT competition_id) FROM boxscores) AS boxscores,
         (SELECT COUNT(*) FROM players)      AS players
     `);
     res.json({ configured: true, ...row });
@@ -215,7 +215,7 @@ app.get('/api/leagues', async (req, res) => {
         (SELECT COUNT(DISTINCT ps.player_id)
            FROM player_seasons ps JOIN seasons s ON ps.season_id = s.id
           WHERE s.league_id = l.id)                                                          AS player_count,
-        (SELECT COUNT(*)
+        (SELECT COUNT(DISTINCT b.competition_id)
            FROM boxscores b
            JOIN competitions c ON b.competition_id = c.id
            JOIN seasons s      ON c.season_id = s.id
@@ -359,7 +359,7 @@ app.get('/api/seasons', async (req, res) => {
            FROM competitions c WHERE c.season_id = s.id)                                 AS game_count,
         (SELECT COUNT(DISTINCT ps.player_id)
            FROM player_seasons ps WHERE ps.season_id = s.id)                             AS player_count,
-        (SELECT COUNT(*)
+        (SELECT COUNT(DISTINCT b.competition_id)
            FROM boxscores b JOIN competitions c ON b.competition_id = c.id
           WHERE c.season_id = s.id)                                                      AS boxscore_count
       FROM seasons s JOIN leagues l ON s.league_id = l.id
@@ -796,6 +796,27 @@ app.delete('/api/teams/:teamId/seasons/:seasonId', async (req, res) => {
 });
 
 // ── Games CRUD ────────────────────────────────────────────────────────────────
+app.get('/api/games/missing-boxscores', async (req, res) => {
+  let conn;
+  try {
+    conn = await dbConnect();
+    const [rows] = await conn.execute(`
+      SELECT c.id, c.game_date,
+             t.name AS team_name, o.name AS opponent_name,
+             s.name AS season_name, l.name AS league_name
+      FROM   competitions c
+      JOIN   teams   t ON t.id = c.team_id
+      JOIN   teams   o ON o.id = c.opponent_id
+      JOIN   seasons s ON s.id = c.season_id
+      JOIN   leagues l ON l.id = s.league_id
+      WHERE  NOT EXISTS (SELECT 1 FROM boxscores b WHERE b.competition_id = c.id)
+      ORDER  BY c.game_date DESC
+    `);
+    res.json(rows);
+  } catch (err) { res.json({ error: err.message }); }
+  finally { await conn?.end().catch(() => {}); }
+});
+
 app.get('/api/games', async (req, res) => {
   let conn;
   try {
@@ -926,7 +947,7 @@ app.get('/api/players/:id', async (req, res) => {
   try {
     conn = await dbConnect();
     const [[player]] = await conn.execute(
-      'SELECT id, first_name, last_name, notes, position, height, `year`, misc1 FROM players WHERE id = ?',
+      'SELECT id, first_name, last_name, notes, position, misc1 FROM players WHERE id = ?',
       [playerId]
     );
     if (!player) return res.status(404).json({ error: 'Player not found' });
@@ -939,8 +960,10 @@ app.get('/api/players/:id', async (req, res) => {
           s.name                                                              AS season_name,
           t.name                                                              AS team_name,
           ps.jersey_number,
-          COUNT(DISTINCT b.competition_id)                                    AS game_count,
-          0                                                                   AS gs,
+          ps.height,
+          ps.\`year\`,
+          COUNT(DISTINCT b.competition_id)                                                        AS game_count,
+          COALESCE(SUM(CASE WHEN b.period = 1 AND b.started = 1 THEN 1 ELSE 0 END), 0)         AS gs,
           ROUND(SUM(b.pts) / NULLIF(COUNT(DISTINCT b.competition_id), 0), 1) AS ppg,
           COALESCE(SUM(b.pts),    0)                                           AS total_pts,
           COALESCE(SUM(b.reb),    0)                                           AS total_reb,
@@ -980,16 +1003,20 @@ app.get('/api/players/:id/games', async (req, res) => {
             c.game_date,
             CASE WHEN c.team_id = ? THEN 'H' ELSE 'A' END         AS home_away,
             CASE WHEN c.team_id = ? THEN vt.name ELSE ht.name END AS opponent_name,
-            b.min, b.pts,
-            b.oreb, b.dreb, b.reb,
-            b.ast, b.stl, b.blk, b.\`to\`, b.pf,
-            b.fgm, b.fga, b.tpm, b.tpa, b.ftm, b.fta
+            SUM(b.min)  AS min,  SUM(b.pts)  AS pts,
+            SUM(b.oreb) AS oreb, SUM(b.dreb) AS dreb, SUM(b.reb)  AS reb,
+            SUM(b.ast)  AS ast,  SUM(b.stl)  AS stl,  SUM(b.blk)  AS blk,
+            SUM(b.\`to\`) AS \`to\`, SUM(b.pf) AS pf,
+            SUM(b.fgm)  AS fgm,  SUM(b.fga)  AS fga,
+            SUM(b.tpm)  AS tpm,  SUM(b.tpa)  AS tpa,
+            SUM(b.ftm)  AS ftm,  SUM(b.fta)  AS fta
         FROM   boxscores    b
         JOIN   competitions c  ON  c.id  = b.competition_id
         JOIN   teams        ht ON  ht.id = c.team_id
         JOIN   teams        vt ON  vt.id = c.opponent_id
         WHERE  b.player_id = ?
           AND  c.season_id = ?
+        GROUP  BY c.id
         ORDER  BY c.game_date
       `, [teamId, teamId, playerId, seasonId]);
     } else {
@@ -1000,10 +1027,13 @@ app.get('/api/players/:id/games', async (req, res) => {
             c.game_date,
             CASE WHEN c.team_id = ps.team_id THEN 'H' ELSE 'A' END    AS home_away,
             CASE WHEN c.team_id = ps.team_id THEN vt.name ELSE ht.name END AS opponent_name,
-            b.min, b.pts,
-            b.oreb, b.dreb, b.reb,
-            b.ast, b.stl, b.blk, b.\`to\`, b.pf,
-            b.fgm, b.fga, b.tpm, b.tpa, b.ftm, b.fta
+            SUM(b.min)  AS min,  SUM(b.pts)  AS pts,
+            SUM(b.oreb) AS oreb, SUM(b.dreb) AS dreb, SUM(b.reb)  AS reb,
+            SUM(b.ast)  AS ast,  SUM(b.stl)  AS stl,  SUM(b.blk)  AS blk,
+            SUM(b.\`to\`) AS \`to\`, SUM(b.pf) AS pf,
+            SUM(b.fgm)  AS fgm,  SUM(b.fga)  AS fga,
+            SUM(b.tpm)  AS tpm,  SUM(b.tpa)  AS tpa,
+            SUM(b.ftm)  AS ftm,  SUM(b.fta)  AS fta
         FROM   boxscores    b
         JOIN   competitions c  ON  c.id         = b.competition_id
         JOIN   player_seasons ps ON ps.player_id = b.player_id
@@ -1012,6 +1042,7 @@ app.get('/api/players/:id/games', async (req, res) => {
         JOIN   teams        ht ON  ht.id = c.team_id
         JOIN   teams        vt ON  vt.id = c.opponent_id
         WHERE  b.player_id = ?
+        GROUP  BY c.id, ps.team_id
         ORDER  BY c.game_date
       `, [playerId]);
     }
@@ -1021,17 +1052,16 @@ app.get('/api/players/:id/games', async (req, res) => {
 });
 
 app.post('/api/players', async (req, res) => {
-  const { first_name, last_name, position, height, year, misc1, notes } = req.body;
+  const { first_name, last_name, position, misc1, notes } = req.body;
   if (!first_name?.trim() || !last_name?.trim())
     return res.status(400).json({ error: 'First name and last name are required' });
   let conn;
   try {
     conn = await dbConnect();
     const [result] = await conn.execute(
-      'INSERT INTO players (first_name, last_name, position, height, `year`, misc1, notes) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO players (first_name, last_name, position, misc1, notes) VALUES (?, ?, ?, ?, ?)',
       [first_name.trim(), last_name.trim(),
-       position?.trim() || null, height?.trim() || null,
-       year?.trim() || null, misc1?.trim() || null,
+       position?.trim() || null, misc1?.trim() || null,
        notes?.trim() || null]
     );
     res.json({ success: true, id: result.insertId });
@@ -1043,17 +1073,16 @@ app.post('/api/players', async (req, res) => {
 });
 
 app.put('/api/players/:id', async (req, res) => {
-  const { first_name, last_name, position, height, year, misc1, notes } = req.body;
+  const { first_name, last_name, position, misc1, notes } = req.body;
   if (!first_name?.trim() || !last_name?.trim())
     return res.status(400).json({ error: 'First name and last name are required' });
   let conn;
   try {
     conn = await dbConnect();
     const [result] = await conn.execute(
-      'UPDATE players SET first_name=?, last_name=?, position=?, height=?, `year`=?, misc1=?, notes=? WHERE id=?',
+      'UPDATE players SET first_name=?, last_name=?, position=?, misc1=?, notes=? WHERE id=?',
       [first_name.trim(), last_name.trim(),
-       position?.trim() || null, height?.trim() || null,
-       year?.trim() || null, misc1?.trim() || null,
+       position?.trim() || null, misc1?.trim() || null,
        notes?.trim() || null, parseInt(req.params.id)]
     );
     if (result.affectedRows === 0) return res.status(404).json({ error: 'Player not found' });
@@ -1084,6 +1113,91 @@ app.delete('/api/players/:id', async (req, res) => {
   } finally {
     await conn?.end().catch(() => {});
   }
+});
+
+app.get('/api/games/:id/boxscore', async (req, res) => {
+  const compId = parseInt(req.params.id);
+  let conn;
+  try {
+    conn = await dbConnect();
+
+    const [[comp]] = await conn.execute(`
+      SELECT
+        c.id, c.game_date, c.location,
+        c.team_id, ht.name AS team_name,
+        c.opponent_id, vt.name AS opponent_name,
+        s.name AS season_name, l.name AS league_name,
+        COALESCE(ts.score, 0) AS team_score,
+        COALESCE(os.score, 0) AS opponent_score
+      FROM competitions c
+      JOIN seasons  s   ON s.id  = c.season_id
+      JOIN leagues  l   ON l.id  = s.league_id
+      JOIN teams    ht  ON ht.id = c.team_id
+      JOIN teams    vt  ON vt.id = c.opponent_id
+      LEFT JOIN (SELECT competition_id, team_id, SUM(score) AS score
+                 FROM periods GROUP BY competition_id, team_id) ts
+             ON ts.competition_id = c.id AND ts.team_id = c.team_id
+      LEFT JOIN (SELECT competition_id, team_id, SUM(score) AS score
+                 FROM periods GROUP BY competition_id, team_id) os
+             ON os.competition_id = c.id AND os.team_id = c.opponent_id
+      WHERE c.id = ?
+    `, [compId]);
+    if (!comp) return res.status(404).json({ error: 'Game not found' });
+
+    const [rows] = await conn.execute(`
+      SELECT
+        b.player_id,
+        p.first_name, p.last_name,
+        MAX(b.jersey_number)                                                    AS jersey_number,
+        SUM(b.min)  AS min,  SUM(b.pts)  AS pts,
+        SUM(b.fgm)  AS fgm,  SUM(b.fga)  AS fga,
+        SUM(b.tpm)  AS tpm,  SUM(b.tpa)  AS tpa,
+        SUM(b.ftm)  AS ftm,  SUM(b.fta)  AS fta,
+        SUM(b.oreb) AS oreb, SUM(b.dreb) AS dreb, SUM(b.reb)  AS reb,
+        SUM(b.ast)  AS ast,  SUM(b.stl)  AS stl,  SUM(b.blk)  AS blk,
+        SUM(b.\`to\`) AS \`to\`, SUM(b.pf) AS pf,
+        MAX(CASE WHEN b.period = 1 AND b.started = 1 THEN 1 ELSE 0 END)        AS gs,
+        MAX(CASE WHEN ps.team_id = c.team_id THEN 'team' ELSE 'opponent' END)  AS side
+      FROM boxscores    b
+      JOIN competitions c  ON c.id = b.competition_id
+      JOIN players      p  ON p.id = b.player_id
+      LEFT JOIN player_seasons ps ON ps.player_id = b.player_id
+                                 AND ps.season_id  = c.season_id
+                                 AND (ps.team_id = c.team_id OR ps.team_id = c.opponent_id)
+      WHERE b.competition_id = ?
+      GROUP BY b.player_id, p.first_name, p.last_name
+      ORDER BY side, jersey_number
+    `, [compId]);
+
+    const team     = rows.filter(r => r.side === 'team');
+    const opponent = rows.filter(r => r.side === 'opponent');
+
+    const [periodRows] = await conn.execute(`
+      SELECT
+        b.player_id,
+        p.first_name, p.last_name,
+        b.jersey_number, b.period, b.started,
+        b.min, b.pts,
+        b.fgm, b.fga, b.tpm, b.tpa, b.ftm, b.fta,
+        b.oreb, b.dreb, b.reb,
+        b.ast, b.stl, b.blk, b.\`to\`, b.pf,
+        CASE WHEN EXISTS (
+          SELECT 1 FROM player_seasons ps
+          WHERE ps.player_id = b.player_id
+            AND ps.season_id = c.season_id
+            AND ps.team_id   = c.team_id
+        ) THEN 'team' ELSE 'opponent' END AS side
+      FROM boxscores    b
+      JOIN competitions c ON c.id = b.competition_id
+      JOIN players      p ON p.id = b.player_id
+      WHERE b.competition_id = ?
+        AND b.period > 0
+      ORDER BY side, b.jersey_number, b.period
+    `, [compId]);
+
+    res.json({ competition: comp, team, opponent, periodRows });
+  } catch (err) { res.json({ error: err.message }); }
+  finally { await conn?.end().catch(() => {}); }
 });
 
 app.get('*', (req, res) => {

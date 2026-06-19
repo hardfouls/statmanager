@@ -98,7 +98,7 @@ const pages = {
                 </tr>
               </thead>
               <tbody id="league-list">
-                <tr><td colspan="10" class="list-empty">Loading…</td></tr>
+                <tr><td colspan="12" class="list-empty">Loading…</td></tr>
               </tbody>
             </table>
           </div>
@@ -165,7 +165,7 @@ const pages = {
       function renderRows() {
         countEl.textContent = `${leaguesCache.length} league${leaguesCache.length !== 1 ? 's' : ''}`;
         if (!leaguesCache.length) {
-          listEl.innerHTML = '<tr><td colspan="10" class="list-empty">No leagues yet. Click + New League to add one.</td></tr>';
+          listEl.innerHTML = '<tr><td colspan="12" class="list-empty">No leagues yet. Click + New League to add one.</td></tr>';
           return;
         }
         listEl.innerHTML = leaguesCache.map(lg => {
@@ -200,18 +200,18 @@ const pages = {
       }
 
       async function loadLeagues() {
-        listEl.innerHTML = '<tr><td colspan="10" class="list-empty">Loading…</td></tr>';
+        listEl.innerHTML = '<tr><td colspan="12" class="list-empty">Loading…</td></tr>';
         try {
           const res  = await fetch('api/leagues');
           const data = await res.json();
           if (data.error) {
-            listEl.innerHTML = `<tr><td colspan="10" class="list-empty">${escapeHtml(data.error)}</td></tr>`;
+            listEl.innerHTML = `<tr><td colspan="12" class="list-empty">${escapeHtml(data.error)}</td></tr>`;
             return;
           }
           leaguesCache = data.leagues;
           renderRows();
         } catch {
-          listEl.innerHTML = '<tr><td colspan="10" class="list-empty">Could not load leagues.</td></tr>';
+          listEl.innerHTML = '<tr><td colspan="12" class="list-empty">Could not load leagues.</td></tr>';
         }
       }
 
@@ -588,7 +588,7 @@ const pages = {
                 </tr>
               </thead>
               <tbody id="season-list">
-                <tr><td colspan="10" class="list-empty">Loading…</td></tr>
+                <tr><td colspan="12" class="list-empty">Loading…</td></tr>
               </tbody>
             </table>
           </div>
@@ -662,7 +662,7 @@ const pages = {
       }
 
       async function loadSeasons() {
-        listEl.innerHTML = '<tr><td colspan="10" class="list-empty">Loading…</td></tr>';
+        listEl.innerHTML = '<tr><td colspan="12" class="list-empty">Loading…</td></tr>';
         try {
           const res  = await fetch('api/seasons');
           const data = await res.json();
@@ -950,7 +950,7 @@ const pages = {
                 </tr>
               </thead>
               <tbody id="team-list">
-                <tr><td colspan="10" class="list-empty">Loading…</td></tr>
+                <tr><td colspan="12" class="list-empty">Loading…</td></tr>
               </tbody>
             </table>
           </div>
@@ -1078,7 +1078,7 @@ const pages = {
       }
 
       async function loadTeams() {
-        listEl.innerHTML = '<tr><td colspan="10" class="list-empty">Loading…</td></tr>';
+        listEl.innerHTML = '<tr><td colspan="12" class="list-empty">Loading…</td></tr>';
         try {
           const res  = await fetch('api/teams');
           const data = await res.json();
@@ -1800,16 +1800,6 @@ const pages = {
                 <input type="text" id="pf-position" autocomplete="off" spellcheck="false" maxlength="10">
               </div>
               <div class="form-group">
-                <label for="pf-height">Height</label>
-                <input type="text" id="pf-height" autocomplete="off" spellcheck="false" maxlength="8">
-              </div>
-            </div>
-            <div class="two-col">
-              <div class="form-group">
-                <label for="pf-year">Year</label>
-                <input type="text" id="pf-year" autocomplete="off" spellcheck="false" maxlength="10">
-              </div>
-              <div class="form-group">
                 <label for="pf-misc1">Misc</label>
                 <input type="text" id="pf-misc1" autocomplete="off" maxlength="30">
               </div>
@@ -1848,8 +1838,6 @@ const pages = {
         setValue('pf-first-name', player.first_name);
         setValue('pf-last-name',  player.last_name);
         setValue('pf-position',   player.position);
-        setValue('pf-height',     player.height);
-        setValue('pf-year',       player.year);
         setValue('pf-misc1',      player.misc1);
         setValue('pf-notes',      player.notes);
       }
@@ -1865,8 +1853,6 @@ const pages = {
           first_name: document.getElementById('pf-first-name').value.trim(),
           last_name:  document.getElementById('pf-last-name').value.trim(),
           position:   document.getElementById('pf-position').value.trim() || null,
-          height:     document.getElementById('pf-height').value.trim()   || null,
-          year:       document.getElementById('pf-year').value.trim()     || null,
           misc1:      document.getElementById('pf-misc1').value.trim()    || null,
           notes:      document.getElementById('pf-notes').value.trim()    || null,
         };
@@ -1907,6 +1893,8 @@ const pages = {
           #pp-season-tbody tr { cursor: pointer; }
           #pp-season-tbody tr:hover { background: var(--surface2); }
           #pp-season-tbody tr.pp-selected { background: var(--surface2); box-shadow: inset 3px 0 0 var(--accent); }
+          .icon-link { display:inline-flex;align-items:center;color:var(--text-muted);text-decoration:none; }
+          .icon-link:hover { color:var(--accent); }
         </style>
         <div class="header-controls" style="margin-bottom:12px">
           <h2 class="page-title" style="margin:0">Player Profile</h2>
@@ -1936,6 +1924,8 @@ const pages = {
                 <th>Season</th>
                 <th>Team</th>
                 <th class="col-num">#</th>
+                <th>Gr/Yr</th>
+                <th>Ht</th>
                 <th class="col-num">GP</th>
                 <th class="col-num">GS</th>
                 <th class="col-num">PPG</th>
@@ -1946,7 +1936,7 @@ const pages = {
               </tr>
             </thead>
             <tbody id="pp-season-tbody">
-              <tr><td colspan="10" class="list-empty">Loading…</td></tr>
+              <tr><td colspan="12" class="list-empty">Loading…</td></tr>
             </tbody>
           </table>
         </div>
@@ -1969,10 +1959,11 @@ const pages = {
                   <th>FG</th>
                   <th>3P</th>
                   <th>FT</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody id="pp-games-tbody">
-                <tr><td colspan="13" class="list-empty">Select a season to view games.</td></tr>
+                <tr><td colspan="14" class="list-empty">Select a season to view games.</td></tr>
               </tbody>
             </table>
           </div>
@@ -2002,7 +1993,7 @@ const pages = {
         if (data.error || !data.player) {
           document.getElementById('pp-player-name').textContent = data.error || 'Player not found.';
           document.getElementById('pp-season-tbody').innerHTML =
-            `<tr><td colspan="10" class="list-empty">${escapeHtml(data.error || 'Player not found.')}</td></tr>`;
+            `<tr><td colspan="12" class="list-empty">${escapeHtml(data.error || 'Player not found.')}</td></tr>`;
           return;
         }
 
@@ -2010,13 +2001,6 @@ const pages = {
 
         document.getElementById('pp-player-name').textContent =
           `${player.first_name} ${player.last_name}`;
-
-        const attrs = [player.position, player.height, player.year, player.misc1].filter(Boolean);
-        if (attrs.length) {
-          const attrsEl = document.getElementById('pp-player-attrs');
-          attrsEl.textContent = attrs.join('  ·  ');
-          attrsEl.style.display = '';
-        }
 
         if (player.notes) {
           const notesEl = document.getElementById('pp-player-notes');
@@ -2038,7 +2022,13 @@ const pages = {
         const gamesTitle = document.getElementById('pp-games-title');
 
         if (!seasons.length) {
-          seasonsEl.innerHTML = '<tr><td colspan="10" class="list-empty">No seasons on record.</td></tr>';
+          const baseAttrs = [player.position, player.misc1].filter(Boolean);
+          if (baseAttrs.length) {
+            const attrsEl = document.getElementById('pp-player-attrs');
+            attrsEl.textContent = baseAttrs.join('  ·  ');
+            attrsEl.style.display = '';
+          }
+          seasonsEl.innerHTML = '<tr><td colspan="12" class="list-empty">No seasons on record.</td></tr>';
         } else {
           const totalGames = seasons.reduce((sum, s) => sum + Number(s.game_count), 0);
           const totalGs    = seasons.reduce((sum, s) => sum + Number(s.gs       || 0), 0);
@@ -2057,6 +2047,8 @@ const pages = {
               <td>${escapeHtml(s.season_name)}</td>
               <td>${escapeHtml(s.team_name)}</td>
               <td class="col-num">${s.jersey_number}</td>
+              <td>${escapeHtml(s.year   || '')}</td>
+              <td>${escapeHtml(s.height || '')}</td>
               <td class="col-num">${gp}</td>
               <td class="col-num">${Number(s.gs || 0)}</td>
               <td class="col-num">${s.ppg !== null ? Number(s.ppg).toFixed(1) : '—'}</td>
@@ -2068,6 +2060,8 @@ const pages = {
           }).join('') + `
             <tr data-season-id="all" style="border-top:1px solid var(--border);font-weight:600;color:var(--text-muted);cursor:pointer">
               <td>Career</td>
+              <td></td>
+              <td></td>
               <td></td>
               <td></td>
               <td class="col-num">${totalGames}</td>
@@ -2090,9 +2084,29 @@ const pages = {
             const tid   = row.dataset.teamId;
             const label = row.dataset.label || 'All Seasons';
 
+            // Update height/year attrs from selected season
+            const attrsEl = document.getElementById('pp-player-attrs');
+            let sHeight = null, sYear = null;
+            if (sid === 'all') {
+              const last = seasons[seasons.length - 1];
+              sHeight = last?.height || null;
+              sYear   = last?.year   || null;
+            } else {
+              const sd = seasons.find(s => String(s.season_id) === sid && String(s.team_id) === tid);
+              sHeight = sd?.height || null;
+              sYear   = sd?.year   || null;
+            }
+            const newAttrs = [player.position, sHeight, sYear, player.misc1].filter(Boolean);
+            if (newAttrs.length) {
+              attrsEl.textContent = newAttrs.join('  ·  ');
+              attrsEl.style.display = '';
+            } else {
+              attrsEl.style.display = 'none';
+            }
+
             gamesTitle.textContent = `Games — ${label}`;
             gamesCard.style.display = '';
-            gamesTbody.innerHTML = '<tr><td colspan="13" class="list-empty">Loading…</td></tr>';
+            gamesTbody.innerHTML = '<tr><td colspan="14" class="list-empty">Loading…</td></tr>';
 
             try {
               const url = sid === 'all'
@@ -2100,10 +2114,13 @@ const pages = {
                 : `api/players/${params.id}/games?season_id=${sid}&team_id=${tid}`;
               const gd = await fetch(url).then(r => r.json());
               if (gd.error || !gd.games.length) {
-                gamesTbody.innerHTML = `<tr><td colspan="13" class="list-empty">${escapeHtml(gd.error || 'No games found.')}</td></tr>`;
+                gamesTbody.innerHTML = `<tr><td colspan="14" class="list-empty">${escapeHtml(gd.error || 'No games found.')}</td></tr>`;
                 return;
               }
               const totals = { min:0, pts:0, reb:0, ast:0, stl:0, blk:0, to:0, pf:0 };
+              const bsIcon = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 9v9"/>
+              </svg>`;
               const rows = gd.games.map(g => {
                 totals.min += Number(g.min) || 0;
                 totals.pts += Number(g.pts) || 0;
@@ -2115,6 +2132,10 @@ const pages = {
                 totals.pf  += Number(g.pf)  || 0;
                 const date = g.game_date ? String(g.game_date).slice(0, 10) : '—';
                 const opp  = (g.home_away === 'H' ? 'vs. ' : '@ ') + escapeHtml(g.opponent_name);
+                const bsQ  = new URLSearchParams({ id: g.competition_id, back: 'player-profile', player_id: params.id });
+                if (params.league) bsQ.set('league', params.league);
+                if (params.season) bsQ.set('season', params.season);
+                if (params.team)   bsQ.set('team',   params.team);
                 return `<tr>
                   <td style="white-space:nowrap">${date}</td>
                   <td>${opp}</td>
@@ -2129,6 +2150,7 @@ const pages = {
                   <td>${g.fgm}/${g.fga}</td>
                   <td>${g.tpm}/${g.tpa}</td>
                   <td>${g.ftm}/${g.fta}</td>
+                  <td><a href="#/boxscore?${bsQ}" class="icon-link" title="Boxscore">${bsIcon}</a></td>
                 </tr>`;
               });
               const summaryRow = `
@@ -2143,11 +2165,11 @@ const pages = {
                   <td class="col-num">${totals.blk}</td>
                   <td class="col-num">${totals.to}</td>
                   <td class="col-num">${totals.pf}</td>
-                  <td></td><td></td><td></td>
+                  <td></td><td></td><td></td><td></td>
                 </tr>`;
               gamesTbody.innerHTML = rows.join('') + summaryRow;
             } catch {
-              gamesTbody.innerHTML = '<tr><td colspan="13" class="list-empty">Could not load games.</td></tr>';
+              gamesTbody.innerHTML = '<tr><td colspan="14" class="list-empty">Could not load games.</td></tr>';
             }
           });
 
@@ -2156,7 +2178,263 @@ const pages = {
       } catch {
         document.getElementById('pp-player-name').textContent = 'Could not load player profile.';
         document.getElementById('pp-season-tbody').innerHTML =
-          '<tr><td colspan="10" class="list-empty">Could not load player profile.</td></tr>';
+          '<tr><td colspan="12" class="list-empty">Could not load player profile.</td></tr>';
+      }
+    }
+  },
+
+  boxscore: {
+    menuRoute: 'games',
+    render() {
+      return `
+        <style>
+          .bs-team-section { margin-bottom: 16px; }
+          .bs-score { font-size: 2em; font-weight: 700; color: var(--accent); }
+          .bs-meta { color: var(--text-muted); font-size: 0.85em; margin-top: 4px; }
+          .bs-tab-bar { display:flex; border-bottom:1px solid var(--border); margin-bottom:12px; overflow-x:auto; overflow-y:hidden; }
+          .bs-tab { background:none; border:none; border-bottom:2px solid transparent; color:var(--text-muted); cursor:pointer; font-family:inherit; font-size:0.875em; padding:10px 16px; white-space:nowrap; margin-bottom:-1px; }
+          .bs-tab:hover { color:var(--text); }
+          .bs-tab.bs-active { border-bottom-color:var(--accent); color:var(--accent); font-weight:600; }
+          .bs-p1 { position:sticky; left:0; z-index:1; background:var(--surface); }
+          #bs-tabs .data-table th, #bs-tabs .data-table td { white-space:nowrap; }
+          #bs-tabs .data-table thead th { position:sticky; top:0; z-index:2; background:var(--surface); }
+          #bs-tabs .data-table thead th.bs-p1 { z-index:4; }
+        </style>
+        <div class="header-controls" style="margin-bottom:12px">
+          <h2 class="page-title" style="margin:0">Boxscore</h2>
+          <button class="btn btn-secondary btn-sm" id="bs-back">← Back</button>
+        </div>
+        <div id="bs-loading" style="color:var(--text-muted);margin-bottom:12px">Loading…</div>
+        <div id="bs-header" style="display:none;margin-bottom:12px">
+          <div id="bs-meta" class="bs-meta" style="margin-bottom:8px"></div>
+          <div style="display:flex;gap:12px">
+            <div class="card" style="flex:1;text-align:center" id="bs-card-team"></div>
+            <div class="card" style="flex:1;text-align:center" id="bs-card-opp"></div>
+          </div>
+        </div>
+        <div id="bs-tabs" style="display:none">
+          <div class="bs-tab-bar">
+            <button class="bs-tab bs-active" data-tab="boxscore">Box Score</button>
+            <button class="bs-tab" data-tab="pbp">Play by Play</button>
+            <button class="bs-tab" data-tab="team-stats">Team Stats</button>
+            <button class="bs-tab" data-tab="q1">1st Qtr</button>
+            <button class="bs-tab" data-tab="q2">2nd Qtr</button>
+            <button class="bs-tab" data-tab="q3">3rd Qtr</button>
+            <button class="bs-tab" data-tab="q4">4th Qtr</button>
+          </div>
+          <div id="bs-tab-boxscore"></div>
+          <div id="bs-tab-pbp"        style="display:none"></div>
+          <div id="bs-tab-team-stats" style="display:none"></div>
+          <div id="bs-tab-q1"         style="display:none"></div>
+          <div id="bs-tab-q2"         style="display:none"></div>
+          <div id="bs-tab-q3"         style="display:none"></div>
+          <div id="bs-tab-q4"         style="display:none"></div>
+        </div>`;
+    },
+
+    async init(params = {}) {
+      const backQ = new URLSearchParams();
+      if (params.player_id) backQ.set('id', params.player_id);
+      if (params.league)    backQ.set('league', params.league);
+      if (params.season)    backQ.set('season', params.season);
+      if (params.team)      backQ.set('team',   params.team);
+      const backHash = `#/${params.back || 'games'}${backQ.toString() ? '?' + backQ : ''}`;
+      document.getElementById('bs-back').addEventListener('click', () => {
+        window.location.hash = backHash;
+      });
+
+      if (!params.id) {
+        document.getElementById('bs-loading').textContent = 'No game specified.';
+        return;
+      }
+
+      try {
+        const data = await fetch(`api/games/${params.id}/boxscore`).then(r => r.json());
+        if (data.error || !data.competition) {
+          document.getElementById('bs-loading').textContent = data.error || 'Game not found.';
+          return;
+        }
+        const { competition: c, team, opponent, periodRows = [] } = data;
+        const date = c.game_date ? String(c.game_date).slice(0, 10) : '—';
+        const loc  = c.location  ? ` · ${escapeHtml(c.location)}`   : '';
+
+        document.getElementById('bs-loading').style.display = 'none';
+        document.getElementById('bs-meta').textContent =
+          `${c.league_name} · ${c.season_name} · ${date}${c.location ? ' · ' + c.location : ''}`;
+
+        const logoPlaceholder = `
+          <div style="width:56px;flex-shrink:0;background:var(--surface2);border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--text-muted)">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 3L3 7v5c0 5.25 3.75 10.2 9 11.4C17.25 22.2 21 17.25 21 12V7L12 3z"/>
+            </svg>
+          </div>`;
+        const textBlock = (name, score) => `
+          <div style="flex:1;text-align:center;display:flex;flex-direction:column;justify-content:center">
+            <div style="font-weight:600;color:var(--text);margin-bottom:6px">${escapeHtml(name)}</div>
+            <div class="bs-score">${score}</div>
+          </div>`;
+        const scoreCard = (name, score, logoSide) => `
+          <div style="display:flex;align-items:stretch;gap:12px">
+            ${logoSide === 'left' ? logoPlaceholder + textBlock(name, score) : textBlock(name, score) + logoPlaceholder}
+          </div>`;
+        document.getElementById('bs-card-team').innerHTML = scoreCard(c.team_name,     c.team_score,     'left');
+        document.getElementById('bs-card-opp').innerHTML  = scoreCard(c.opponent_name, c.opponent_score, 'right');
+        document.getElementById('bs-header').style.display = '';
+
+        function bsTable(title, players) {
+          const tot = { min:0, fgm:0, fga:0, tpm:0, tpa:0, ftm:0, fta:0,
+                        oreb:0, dreb:0, reb:0, ast:0, stl:0, blk:0, to:0, pf:0, pts:0 };
+          const playerRow = p => {
+            tot.min  += Number(p.min)  || 0;
+            tot.fgm  += Number(p.fgm)  || 0; tot.fga  += Number(p.fga)  || 0;
+            tot.tpm  += Number(p.tpm)  || 0; tot.tpa  += Number(p.tpa)  || 0;
+            tot.ftm  += Number(p.ftm)  || 0; tot.fta  += Number(p.fta)  || 0;
+            tot.oreb += Number(p.oreb) || 0; tot.dreb += Number(p.dreb) || 0;
+            tot.reb  += Number(p.reb)  || 0; tot.ast  += Number(p.ast)  || 0;
+            tot.stl  += Number(p.stl)  || 0; tot.blk  += Number(p.blk)  || 0;
+            tot.to   += Number(p.to)   || 0; tot.pf   += Number(p.pf)   || 0;
+            tot.pts  += Number(p.pts)  || 0;
+            return `<tr>
+              <td class="bs-p1">${p.jersey_number} - ${escapeHtml(p.first_name)} ${escapeHtml(p.last_name)}</td>
+              <td class="col-num">${fmtMin(p.min)}</td>
+              <td class="col-num">${p.fgm}-${p.fga}</td>
+              <td class="col-num">${p.tpm}-${p.tpa}</td>
+              <td class="col-num">${p.ftm}-${p.fta}</td>
+              <td class="col-num">${p.oreb}</td>
+              <td class="col-num">${p.dreb}</td>
+              <td class="col-num">${p.reb}</td>
+              <td class="col-num">${p.ast}</td>
+              <td class="col-num">${p.stl}</td>
+              <td class="col-num">${p.blk}</td>
+              <td class="col-num">${p.to}</td>
+              <td class="col-num">${p.pf}</td>
+              <td class="col-num">${p.pts}</td>
+            </tr>`;
+          };
+          const groupHead = label =>
+            `<tr style="background:var(--surface2);color:var(--text-muted);font-size:0.8em;font-weight:600">
+              <td class="bs-p1 bs-group-head" style="background:var(--surface2);padding:5px 8px">${label}</td>
+              <td colspan="13" class="bs-group-head" style="background:var(--surface2)"></td>
+            </tr>`;
+          const starters = players.filter(p => Number(p.gs) === 1);
+          const reserves = players.filter(p => Number(p.gs) !== 1);
+          let bodyRows = '';
+          if (players.length === 0) {
+            bodyRows = '<tr><td colspan="14" class="list-empty">No stats recorded.</td></tr>';
+          } else {
+            if (starters.length > 0) bodyRows += groupHead('STARTERS') + starters.map(playerRow).join('');
+            if (reserves.length > 0) bodyRows += groupHead('RESERVES') + reserves.map(playerRow).join('');
+          }
+          const fgPct = tot.fga > 0 ? (tot.fgm / tot.fga * 100).toFixed(1) + '%' : '—';
+          const tpPct = tot.tpa > 0 ? (tot.tpm / tot.tpa * 100).toFixed(1) + '%' : '—';
+          const ftPct = tot.fta > 0 ? (tot.ftm / tot.fta * 100).toFixed(1) + '%' : '—';
+          return `
+            <div class="bs-team-section">
+              <h3 class="section-title">${escapeHtml(title)}</h3>
+              <div style="overflow-x:auto">
+                <table class="data-table">
+                  <thead><tr>
+                    <th class="bs-p1">Player</th>
+                    <th class="col-num">MIN</th>
+                    <th class="col-num">FGM-A</th>
+                    <th class="col-num">3PM-A</th>
+                    <th class="col-num">FTM-A</th>
+                    <th class="col-num">OREB</th>
+                    <th class="col-num">DREB</th>
+                    <th class="col-num">REB</th>
+                    <th class="col-num">AST</th>
+                    <th class="col-num">STL</th>
+                    <th class="col-num">BLK</th>
+                    <th class="col-num">TO</th>
+                    <th class="col-num">PF</th>
+                    <th class="col-num">PTS</th>
+                  </tr></thead>
+                  <tbody>${bodyRows}</tbody>
+                  <tbody>
+                    <tr style="border-top:1px solid var(--border);font-weight:600;color:var(--text-muted)">
+                      <td class="bs-p1">Totals</td>
+                      <td class="col-num">${fmtMin(tot.min)}</td>
+                      <td class="col-num">${tot.fgm}-${tot.fga}</td>
+                      <td class="col-num">${tot.tpm}-${tot.tpa}</td>
+                      <td class="col-num">${tot.ftm}-${tot.fta}</td>
+                      <td class="col-num">${tot.oreb}</td>
+                      <td class="col-num">${tot.dreb}</td>
+                      <td class="col-num">${tot.reb}</td>
+                      <td class="col-num">${tot.ast}</td>
+                      <td class="col-num">${tot.stl}</td>
+                      <td class="col-num">${tot.blk}</td>
+                      <td class="col-num">${tot.to}</td>
+                      <td class="col-num">${tot.pf}</td>
+                      <td class="col-num">${tot.pts}</td>
+                    </tr>
+                    <tr style="color:var(--text-muted);font-size:0.85em">
+                      <td class="bs-p1"></td><td></td>
+                      <td class="col-num">${fgPct}</td>
+                      <td class="col-num">${tpPct}</td>
+                      <td class="col-num">${ftPct}</td>
+                      <td colspan="9"></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>`;
+        }
+
+        document.getElementById('bs-tab-boxscore').innerHTML =
+          `<div class="card">${bsTable(c.team_name, team) + bsTable(c.opponent_name, opponent)}</div>`;
+
+        const p1Starters = new Set(
+          periodRows.filter(r => r.period === 1 && Number(r.started) === 1).map(r => r.player_id)
+        );
+        [['q1', 1], ['q2', 2], ['q3', 3], ['q4', 4]].forEach(([key, period]) => {
+          const pr    = periodRows.filter(r => r.period === period);
+          const tRows = pr.filter(r => r.side === 'team').map(r => ({ ...r, gs: p1Starters.has(r.player_id) ? 1 : 0 }));
+          const oRows = pr.filter(r => r.side === 'opponent').map(r => ({ ...r, gs: p1Starters.has(r.player_id) ? 1 : 0 }));
+          document.getElementById(`bs-tab-${key}`).innerHTML =
+            `<div class="card">${bsTable(c.team_name, tRows) + bsTable(c.opponent_name, oRows)}</div>`;
+        });
+
+        requestAnimationFrame(() => {
+          const refTable = document.querySelector('#bs-tab-boxscore .data-table');
+          if (refTable) {
+            const widths = [...refTable.querySelectorAll('thead th')].map(th => th.offsetWidth);
+            document.querySelectorAll('#bs-tabs .data-table').forEach(tbl => {
+              const cg = document.createElement('colgroup');
+              widths.forEach(w => {
+                const col = document.createElement('col');
+                col.style.width = w + 'px';
+                cg.appendChild(col);
+              });
+              tbl.prepend(cg);
+              tbl.style.tableLayout = 'fixed';
+            });
+            const theadH = refTable.querySelector('thead')?.offsetHeight || 0;
+            document.querySelectorAll('#bs-tabs .bs-group-head').forEach(el => {
+              el.style.top = theadH + 'px';
+              el.style.zIndex = el.classList.contains('bs-p1') ? '3' : '2';
+            });
+          }
+          const h = document.getElementById('bs-tab-boxscore').offsetHeight;
+          ['pbp', 'team-stats'].forEach(key => {
+            document.getElementById(`bs-tab-${key}`).innerHTML =
+              `<div class="card" style="min-height:${h}px"></div>`;
+          });
+        });
+
+        const tabsEl = document.getElementById('bs-tabs');
+        tabsEl.style.display = '';
+        tabsEl.querySelector('.bs-tab-bar').addEventListener('click', e => {
+          const btn = e.target.closest('.bs-tab');
+          if (!btn) return;
+          tabsEl.querySelectorAll('.bs-tab').forEach(t => t.classList.remove('bs-active'));
+          btn.classList.add('bs-active');
+          const key = btn.dataset.tab;
+          tabsEl.querySelectorAll('[id^="bs-tab-"]').forEach(p => {
+            p.style.display = p.id === `bs-tab-${key}` ? '' : 'none';
+          });
+        });
+      } catch {
+        document.getElementById('bs-loading').textContent = 'Could not load boxscore.';
       }
     }
   },
@@ -2195,31 +2473,63 @@ const pages = {
           </div>
           <p class="summary-msg" id="summary-msg"></p>
         </div>
+        <div class="card" style="margin-top:16px">
+          <h3 class="section-title">Missing Box Scores</h3>
+          <div id="missing-bs-list" style="color:var(--text-muted)">Loading…</div>
+        </div>
       `;
     },
 
     async init() {
-      try {
-        const res = await fetch('api/summary');
-        const data = await res.json();
+      const [summaryRes, missingRes] = await Promise.allSettled([
+        fetch('api/summary').then(r => r.json()),
+        fetch('api/games/missing-boxscores').then(r => r.json())
+      ]);
+
+      // Summary card
+      if (summaryRes.status === 'fulfilled') {
+        const data = summaryRes.value;
         if (!data.configured) {
           document.getElementById('summary-msg').textContent =
             'Configure your database connection in Settings to see stats.';
-          return;
-        }
-        if (data.error) {
+        } else if (data.error) {
           document.getElementById('summary-msg').textContent =
             `Database unavailable: ${data.error}`;
-          return;
+        } else {
+          document.getElementById('s-leagues').textContent      = data.leagues;
+          document.getElementById('s-seasons').textContent      = data.seasons;
+          document.getElementById('s-teams').textContent        = data.teams;
+          document.getElementById('s-competitions').textContent = data.competitions;
+          document.getElementById('s-boxscores').textContent    = data.boxscores;
+          document.getElementById('s-players').textContent      = data.players;
         }
-        document.getElementById('s-leagues').textContent      = data.leagues;
-        document.getElementById('s-seasons').textContent      = data.seasons;
-        document.getElementById('s-teams').textContent        = data.teams;
-        document.getElementById('s-competitions').textContent = data.competitions;
-        document.getElementById('s-boxscores').textContent    = data.boxscores;
-        document.getElementById('s-players').textContent      = data.players;
-      } catch {
+      } else {
         document.getElementById('summary-msg').textContent = 'Could not load summary.';
+      }
+
+      // Missing box scores card
+      const listEl = document.getElementById('missing-bs-list');
+      if (missingRes.status === 'fulfilled' && Array.isArray(missingRes.value)) {
+        const games = missingRes.value;
+        if (games.length === 0) {
+          listEl.innerHTML = '<p class="list-empty">All games have box scores.</p>';
+        } else {
+          listEl.innerHTML = `
+            <table class="data-table">
+              <thead><tr>
+                <th>Date</th>
+                <th>League · Season</th>
+                <th>Game</th>
+              </tr></thead>
+              <tbody>${games.map(g => `<tr>
+                <td>${g.game_date ? String(g.game_date).slice(0, 10) : '—'}</td>
+                <td>${escapeHtml(g.league_name)} · ${escapeHtml(g.season_name)}</td>
+                <td>${escapeHtml(g.team_name)} vs ${escapeHtml(g.opponent_name)}</td>
+              </tr>`).join('')}</tbody>
+            </table>`;
+        }
+      } else {
+        listEl.textContent = 'Could not load missing box scores.';
       }
     }
   },

@@ -247,17 +247,16 @@ WHERE  NOT EXISTS (
        );
 
 -- ── Step 7b: Player profile fields ─────────────────────────
--- Populate position, height, year, misc1 from the player's most recent
--- roster season.  MIN() gives a deterministic value when the same player
--- appears on multiple teams within the same season.
+-- Populate position and misc1 from the player's most recent roster season.
+-- height and year are per-season and are set in Step 8 instead.
+-- MIN() gives a deterministic value when the same player appears on
+-- multiple teams within the same season.
 UPDATE players p
 JOIN (
     SELECT
         TRIM(r.FIRSTNAME)                           AS firstname,
         TRIM(r.LASTNAME)                            AS lastname,
         MIN(NULLIF(TRIM(r.POSITION),  ''))          AS position,
-        MIN(NULLIF(TRIM(r.HEIGHT),    ''))          AS height,
-        MIN(NULLIF(TRIM(r.YEAR),      ''))          AS yr,
         MIN(NULLIF(TRIM(r.MISCLINE1), ''))          AS misc1
     FROM dakstats_history.rosters r
     WHERE r.FIRSTNAME IS NOT NULL AND TRIM(r.FIRSTNAME) <> ''
@@ -274,21 +273,23 @@ JOIN (
            AND p.last_name  = latest.lastname
 SET
     p.position = latest.position,
-    p.height   = latest.height,
-    p.`year`   = latest.yr,
     p.misc1    = latest.misc1;
 
 -- ── Step 8: Player Seasons ───────────────────────────────────
--- Record team, jersey number per player per season.
+-- Record team, jersey number, height, and year per player per season.
+-- height and year are per-season because players grow and year reflects
+-- grade/eligibility which advances each season.
 -- TMID → dakstats teams → league + statmanager team resolves
 -- the season FK and team FK.
 -- Non-numeric jersey numbers (e.g. blank or codes) are skipped.
-INSERT IGNORE INTO player_seasons (player_id, season_id, team_id, jersey_number)
+INSERT IGNORE INTO player_seasons (player_id, season_id, team_id, jersey_number, height, `year`)
 SELECT DISTINCT
-    p.id                       AS player_id,
-    s.id                       AS season_id,
-    t.id                       AS team_id,
-    CAST(r.NUMBER AS UNSIGNED) AS jersey_number
+    p.id                              AS player_id,
+    s.id                              AS season_id,
+    t.id                              AS team_id,
+    CAST(r.NUMBER AS UNSIGNED)        AS jersey_number,
+    NULLIF(REPLACE(TRIM(r.HEIGHT), ' ', ''), '')  AS height,
+    NULLIF(TRIM(r.YEAR),   '')        AS `year`
 FROM       dakstats_history.rosters r
 INNER JOIN dakstats_history.teams   tm ON  tm.TMID         = r.TMID
                                        AND TRIM(tm.SEASON) = TRIM(r.SEASON)
@@ -305,20 +306,22 @@ WHERE  TRIM(r.NUMBER) REGEXP '^[0-9]+$'
   AND  UPPER(TRIM(r.LASTNAME)) <> 'TEAM';
 
 -- ── Step 9: Boxscores ────────────────────────────────────────
--- One row per player per game.  PERIODNUM was not populated in
--- this dataset so all season rows are treated as full-game totals.
+-- One row per player per period per game (PERIODNUM from the source).
+-- When PERIODNUM is NULL the row is stored with period = 0 (full-game).
 -- pts is derived: 2*FGM + M3P + FTM
 --   (= 2*(FGM-M3P) + 3*M3P + FTM, algebraically equivalent)
 -- Jersey number comes from the roster (same number all season).
 -- The UNIQUE KEY uq_boxscores_game_player makes re-runs safe via
 -- INSERT IGNORE.
 INSERT IGNORE INTO boxscores
-    (competition_id, player_id, jersey_number,
+    (competition_id, player_id, period, started, jersey_number,
      min,  fgm,  fga,  tpm,  tpa,  ftm,  fta,
      oreb, dreb, reb,  ast,  stl,  blk,  `to`, pf, pts)
 SELECT
     sm_comp.id                                                           AS competition_id,
     p.id                                                                 AS player_id,
+    COALESCE(gs.PERIODNUM, 0)                                            AS period,
+    COALESCE(gs.STARTED,   0)                                            AS started,
     CAST(r.NUMBER AS UNSIGNED)                                           AS jersey_number,
     COALESCE(gs.MINUTES, 0)                                              AS min,
     COALESCE(gs.FGM,      0)                                             AS fgm,
