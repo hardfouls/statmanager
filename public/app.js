@@ -61,6 +61,73 @@ const MENU_ITEMS = [
   }
 ];
 
+// ── Confirm dialog ────────────────────────────────────────────────────────────
+function confirmDialog(title, message, { confirmLabel = 'Confirm', confirmClass = 'btn-danger' } = {}) {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal" role="dialog" aria-modal="true" style="max-width:400px">
+        <div class="modal-header">
+          <span class="modal-title">${escapeHtml(title)}</span>
+        </div>
+        <p style="margin:16px 0;color:var(--text);white-space:pre-line">${escapeHtml(message)}</p>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
+          <button class="btn btn-secondary btn-sm" data-cd="cancel">Cancel</button>
+          <button class="btn ${confirmClass} btn-sm" data-cd="confirm">${escapeHtml(confirmLabel)}</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+
+    function close(result) {
+      document.removeEventListener('keydown', onKey);
+      overlay.remove();
+      resolve(result);
+    }
+
+    function onKey(e) {
+      if (e.key === 'Escape') close(false);
+    }
+
+    overlay.querySelector('[data-cd="cancel"]').addEventListener('click', () => close(false));
+    overlay.querySelector('[data-cd="confirm"]').addEventListener('click', () => close(true));
+    overlay.addEventListener('click', e => { if (e.target === overlay) close(false); });
+    document.addEventListener('keydown', onKey);
+    overlay.querySelector('[data-cd="confirm"]').focus();
+  });
+}
+
+function alertDialog(title, message) {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal" role="dialog" aria-modal="true" style="max-width:400px">
+        <div class="modal-header">
+          <span class="modal-title">${escapeHtml(title)}</span>
+        </div>
+        <p style="margin:16px 0;color:var(--text);white-space:pre-line">${escapeHtml(message)}</p>
+        <div style="display:flex;justify-content:flex-end;margin-top:4px">
+          <button class="btn btn-primary btn-sm" data-ad="ok">OK</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+
+    function close() {
+      document.removeEventListener('keydown', onKey);
+      overlay.remove();
+      resolve();
+    }
+
+    function onKey(e) { if (e.key === 'Escape' || e.key === 'Enter') close(); }
+
+    overlay.querySelector('[data-ad="ok"]').addEventListener('click', close);
+    overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+    document.addEventListener('keydown', onKey);
+    overlay.querySelector('[data-ad="ok"]').focus();
+  });
+}
+
 // ── Pages ─────────────────────────────────────────────────────────────────────
 const pages = {
   leagues: {
@@ -88,10 +155,10 @@ const pages = {
                   <th class="col-check"><input type="checkbox" id="lg-check-all" title="Select all"></th>
                   <th>Name</th>
                   <th class="col-num">Seasons</th>
-                  <th class="col-num">Teams</th>
                   <th class="col-num">Games</th>
-                  <th class="col-num">Players</th>
                   <th class="col-num">Boxscores</th>
+                  <th class="col-num">Teams</th>
+                  <th class="col-num">Players</th>
                   <th>Contact Person</th>
                   <th>Links</th>
                   <th>Actions</th>
@@ -118,43 +185,6 @@ const pages = {
         bulkExecute.disabled = !bulkAction.value;
       });
 
-      const GLOBE_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="12" cy="12" r="10"/>
-        <line x1="2" y1="12" x2="22" y2="12"/>
-        <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
-      </svg>`;
-      const MAIL_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
-        <polyline points="22,6 12,12 2,6"/>
-      </svg>`;
-      const FB_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/>
-      </svg>`;
-      const X_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
-      </svg>`;
-      const IG_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>
-        <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/>
-        <line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/>
-      </svg>`;
-      const NAV_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>`;
-
-      function buildLinks(lg) {
-        const strip = h => h ? h.replace(/^@/, '') : '';
-        const items = [
-          lg.website_url    ? [lg.website_url,                                    GLOBE_ICON, 'Website']        : null,
-          lg.contact_email  ? [`mailto:${lg.contact_email}`,                      MAIL_ICON,  lg.contact_email] : null,
-          lg.facebook       ? [`https://www.facebook.com/${strip(lg.facebook)}`,  FB_ICON,    'Facebook']       : null,
-          lg.x_handle       ? [`https://x.com/${strip(lg.x_handle)}`,             X_ICON,     'X (Twitter)']    : null,
-          lg.instagram      ? [`https://www.instagram.com/${strip(lg.instagram)}`, IG_ICON,   'Instagram']      : null,
-        ].filter(Boolean);
-        if (!items.length) return '<span style="color:var(--text-muted)">—</span>';
-        return items.map(([url, icon, title]) =>
-          `<a class="link-icon" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(title)}">${icon}</a>`
-        ).join('');
-      }
-
       function syncMasterCheck() {
         const boxes   = [...listEl.querySelectorAll('.row-check')];
         const checked = boxes.filter(cb => cb.checked).length;
@@ -173,26 +203,24 @@ const pages = {
           const teams   = Number(lg.team_count);
           const games   = Number(lg.competition_count);
           const seasonNav = seasons > 0
-            ? `<a class="link-icon" href="#/seasons?league=${lg.id}" title="View seasons">${NAV_ICON}</a>`
+            ? `<a class="link-icon" href="#/seasons?league=${lg.league_id}" title="View seasons">${NAV_ICON}</a>`
             : '';
           const teamNav = teams > 0
-            ? `<a class="link-icon" href="#/teams?league=${lg.id}" title="View teams">${NAV_ICON}</a>`
+            ? `<a class="link-icon" href="#/teams?league=${lg.league_id}" title="View teams">${NAV_ICON}</a>`
             : '';
           return `
           <tr>
-            <td class="col-check"><input type="checkbox" class="row-check" data-id="${lg.id}"></td>
-            <td><button class="tbl-link name-btn" data-id="${lg.id}">${escapeHtml(lg.name)}</button></td>
+            <td class="col-check"><input type="checkbox" class="row-check" data-id="${lg.league_id}"></td>
+            <td><a href="#/league-profile?id=${lg.league_id}" class="tbl-link" style="color:var(--accent);display:inline-flex;align-items:center;gap:3px">${escapeHtml(lg.name)}${CHEVRON_ICON}</a></td>
             <td class="col-num" style="white-space:nowrap">${seasons}${seasonNav}</td>
-            <td class="col-num" style="white-space:nowrap">${teams}${teamNav}</td>
-            <td class="col-num">${games > 0 ? `<a class="tbl-link" href="#/seasons?league=${lg.id}">${games}</a>` : games}</td>
-            <td class="col-num">${Number(lg.player_count)}</td>
+            <td class="col-num">${games > 0 ? `<a class="tbl-link" href="#/seasons?league=${lg.league_id}">${games}</a>` : games}</td>
             <td class="col-num">${Number(lg.boxscore_count)}</td>
+            <td class="col-num" style="white-space:nowrap">${teams}${teamNav}</td>
+            <td class="col-num">${Number(lg.player_count)}</td>
             <td>${escapeHtml(lg.contact_person || '—')}</td>
             <td class="col-links">${buildLinks(lg)}</td>
             <td class="col-actions">
-              <button class="btn-icon add-season-btn" data-id="${lg.id}" title="Add Season">${ADD_SEASON_ICON}</button>
-              <button class="btn-icon edit-btn" data-id="${lg.id}" title="Edit">${EDIT_ICON}</button>
-              <button class="btn-icon delete-btn" data-id="${lg.id}" title="Delete">${DELETE_ICON}</button>
+              <button class="btn-icon add-season-btn" data-id="${lg.league_id}" title="Add Season">${ADD_SEASON_ICON}</button>
             </td>
           </tr>`;
         }).join('');
@@ -233,7 +261,7 @@ const pages = {
 
         if (action === 'delete') {
           const ids   = checked.map(cb => parseInt(cb.dataset.id));
-          const names = ids.map(id => leaguesCache.find(l => l.id === id)?.name ?? `#${id}`);
+          const names = ids.map(id => leaguesCache.find(l => l.league_id === id)?.name ?? `#${id}`);
           const preview = names.length <= 5
             ? names.join('\n')
             : names.slice(0, 5).join('\n') + `\n…and ${names.length - 5} more`;
@@ -265,7 +293,7 @@ const pages = {
           const ids = [...new Set(checked.map(cb => parseInt(cb.dataset.id)))];
           if (ids.length < 2) { alert('Select at least 2 leagues to merge.'); return; }
           const mergeLeagues = ids.map(id => {
-            const lg = leaguesCache.find(l => l.id === id);
+            const lg = leaguesCache.find(l => l.league_id === id);
             return { id, name: lg?.name ?? `#${id}`, label: lg?.name ?? `#${id}` };
           });
           LeagueMergeModal.open(mergeLeagues, async () => {
@@ -280,47 +308,11 @@ const pages = {
         window.location.hash = '#/league-form?back=leagues';
       });
 
-      listEl.addEventListener('click', async e => {
-        const nameBtn      = e.target.closest('.name-btn');
+      listEl.addEventListener('click', e => {
         const addSeasonBtn = e.target.closest('.add-season-btn');
-        const editBtn      = e.target.closest('.edit-btn');
-        const deleteBtn    = e.target.closest('.delete-btn');
-
-        if (nameBtn) {
-          const league = leaguesCache.find(l => l.id === parseInt(nameBtn.dataset.id));
-          if (league) window.location.hash = `#/league-form?id=${league.id}&back=leagues`;
-          return;
-        }
-
         if (addSeasonBtn) {
-          const league = leaguesCache.find(l => l.id === parseInt(addSeasonBtn.dataset.id));
-          if (league) window.location.hash = `#/season-form?league=${league.id}&back=leagues`;
-          return;
-        }
-
-        if (editBtn) {
-          const league = leaguesCache.find(l => l.id === parseInt(editBtn.dataset.id));
-          if (league) window.location.hash = `#/league-form?id=${league.id}&back=leagues`;
-        }
-
-        if (deleteBtn) {
-          const id   = parseInt(deleteBtn.dataset.id);
-          const name = leaguesCache.find(l => l.id === id)?.name ?? 'this league';
-          if (!confirm(`Delete "${name}"?\n\nThis will fail if the league has seasons.`)) return;
-          deleteBtn.disabled = true;
-          try {
-            const res  = await fetch(`api/leagues/${id}`, { method: 'DELETE' });
-            const data = await res.json();
-            if (data.success) {
-              await loadLeagues();
-            } else {
-              alert(data.error || 'Delete failed');
-              deleteBtn.disabled = false;
-            }
-          } catch {
-            alert('Request failed');
-            deleteBtn.disabled = false;
-          }
+          const league = leaguesCache.find(l => l.league_id === parseInt(addSeasonBtn.dataset.id));
+          if (league) window.location.hash = `#/season-form?league=${league.league_id}&back=leagues`;
         }
       });
 
@@ -333,6 +325,25 @@ const pages = {
     render() {
       return `
         <h2 class="page-title" id="lf-page-title">New League</h2>
+        <div id="lf-icon-section" class="card" style="margin-bottom:12px;display:none">
+          <p class="form-section-label" style="margin-top:0">League Icon</p>
+          <div style="display:flex;align-items:center;gap:16px">
+            <div id="lf-icon-preview" style="width:72px;height:72px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0">
+              <svg id="lf-icon-placeholder" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-muted)">
+                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+              </svg>
+              <img id="lf-icon-img" style="display:none;width:100%;height:100%;object-fit:contain" alt="League icon">
+            </div>
+            <div>
+              <input type="file" id="lf-icon-file" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" style="display:none">
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button type="button" class="btn btn-secondary btn-sm" id="lf-icon-pick-btn">Upload Icon</button>
+                <button type="button" class="btn btn-secondary btn-sm" id="lf-icon-remove-btn" style="display:none">Remove</button>
+              </div>
+              <div class="status-msg" id="lf-icon-status" style="margin-top:6px"></div>
+            </div>
+          </div>
+        </div>
         <div class="card">
           <form id="lf-form" novalidate style="padding:4px 0">
             <div class="form-group">
@@ -392,8 +403,8 @@ const pages = {
       if (params.id) {
         document.getElementById('lf-page-title').textContent = 'Edit League';
         try {
-          const data = await fetch('api/leagues').then(r => r.json());
-          league = (data.leagues || []).find(l => String(l.id) === String(params.id)) ?? null;
+          const data = await fetch(`api/leagues/${params.id}`).then(r => r.json());
+          league = data.league ?? null;
           if (league) {
             setValue('lf-name',           league.name);
             setValue('lf-founded',        league.founded_date ? String(league.founded_date).substring(0, 10) : '');
@@ -406,6 +417,86 @@ const pages = {
             setValue('lf-instagram',      league.instagram);
           }
         } catch {}
+
+        // ── Icon section (edit only) ──────────────────────────────────────────
+        const iconSection  = document.getElementById('lf-icon-section');
+        const iconImg      = document.getElementById('lf-icon-img');
+        const iconPH       = document.getElementById('lf-icon-placeholder');
+        const iconFile     = document.getElementById('lf-icon-file');
+        const iconPickBtn  = document.getElementById('lf-icon-pick-btn');
+        const iconRemove   = document.getElementById('lf-icon-remove-btn');
+        const iconStatus   = document.getElementById('lf-icon-status');
+        iconSection.style.display = '';
+
+        function setIconPreview(src) {
+          if (src) {
+            iconImg.src = src; iconImg.style.display = ''; iconPH.style.display = 'none';
+            iconRemove.style.display = '';
+          } else {
+            iconImg.src = ''; iconImg.style.display = 'none'; iconPH.style.display = '';
+            iconRemove.style.display = 'none';
+          }
+        }
+
+        setIconPreview(league?.logo_path ? league.logo_path + '?t=' + Date.now() : null);
+
+        iconPickBtn.addEventListener('click', () => iconFile.click());
+
+        iconFile.addEventListener('change', async () => {
+          const file = iconFile.files[0];
+          if (!file) return;
+          if (file.size > 1_048_576) {
+            showStatus('lf-icon-status', 'error', 'File too large (max 1 MB)');
+            iconFile.value = '';
+            return;
+          }
+          iconPickBtn.disabled = true; iconPickBtn.textContent = 'Uploading…';
+          iconStatus.textContent = '';
+          try {
+            const dataUrl = await new Promise((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = e => resolve(e.target.result);
+              reader.onerror = reject;
+              reader.readAsDataURL(file);
+            });
+            const res  = await fetch(`api/leagues/${params.id}/icon`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ data: dataUrl }),
+            });
+            const result = await res.json();
+            if (result.success) {
+              setIconPreview(result.logo_path + '?t=' + Date.now());
+              showStatus('lf-icon-status', 'success', 'Icon saved.');
+            } else {
+              showStatus('lf-icon-status', 'error', result.error || 'Upload failed');
+            }
+          } catch {
+            showStatus('lf-icon-status', 'error', 'Upload failed — is the server running?');
+          } finally {
+            iconPickBtn.disabled = false; iconPickBtn.textContent = 'Upload Icon';
+            iconFile.value = '';
+          }
+        });
+
+        iconRemove.addEventListener('click', async () => {
+          if (!confirm('Remove the league icon?')) return;
+          iconRemove.disabled = true;
+          try {
+            const res    = await fetch(`api/leagues/${params.id}/icon`, { method: 'DELETE' });
+            const result = await res.json();
+            if (result.success) {
+              setIconPreview(null);
+              showStatus('lf-icon-status', 'success', 'Icon removed.');
+            } else {
+              showStatus('lf-icon-status', 'error', result.error || 'Remove failed');
+            }
+          } catch {
+            showStatus('lf-icon-status', 'error', 'Request failed');
+          } finally {
+            iconRemove.disabled = false;
+          }
+        });
       }
 
       document.getElementById('lf-cancel').addEventListener('click', () => {
@@ -429,7 +520,7 @@ const pages = {
         if (!body.name) { showStatus('lf-status', 'error', 'League name is required.'); return; }
         btn.disabled = true; btn.textContent = 'Saving…';
         try {
-          const res  = await fetch(league ? `api/leagues/${league.id}` : 'api/leagues', {
+          const res  = await fetch(league ? `api/leagues/${league.league_id}` : 'api/leagues', {
             method:  league ? 'PUT' : 'POST',
             headers: { 'Content-Type': 'application/json' },
             body:    JSON.stringify(body),
@@ -503,7 +594,7 @@ const pages = {
         document.getElementById('tf-page-title').textContent = 'Edit Team';
         try {
           const data = await fetch('api/teams').then(r => r.json());
-          team = (data.teams || []).find(t => String(t.id) === String(params.id)) ?? null;
+          team = (data.teams || []).find(t => String(t.team_id) === String(params.id)) ?? null;
           if (team) {
             setValue('tf-name',     team.name);
             setValue('tf-abbrev',   team.abbrev);
@@ -530,7 +621,7 @@ const pages = {
         if (!body.name) { showStatus('tf-status', 'error', 'Team name is required.'); return; }
         btn.disabled = true; btn.textContent = 'Saving…';
         try {
-          const res  = await fetch(team ? `api/teams/${team.id}` : 'api/teams', {
+          const res  = await fetch(team ? `api/teams/${team.team_id}` : 'api/teams', {
             method:  team ? 'PUT' : 'POST',
             headers: { 'Content-Type': 'application/json' },
             body:    JSON.stringify(body),
@@ -580,10 +671,10 @@ const pages = {
                 <tr>
                   <th class="col-check"><input type="checkbox" id="sm-check-all" title="Select all"></th>
                   <th>Season</th>
-                  <th class="col-num">Teams</th>
                   <th class="col-num">Games</th>
-                  <th class="col-num">Players</th>
                   <th class="col-num">Boxscores</th>
+                  <th class="col-num">Teams</th>
+                  <th class="col-num">Players</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -615,7 +706,7 @@ const pages = {
         const data = await res.json();
         filterSel.innerHTML = '<option value="">All Leagues</option>' +
           (data.leagues || []).map(l =>
-            `<option value="${l.id}"${String(l.id) === String(params.league) ? ' selected' : ''}>${escapeHtml(l.name)}</option>`
+            `<option value="${l.league_id}"${String(l.league_id) === String(params.league) ? ' selected' : ''}>${escapeHtml(l.name)}</option>`
           ).join('');
       } catch {}
 
@@ -641,20 +732,20 @@ const pages = {
         listEl.innerHTML = visible.map(s => {
           const teams = Number(s.team_count);
           const teamsCell = teams > 0
-            ? `${teams} <a class="link-icon" href="#/teams?league=${s.league_id}&season=${s.id}" title="View teams">${NAV_ICON}</a>`
+            ? `${teams} <a class="link-icon" href="#/teams?league=${s.league_id}&season=${s.season_id}" title="View teams">${NAV_ICON}</a>`
             : teams;
           return `
           <tr>
-            <td class="col-check"><input type="checkbox" class="row-check" data-id="${s.id}"></td>
-            <td><button class="tbl-link name-btn" data-id="${s.id}">${escapeHtml(s.name)} (${escapeHtml(s.league_name)})</button></td>
-            <td class="col-num">${teamsCell}</td>
+            <td class="col-check"><input type="checkbox" class="row-check" data-id="${s.season_id}"></td>
+            <td><button class="tbl-link name-btn" data-id="${s.season_id}">${escapeHtml(s.name)} (${escapeHtml(s.league_name)})</button></td>
             <td class="col-num">${Number(s.game_count)}</td>
-            <td class="col-num">${Number(s.player_count)}</td>
             <td class="col-num">${Number(s.boxscore_count)}</td>
+            <td class="col-num">${teamsCell}</td>
+            <td class="col-num">${Number(s.player_count)}</td>
             <td class="col-actions">
-              <button class="btn-icon add-team-btn" data-id="${s.id}" data-league-id="${s.league_id}" title="Add Team">${ADD_TEAM_ICON}</button>
-              <button class="btn-icon edit-btn" data-id="${s.id}" title="Edit">${EDIT_ICON}</button>
-              <button class="btn-icon delete-btn" data-id="${s.id}" title="Delete">${DELETE_ICON}</button>
+              <button class="btn-icon add-team-btn" data-id="${s.season_id}" data-league-id="${s.league_id}" title="Add Team">${ADD_TEAM_ICON}</button>
+              <button class="btn-icon edit-btn" data-id="${s.season_id}" title="Edit">${EDIT_ICON}</button>
+              <button class="btn-icon delete-btn" data-id="${s.season_id}" title="Delete">${DELETE_ICON}</button>
             </td>
           </tr>`;
         }).join('');
@@ -696,7 +787,7 @@ const pages = {
         if (action === 'delete') {
           const ids   = checked.map(cb => parseInt(cb.dataset.id));
           const names = ids.map(id => {
-            const s = seasonsCache.find(x => x.id === id);
+            const s = seasonsCache.find(x => x.season_id === id);
             return s ? `${s.league_name} — ${s.name}` : `#${id}`;
           });
           const preview = names.length <= 5
@@ -730,7 +821,7 @@ const pages = {
           const ids = [...new Set(checked.map(cb => parseInt(cb.dataset.id)))];
           if (ids.length < 2) { alert('Select at least 2 seasons to merge.'); return; }
           const mergeSeasons = ids.map(id => {
-            const s = seasonsCache.find(x => x.id === id);
+            const s = seasonsCache.find(x => x.season_id === id);
             const label = s ? `${s.name} (${s.league_name})` : `#${id}`;
             return { id, label };
           });
@@ -757,9 +848,9 @@ const pages = {
         const deleteBtn  = e.target.closest('.delete-btn');
 
         if (nameBtn) {
-          const season = seasonsCache.find(s => s.id === parseInt(nameBtn.dataset.id));
+          const season = seasonsCache.find(s => s.season_id === parseInt(nameBtn.dataset.id));
           if (season) {
-            const q = new URLSearchParams({ id: season.id, back: 'seasons' });
+            const q = new URLSearchParams({ id: season.season_id, back: 'seasons' });
             if (filterSel.value) q.set('league', filterSel.value);
             window.location.hash = `#/season-form?${q}`;
           }
@@ -770,9 +861,9 @@ const pages = {
         }
 
         if (editBtn) {
-          const season = seasonsCache.find(s => s.id === parseInt(editBtn.dataset.id));
+          const season = seasonsCache.find(s => s.season_id === parseInt(editBtn.dataset.id));
           if (season) {
-            const q = new URLSearchParams({ id: season.id, back: 'seasons' });
+            const q = new URLSearchParams({ id: season.season_id, back: 'seasons' });
             if (filterSel.value) q.set('league', filterSel.value);
             window.location.hash = `#/season-form?${q}`;
           }
@@ -780,7 +871,7 @@ const pages = {
 
         if (deleteBtn) {
           const id     = parseInt(deleteBtn.dataset.id);
-          const season = seasonsCache.find(s => s.id === id);
+          const season = seasonsCache.find(s => s.season_id === id);
           const label  = season ? `${season.league_name} — ${season.name}` : 'this season';
           if (!confirm(`Delete "${label}"?\n\nThis will fail if the season has teams or games.`)) return;
           deleteBtn.disabled = true;
@@ -823,12 +914,12 @@ const pages = {
             </div>
             <div class="two-col">
               <div class="form-group">
-                <label for="sf-start-year">Start Year <span style="color:var(--accent)">*</span></label>
-                <input type="number" id="sf-start-year" placeholder="2025" min="1900" max="2100">
+                <label for="sf-start-date">Start Date <span style="color:var(--accent)">*</span></label>
+                <input type="date" id="sf-start-date">
               </div>
               <div class="form-group">
-                <label for="sf-end-year">End Year <span style="color:var(--accent)">*</span></label>
-                <input type="number" id="sf-end-year" placeholder="2026" min="1900" max="2100">
+                <label for="sf-end-date">End Date <span style="color:var(--accent)">*</span></label>
+                <input type="date" id="sf-end-date">
               </div>
             </div>
             <div class="form-actions">
@@ -857,7 +948,7 @@ const pages = {
         document.getElementById('sf-page-title').textContent = 'Edit Season';
         try {
           const data = await fetch('api/seasons').then(r => r.json());
-          season = (data.seasons || []).find(s => String(s.id) === String(params.id)) ?? null;
+          season = (data.seasons || []).find(s => String(s.season_id) === String(params.id)) ?? null;
         } catch {}
       }
 
@@ -865,15 +956,15 @@ const pages = {
       const leagueSel = document.getElementById('sf-league');
       leagueSel.innerHTML = '<option value="">— Select League —</option>' +
         leagues.map(l =>
-          `<option value="${l.id}"${String(l.id) === String(leagueId) ? ' selected' : ''}>${escapeHtml(l.name)}</option>`
+          `<option value="${l.league_id}"${String(l.league_id) === String(leagueId) ? ' selected' : ''}>${escapeHtml(l.name)}</option>`
         ).join('');
 
       if (params.league && !params.id) leagueSel.disabled = true;
 
       if (season) {
         setValue('sf-name',       season.name);
-        setValue('sf-start-year', season.start_year);
-        setValue('sf-end-year',   season.end_year);
+        setValue('sf-start-date', season.start_date ? String(season.start_date).slice(0, 10) : '');
+        setValue('sf-end-date',   season.end_date   ? String(season.end_date).slice(0, 10)   : '');
       }
 
       document.getElementById('sf-cancel').addEventListener('click', () => {
@@ -886,16 +977,16 @@ const pages = {
         const body = {
           league_id:  leagueSel.value,
           name:       document.getElementById('sf-name').value.trim(),
-          start_year: document.getElementById('sf-start-year').value,
-          end_year:   document.getElementById('sf-end-year').value,
+          start_date: document.getElementById('sf-start-date').value,
+          end_date:   document.getElementById('sf-end-date').value,
         };
-        if (!body.league_id || !body.name || !body.start_year || !body.end_year) {
+        if (!body.league_id || !body.name || !body.start_date || !body.end_date) {
           showStatus('sf-status', 'error', 'All fields are required.');
           return;
         }
         btn.disabled = true; btn.textContent = 'Saving…';
         try {
-          const res  = await fetch(season ? `api/seasons/${season.id}` : 'api/seasons', {
+          const res  = await fetch(season ? `api/seasons/${season.season_id}` : 'api/seasons', {
             method:  season ? 'PUT' : 'POST',
             headers: { 'Content-Type': 'application/json' },
             body:    JSON.stringify(body),
@@ -1000,7 +1091,7 @@ const pages = {
 
       leagueFilt.innerHTML = '<option value="">All Leagues</option>' +
         leaguesCache.map(l =>
-          `<option value="${l.id}"${String(l.id) === String(params.league) ? ' selected' : ''}>${escapeHtml(l.name)}</option>`
+          `<option value="${l.league_id}"${String(l.league_id) === String(params.league) ? ' selected' : ''}>${escapeHtml(l.name)}</option>`
         ).join('');
 
       function refreshTeamFilter(selectedId = '') {
@@ -1015,7 +1106,7 @@ const pages = {
           teamsCache
             .filter(t => String(t.league_id) === lid)
             .map(t =>
-              `<option value="${t.id}"${String(t.id) === String(selectedId) ? ' selected' : ''}>${escapeHtml(t.name)}</option>`
+              `<option value="${t.team_id}"${String(t.team_id) === String(selectedId) ? ' selected' : ''}>${escapeHtml(t.name)}</option>`
             ).join('');
       }
 
@@ -1029,13 +1120,13 @@ const pages = {
         seasonFilt.disabled = false;
         let leagueSeasons = allSeasonsCache.filter(s => String(s.league_id) === lid);
         if (tid) {
-          const teamRow = teamsCache.find(t => t.id === parseInt(tid) && String(t.league_id) === lid);
+          const teamRow = teamsCache.find(t => t.team_id === parseInt(tid) && String(t.league_id) === lid);
           const teamSeasonIds = String(teamRow?.season_ids || '').split(',').filter(Boolean);
-          leagueSeasons = leagueSeasons.filter(s => teamSeasonIds.includes(String(s.id)));
+          leagueSeasons = leagueSeasons.filter(s => teamSeasonIds.includes(String(s.season_id)));
         }
         seasonFilt.innerHTML = '<option value="">All Seasons</option>' +
           leagueSeasons.map(s =>
-            `<option value="${s.id}"${String(s.id) === String(selectedId) ? ' selected' : ''}>${escapeHtml(s.name)}</option>`
+            `<option value="${s.season_id}"${String(s.season_id) === String(selectedId) ? ' selected' : ''}>${escapeHtml(s.name)}</option>`
           ).join('');
       }
 
@@ -1045,11 +1136,11 @@ const pages = {
         const lid = leagueFilt.value, tid = teamFilt.value, sid = seasonFilt.value;
         const visible = teamsCache.filter(t => {
           if (lid && String(t.league_id) !== lid) return false;
-          if (tid && String(t.id) !== String(tid)) return false;
+          if (tid && String(t.team_id) !== String(tid)) return false;
           if (sid && !String(t.season_ids || '').split(',').includes(sid)) return false;
           return true;
         });
-        const teamCount = lid ? visible.length : new Set(visible.map(t => t.id)).size;
+        const teamCount = lid ? visible.length : new Set(visible.map(t => t.team_id)).size;
         countEl.textContent = `${teamCount} team${teamCount !== 1 ? 's' : ''}`;
         if (!visible.length) {
           listEl.innerHTML = '<tr><td colspan="7" class="list-empty">No teams found.</td></tr>';
@@ -1061,16 +1152,16 @@ const pages = {
           const nameLabel = `${escapeHtml(t.name)} (${t.league_name ? escapeHtml(t.league_name) : 'Unassigned'})`;
           return `
           <tr>
-            <td class="col-check"><input type="checkbox" class="row-check" data-id="${t.id}" data-league-id="${rowLid}"></td>
-            <td><button class="tbl-link name-btn" data-id="${t.id}" data-league-id="${rowLid}">${nameLabel}</button></td>
+            <td class="col-check"><input type="checkbox" class="row-check" data-id="${t.team_id}" data-league-id="${rowLid}"></td>
+            <td><button class="tbl-link name-btn" data-id="${t.team_id}" data-league-id="${rowLid}">${nameLabel}</button></td>
             <td>${gl(t.gender)}</td>
             <td>${escapeHtml(t.coach || '—')}</td>
             <td class="col-num">${Number(t.season_count)}</td>
             <td class="col-num">${Number(t.game_count)}</td>
             <td class="col-actions">
-              <button class="btn-icon add-season-btn" data-id="${t.id}" data-league-id="${rowLid}" title="Add to Season">${ADD_SEASON_ICON}</button>
-              <button class="btn-icon edit-btn" data-id="${t.id}" data-league-id="${rowLid}" title="Edit">${EDIT_ICON}</button>
-              <button class="btn-icon delete-btn" data-id="${t.id}" data-league-id="${rowLid}" title="Delete">${DELETE_ICON}</button>
+              <button class="btn-icon add-season-btn" data-id="${t.team_id}" data-league-id="${rowLid}" title="Add to Season">${ADD_SEASON_ICON}</button>
+              <button class="btn-icon edit-btn" data-id="${t.team_id}" data-league-id="${rowLid}" title="Edit">${EDIT_ICON}</button>
+              <button class="btn-icon delete-btn" data-id="${t.team_id}" data-league-id="${rowLid}" title="Delete">${DELETE_ICON}</button>
             </td>
           </tr>`;
         }).join('');
@@ -1111,7 +1202,7 @@ const pages = {
 
         if (action === 'delete') {
           const teamIds = [...new Set(checked.map(cb => parseInt(cb.dataset.id)))];
-          const names   = teamIds.map(id => teamsCache.find(x => x.id === id)?.name ?? `#${id}`);
+          const names   = teamIds.map(id => teamsCache.find(x => x.team_id === id)?.name ?? `#${id}`);
           const preview = names.length <= 5
             ? names.join('\n')
             : names.slice(0, 5).join('\n') + `\n…and ${names.length - 5} more`;
@@ -1155,7 +1246,7 @@ const pages = {
           }
 
           const mergeTeams = teamIds.map(id => {
-            const rows    = teamsCache.filter(x => x.id === id);
+            const rows    = teamsCache.filter(x => x.team_id === id);
             const leagues = [...new Set(rows.map(x => x.league_name).filter(Boolean))];
             const name    = rows[0]?.name ?? `#${id}`;
             const label   = leagues.length
@@ -1181,18 +1272,18 @@ const pages = {
         const editBtn      = e.target.closest('.edit-btn');
         const delBtn       = e.target.closest('.delete-btn');
         if (addSeasonBtn) {
-          const t = teamsCache.find(x => x.id === parseInt(addSeasonBtn.dataset.id));
+          const t = teamsCache.find(x => x.team_id === parseInt(addSeasonBtn.dataset.id));
           if (t) TeamSeasonModal.open(t, loadTeams);
         }
         if (nameBtn || editBtn) {
           const id = parseInt((nameBtn || editBtn).dataset.id);
-          const t  = teamsCache.find(x => x.id === id);
-          if (t) window.location.hash = teamFormHash(t.id);
+          const t  = teamsCache.find(x => x.team_id === id);
+          if (t) window.location.hash = teamFormHash(t.team_id);
         }
         if (delBtn) {
           const teamId   = parseInt(delBtn.dataset.id);
           const leagueId = delBtn.dataset.leagueId;
-          const t = teamsCache.find(x => x.id === teamId &&
+          const t = teamsCache.find(x => x.team_id === teamId &&
             (leagueId ? String(x.league_id) === leagueId : !x.league_id));
           const label = t?.league_name ? `${t.name} (${t.league_name})` : (t?.name ?? 'this team');
           const msg = leagueId
@@ -1242,11 +1333,11 @@ const pages = {
                   <th id="gm-date-sort" style="cursor:pointer;user-select:none;white-space:nowrap">Date <span id="gm-sort-icon" style="opacity:.6;font-size:.75em">▲</span></th>
                   <th>Home</th>
                   <th style="white-space:nowrap">Score</th>
-                  <th>Visitor</th><th>Location</th><th>Actions</th>
+                  <th>Visitor</th><th>Location</th><th>Type</th><th>Tournament</th><th>Actions</th>
                 </tr>
               </thead>
               <tbody id="game-list">
-                <tr><td colspan="6" class="list-empty">Loading…</td></tr>
+                <tr><td colspan="8" class="list-empty">Loading…</td></tr>
               </tbody>
             </table>
           </div>
@@ -1275,26 +1366,26 @@ const pages = {
 
       leagueFilt.innerHTML = '<option value="">All Leagues</option>' +
         leaguesCache.map(l =>
-          `<option value="${l.id}"${String(l.id) === String(params.league) ? ' selected' : ''}>${escapeHtml(l.name)}</option>`
+          `<option value="${l.league_id}"${String(l.league_id) === String(params.league) ? ' selected' : ''}>${escapeHtml(l.name)}</option>`
         ).join('');
 
       function refreshSeasonFilter(selectedId = '') {
         const lid = leagueFilt.value;
         seasonFilt.innerHTML = '<option value="">All Seasons</option>' +
           allSeasonsCache.filter(s => !lid || String(s.league_id) === lid)
-            .map(s => `<option value="${s.id}"${String(s.id) === String(selectedId) ? ' selected' : ''}>${escapeHtml(s.name)}</option>`)
+            .map(s => `<option value="${s.season_id}"${String(s.season_id) === String(selectedId) ? ' selected' : ''}>${escapeHtml(s.name)}</option>`)
             .join('');
       }
 
       function refreshTeamFilter(selectedId = '') {
         const sid = seasonFilt.value;
         const seen = new Map();
-        for (const t of allTeamsCache) { if (!seen.has(t.id)) seen.set(t.id, t); }
+        for (const t of allTeamsCache) { if (!seen.has(t.team_id)) seen.set(t.team_id, t); }
         const unique = [...seen.values()].filter(t =>
-          !sid || allTeamsCache.some(r => r.id === t.id && String(r.season_ids || '').split(',').includes(sid))
+          !sid || allTeamsCache.some(r => r.team_id === t.team_id && String(r.season_ids || '').split(',').includes(sid))
         );
         teamFilt.innerHTML = '<option value="">All Teams</option>' +
-          unique.map(t => `<option value="${t.id}"${String(t.id) === String(selectedId) ? ' selected' : ''}>${escapeHtml(t.name)}${t.abbrev ? ` (${t.abbrev})` : ''}</option>`)
+          unique.map(t => `<option value="${t.team_id}"${String(t.team_id) === String(selectedId) ? ' selected' : ''}>${escapeHtml(t.name)}${t.abbrev ? ` (${t.abbrev})` : ''}</option>`)
             .join('');
       }
 
@@ -1320,23 +1411,27 @@ const pages = {
           });
         countEl.textContent = `${visible.length} game${visible.length !== 1 ? 's' : ''}`;
         if (!visible.length) {
-          listEl.innerHTML = '<tr><td colspan="6" class="list-empty">No games found.</td></tr>';
+          listEl.innerHTML = '<tr><td colspan="8" class="list-empty">No games found.</td></tr>';
           return;
         }
         listEl.innerHTML = visible.map(g => {
           const score = g.team_score != null && g.opponent_score != null
             ? `${g.team_score}–${g.opponent_score}` : '—';
           const date = String(g.game_date).substring(0, 10);
+          const chevron = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>`;
+          const bsUrl = `#/boxscore?id=${g.competition_id}&back=games`;
           return `
             <tr>
-              <td style="white-space:nowrap">${date}</td>
+              <td style="white-space:nowrap"><a href="${bsUrl}" class="tbl-link" style="color:var(--accent);display:inline-flex;align-items:center;gap:3px">${date}${chevron}</a></td>
               <td>${escapeHtml(g.team_name)}</td>
               <td class="col-num" style="white-space:nowrap">${score}</td>
               <td>${escapeHtml(g.opponent_name)}</td>
               <td>${escapeHtml(g.location)}</td>
+              <td style="white-space:nowrap;color:var(--text-muted)">${escapeHtml(g.comptype || '')}</td>
+              <td style="color:var(--text-muted)">${escapeHtml(g.tournament_name || '')}</td>
               <td class="col-actions">
-                <button class="btn-icon edit-btn" data-id="${g.id}" title="Edit">${EDIT_ICON}</button>
-                <button class="btn-icon delete-btn" data-id="${g.id}" title="Delete">${DELETE_ICON}</button>
+                <button class="btn-icon edit-btn" data-id="${g.competition_id}" title="Edit">${EDIT_ICON}</button>
+                <button class="btn-icon delete-btn" data-id="${g.competition_id}" title="Delete">${DELETE_ICON}</button>
               </td>
             </tr>`;
         }).join('');
@@ -1349,7 +1444,7 @@ const pages = {
       });
 
       async function loadGames() {
-        listEl.innerHTML = '<tr><td colspan="6" class="list-empty">Loading…</td></tr>';
+        listEl.innerHTML = '<tr><td colspan="8" class="list-empty">Loading…</td></tr>';
         try {
           const res = await fetch('api/games');
           const data = await res.json();
@@ -1381,7 +1476,7 @@ const pages = {
         if (editBtn) { window.location.hash = gameFormHash(editBtn.dataset.id); }
         if (delBtn) {
           const id = parseInt(delBtn.dataset.id);
-          const g  = gamesCache.find(x => x.id === id);
+          const g  = gamesCache.find(x => x.competition_id === id);
           const label = g ? `${g.season_name} — ${g.team_name} vs ${g.opponent_name}` : 'this game';
           if (!confirm(`Delete "${label}"?\n\nThis will also delete all boxscores for this game.`)) return;
           delBtn.disabled = true;
@@ -1481,7 +1576,7 @@ const pages = {
         document.getElementById('gf-page-title').textContent = 'Edit Game';
         try {
           const data = await fetch('api/games').then(r => r.json());
-          game = (data.games || []).find(g => String(g.id) === String(params.id)) ?? null;
+          game = (data.games || []).find(g => String(g.competition_id) === String(params.id)) ?? null;
         } catch {}
       }
 
@@ -1492,24 +1587,24 @@ const pages = {
 
       document.getElementById('gf-league').innerHTML = '<option value="">— Select League —</option>' +
         leaguesCache.map(l =>
-          `<option value="${l.id}"${String(l.id) === String(leagueId) ? ' selected' : ''}>${escapeHtml(l.name)}</option>`
+          `<option value="${l.league_id}"${String(l.league_id) === String(leagueId) ? ' selected' : ''}>${escapeHtml(l.name)}</option>`
         ).join('');
 
       function refreshFormSeasons(lid, selectedId = '') {
         document.getElementById('gf-season').innerHTML = '<option value="">— Select Season —</option>' +
           allSeasonsCache.filter(s => !lid || String(s.league_id) === lid)
-            .map(s => `<option value="${s.id}"${String(s.id) === String(selectedId) ? ' selected' : ''}>${escapeHtml(s.name)}</option>`)
+            .map(s => `<option value="${s.season_id}"${String(s.season_id) === String(selectedId) ? ' selected' : ''}>${escapeHtml(s.name)}</option>`)
             .join('');
       }
 
       function refreshFormTeams(sid, selectedTeamId = '', selectedOppId = '') {
         const seen = new Map();
-        for (const t of allTeamsCache) { if (!seen.has(t.id)) seen.set(t.id, t); }
+        for (const t of allTeamsCache) { if (!seen.has(t.team_id)) seen.set(t.team_id, t); }
         const unique = [...seen.values()].filter(t =>
-          !sid || allTeamsCache.some(r => r.id === t.id && String(r.season_ids || '').split(',').includes(String(sid)))
+          !sid || allTeamsCache.some(r => r.team_id === t.team_id && String(r.season_ids || '').split(',').includes(String(sid)))
         );
         const opts = '<option value="">— Select —</option>' +
-          unique.map(t => `<option value="${t.id}">${escapeHtml(t.name)}${t.abbrev ? ` (${t.abbrev})` : ''}</option>`)
+          unique.map(t => `<option value="${t.team_id}">${escapeHtml(t.name)}${t.abbrev ? ` (${t.abbrev})` : ''}</option>`)
             .join('');
         const teamSel = document.getElementById('gf-team');
         const oppSel  = document.getElementById('gf-opponent');
@@ -1559,7 +1654,7 @@ const pages = {
         }
         btn.disabled = true; btn.textContent = 'Saving…';
         try {
-          const res  = await fetch(game ? `api/games/${game.id}` : 'api/games', {
+          const res  = await fetch(game ? `api/games/${game.competition_id}` : 'api/games', {
             method: game ? 'PUT' : 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body)
@@ -1639,7 +1734,7 @@ const pages = {
 
       leagueFilt.innerHTML = '<option value="">All Leagues</option>' +
         leaguesCache.map(l =>
-          `<option value="${l.id}"${String(l.id) === String(params.league) ? ' selected' : ''}>${escapeHtml(l.name)}</option>`
+          `<option value="${l.league_id}"${String(l.league_id) === String(params.league) ? ' selected' : ''}>${escapeHtml(l.name)}</option>`
         ).join('');
 
       function refreshSeasonFilter(selectedId = '') {
@@ -1649,7 +1744,7 @@ const pages = {
           seasonFilt.disabled = false;
           seasonFilt.innerHTML = '<option value="">All Seasons</option>' +
             filtered.map(s =>
-              `<option value="${s.id}"${String(s.id) === String(selectedId) ? ' selected' : ''}>${escapeHtml(s.name)}</option>`
+              `<option value="${s.season_id}"${String(s.season_id) === String(selectedId) ? ' selected' : ''}>${escapeHtml(s.name)}</option>`
             ).join('');
         } else {
           seasonFilt.disabled = true;
@@ -1660,14 +1755,14 @@ const pages = {
       function refreshTeamFilter(selectedId = '') {
         const lid = leagueFilt.value, sid = seasonFilt.value;
         const leagueSeasonIds = lid
-          ? allSeasonsCache.filter(s => String(s.league_id) === lid).map(s => String(s.id))
+          ? allSeasonsCache.filter(s => String(s.league_id) === lid).map(s => String(s.season_id))
           : [];
         const seen = new Map();
-        for (const t of allTeamsCache) { if (!seen.has(t.id)) seen.set(t.id, t); }
+        for (const t of allTeamsCache) { if (!seen.has(t.team_id)) seen.set(t.team_id, t); }
         const unique = [...seen.values()].filter(t => {
           if (!lid && !sid) return false;
           const rowSeasonIds = allTeamsCache
-            .filter(r => r.id === t.id)
+            .filter(r => r.team_id === t.team_id)
             .flatMap(r => String(r.season_ids || '').split(',').filter(Boolean));
           if (sid) return rowSeasonIds.includes(String(sid));
           return rowSeasonIds.some(s => leagueSeasonIds.includes(s));
@@ -1676,7 +1771,7 @@ const pages = {
           teamFilt.disabled = false;
           teamFilt.innerHTML = '<option value="">All Teams</option>' +
             unique.map(t =>
-              `<option value="${t.id}"${String(t.id) === String(selectedId) ? ' selected' : ''}>${escapeHtml(t.name)}</option>`
+              `<option value="${t.team_id}"${String(t.team_id) === String(selectedId) ? ' selected' : ''}>${escapeHtml(t.name)}</option>`
             ).join('');
         } else {
           teamFilt.disabled = true;
@@ -1702,13 +1797,13 @@ const pages = {
         }
         listEl.innerHTML = visible.map(p => `
           <tr>
-            <td><button class="tbl-link prof-btn" data-id="${p.id}">${escapeHtml(p.last_name)}, ${escapeHtml(p.first_name)}</button></td>
+            <td><button class="tbl-link prof-btn" data-id="${p.player_id}">${escapeHtml(p.last_name)}, ${escapeHtml(p.first_name)}</button></td>
             <td class="col-num">${Number(p.team_count)}</td>
             <td class="col-num">${Number(p.season_count)}</td>
             <td class="col-num">${Number(p.game_count)}</td>
             <td class="col-actions">
-              <button class="btn-icon edit-btn" data-id="${p.id}" title="Edit">${EDIT_ICON}</button>
-              <button class="btn-icon delete-btn" data-id="${p.id}" title="Delete">${DELETE_ICON}</button>
+              <button class="btn-icon edit-btn" data-id="${p.player_id}" title="Edit">${EDIT_ICON}</button>
+              <button class="btn-icon delete-btn" data-id="${p.player_id}" title="Delete">${DELETE_ICON}</button>
             </td>
           </tr>`).join('');
       }
@@ -1761,7 +1856,7 @@ const pages = {
         }
         if (delBtn) {
           const id = parseInt(delBtn.dataset.id);
-          const p  = playersCache.find(x => x.id === id);
+          const p  = playersCache.find(x => x.player_id === id);
           const label = p ? `${p.last_name}, ${p.first_name}` : 'this player';
           if (!confirm(`Delete "${label}"?\n\nPlayers with game stats cannot be deleted.`)) return;
           delBtn.disabled = true;
@@ -1862,7 +1957,7 @@ const pages = {
         }
         btn.disabled = true; btn.textContent = 'Saving…';
         try {
-          const res  = await fetch(player ? `api/players/${player.id}` : 'api/players', {
+          const res  = await fetch(player ? `api/players/${player.player_id}` : 'api/players', {
             method:  player ? 'PUT' : 'POST',
             headers: { 'Content-Type': 'application/json' },
             body:    JSON.stringify(body)
@@ -1883,6 +1978,573 @@ const pages = {
       if (window.matchMedia('(hover: hover)').matches)
         document.getElementById('pf-first-name').focus();
     }
+  },
+
+  'league-profile': {
+    menuRoute: 'leagues',
+    render() {
+      return `
+        <style>
+          .lp-stats-grid { display:grid; grid-template-columns:repeat(5,1fr); gap:12px; }
+          .lp-stats-grid .summary-count { font-size:1.3rem; }
+          @media (max-width:860px) { .lp-stats-grid { grid-template-columns:repeat(3,1fr); } }
+          @media (max-width:500px) {
+            .lp-stats-grid { grid-template-columns:repeat(2,1fr); }
+            .lp-stats-grid .lp-tile-solo { grid-column:1/-1; }
+          }
+        </style>
+        <div class="header-controls" style="margin-bottom:12px">
+          <h2 class="page-title" style="margin:0">League Profile</h2>
+          <button class="btn btn-secondary btn-sm" id="lp-back">← Leagues</button>
+        </div>
+        <div class="card" style="margin-bottom:12px">
+          <div style="display:flex;align-items:flex-start;gap:16px">
+            <div id="lp-icon-wrap" style="flex-shrink:0;width:72px;height:72px;background:var(--surface2);border-radius:8px;display:flex;align-items:center;justify-content:center;overflow:hidden">
+              <svg id="lp-icon-placeholder" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-muted)">
+                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+              </svg>
+              <img id="lp-icon-img" style="display:none;width:100%;height:100%;object-fit:contain" alt="League icon">
+            </div>
+            <div style="flex:1;min-width:0">
+              <div id="lp-name" style="font-size:1.1em;font-weight:600;color:var(--accent)">Loading…</div>
+              <div id="lp-attrs" style="color:var(--text-muted);font-size:0.85em;margin-top:4px;display:none"></div>
+              <div id="lp-links" style="margin-top:6px;display:none"></div>
+            </div>
+            <div style="display:flex;gap:8px;align-self:flex-start;flex-shrink:0">
+              <button class="btn btn-secondary btn-sm" id="lp-edit-btn">Edit League</button>
+              <button class="btn btn-danger btn-sm" id="lp-delete-btn">Delete</button>
+            </div>
+          </div>
+        </div>
+        <div id="lp-stats-card" style="display:none;margin-bottom:12px">
+          <div class="lp-stats-grid" id="lp-stats"></div>
+        </div>
+        <div class="card">
+          <h3 class="section-title">Seasons</h3>
+          <div style="overflow-x:auto">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th id="lp-sort-hdr" style="cursor:pointer;user-select:none;white-space:nowrap">Season <span id="lp-sort-icon"><svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" style="vertical-align:middle"><path d="M5 2l4 6H1z"/></svg></span></th>
+                  <th class="col-num">Games</th>
+                  <th class="col-num">Boxscores</th>
+                  <th class="col-num">Teams</th>
+                  <th class="col-num">Players</th>
+                </tr>
+              </thead>
+              <tbody id="lp-seasons-tbody">
+                <tr><td colspan="5" class="list-empty">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>`;
+    },
+
+    async init(params = {}) {
+      const backHash = `#/${params.back || 'leagues'}`;
+      document.getElementById('lp-back').addEventListener('click', () => {
+        window.location.hash = backHash;
+      });
+
+      if (!params.id) {
+        document.getElementById('lp-name').textContent = 'No league specified.';
+        return;
+      }
+
+      document.getElementById('lp-edit-btn').addEventListener('click', () => {
+        window.location.hash = `#/league-form?id=${params.id}&back=league-profile%3Fid%3D${params.id}`;
+      });
+
+      document.getElementById('lp-delete-btn').addEventListener('click', async () => {
+        const nameEl = document.getElementById('lp-name');
+        const name   = nameEl.textContent || 'this league';
+        const ok = await confirmDialog('Delete League', `Delete "${name}"?\n\nThis cannot be undone. The league must have no seasons.`, { confirmLabel: 'Delete' });
+        if (!ok) return;
+        const btn = document.getElementById('lp-delete-btn');
+        btn.disabled = true; btn.textContent = 'Deleting…';
+        try {
+          const data = await fetch(`api/leagues/${params.id}`, { method: 'DELETE' }).then(r => r.json());
+          if (data.success) {
+            window.location.hash = '#/leagues';
+          } else {
+            await alertDialog('Cannot Delete League', data.error || 'Delete failed.');
+            btn.disabled = false; btn.textContent = 'Delete';
+          }
+        } catch {
+          await alertDialog('Error', 'Could not reach the server. Please try again.');
+          btn.disabled = false; btn.textContent = 'Delete';
+        }
+      });
+
+      try {
+        const data = await fetch(`api/leagues/${params.id}`).then(r => r.json());
+        if (data.error || !data.league) {
+          document.getElementById('lp-name').textContent = data.error || 'League not found.';
+          return;
+        }
+
+        const { league: lg, seasons } = data;
+
+        document.getElementById('lp-name').textContent = escapeHtml(lg.name);
+
+        if (lg.logo_path) {
+          document.getElementById('lp-icon-img').src = lg.logo_path + '?t=' + Date.now();
+          document.getElementById('lp-icon-img').style.display = '';
+          document.getElementById('lp-icon-placeholder').style.display = 'none';
+        }
+
+        const attrParts = [
+          lg.contact_person || null,
+          lg.contact_phone  || null,
+          lg.founded_date   ? `Est. ${String(lg.founded_date).slice(0, 4)}` : null,
+        ].filter(Boolean);
+        if (attrParts.length) {
+          const el = document.getElementById('lp-attrs');
+          el.textContent = attrParts.join(' · ');
+          el.style.display = '';
+        }
+
+        const links = buildLinks(lg);
+        if (!links.includes('—')) {
+          const el = document.getElementById('lp-links');
+          el.innerHTML = links;
+          el.style.display = '';
+        }
+
+        const statsEl = document.getElementById('lp-stats');
+        const tiles = [
+          { label: 'Seasons',   val: lg.season_count,     solo: true  },
+          { label: 'Games',     val: lg.competition_count, solo: false },
+          { label: 'Boxscores', val: lg.boxscore_count,    solo: false },
+          { label: 'Teams',     val: lg.team_count,        solo: false },
+          { label: 'Players',   val: lg.player_count,      solo: false },
+        ];
+        statsEl.innerHTML = tiles.map(({ label, val, solo }) =>
+          `<div class="summary-tile${solo ? ' lp-tile-solo' : ''}">
+            <span class="summary-count">${Number(val)}</span>
+            <span class="summary-label">${label}</span>
+          </div>`
+        ).join('');
+        document.getElementById('lp-stats-card').style.display = '';
+
+        const tbody  = document.getElementById('lp-seasons-tbody');
+        const iconEl = document.getElementById('lp-sort-icon');
+        const ASC_ICON  = '<svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" style="vertical-align:middle"><path d="M5 2l4 6H1z"/></svg>';
+        const DESC_ICON = '<svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" style="vertical-align:middle"><path d="M5 8L1 2h8z"/></svg>';
+        let lpSortAsc = true;
+
+        const lpBack = encodeURIComponent(`league-profile?id=${params.id}`);
+        const renderSeasons = () => {
+          if (!seasons.length) {
+            tbody.innerHTML = '<tr><td colspan="5" class="list-empty">No seasons yet.</td></tr>';
+            return;
+          }
+          const sorted = [...seasons].sort((a, b) =>
+            lpSortAsc ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name)
+          );
+          iconEl.innerHTML = lpSortAsc ? ASC_ICON : DESC_ICON;
+          tbody.innerHTML = sorted.map(s => `
+            <tr>
+              <td><a href="#/season-profile?id=${s.season_id}&back=${lpBack}" class="tbl-link" style="color:var(--accent);display:inline-flex;align-items:center;gap:3px">${escapeHtml(s.name)}${CHEVRON_ICON}</a></td>
+              <td class="col-num">${Number(s.game_count)}</td>
+              <td class="col-num">${Number(s.boxscore_count)}</td>
+              <td class="col-num">${Number(s.team_count)}</td>
+              <td class="col-num">${Number(s.player_count)}</td>
+            </tr>`).join('');
+        };
+
+        document.getElementById('lp-sort-hdr').addEventListener('click', () => {
+          lpSortAsc = !lpSortAsc;
+          renderSeasons();
+        });
+
+        renderSeasons();
+      } catch {
+        document.getElementById('lp-name').textContent = 'Could not load league.';
+      }
+    },
+  },
+
+  'season-profile': {
+    menuRoute: 'seasons',
+    render() {
+      return `
+        <style>
+          #sp-team-tbody tr { cursor:pointer; }
+          #sp-team-tbody tr:hover { background:var(--surface2); }
+          #sp-team-tbody tr.sp-selected { background:var(--surface2); }
+          #sp-stats .summary-tile { padding:6px 8px; width:72px; flex-shrink:0; }
+          #sp-stats .summary-count { font-size:0.95rem; }
+          #sp-stats .summary-label { font-size:0.7rem; }
+          .sp-col1 { position:sticky; left:0; z-index:1; background:var(--surface); }
+          #sp-teams-wrap .data-table th, #sp-teams-wrap .data-table td,
+          #sp-games-wrap .data-table th, #sp-games-wrap .data-table td,
+          #sp-standings .data-table th, #sp-standings .data-table td { white-space:nowrap; }
+          #sp-team-tbody tr:hover .sp-col1 { background:var(--surface2); }
+          #sp-team-tbody tr.sp-selected .sp-col1 { background:var(--surface2); box-shadow:inset 3px 0 0 var(--accent); }
+        </style>
+        <div style="margin-bottom:12px">
+          <button class="btn btn-secondary btn-sm" id="sp-back">← Back</button>
+        </div>
+        <div style="display:flex;gap:12px;align-items:flex-start">
+          <div style="flex:2;min-width:0;display:flex;flex-direction:column;gap:12px">
+            <div class="card">
+              <div class="section-header">
+                <h3 class="section-title">Season Profile</h3>
+                <div style="display:flex;gap:4px">
+                  <button class="btn btn-secondary btn-sm" id="sp-prev">← Prev</button>
+                  <button class="btn btn-secondary btn-sm" id="sp-next">Next →</button>
+                </div>
+              </div>
+              <div style="display:flex;gap:12px;align-items:flex-start">
+                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color:var(--accent);flex-shrink:0;margin-top:2px" aria-hidden="true">
+                  <rect x="3" y="4" width="18" height="18" rx="2"/>
+                  <line x1="16" y1="2" x2="16" y2="6"/>
+                  <line x1="8" y1="2" x2="8" y2="6"/>
+                  <line x1="3" y1="10" x2="21" y2="10"/>
+                </svg>
+                <div>
+                  <div id="sp-name" style="font-size:1.1em;font-weight:600;color:var(--accent)">Loading…</div>
+                  <div id="sp-dates" style="color:var(--text-muted);font-size:0.85em;margin-top:4px"></div>
+                  <button class="btn btn-secondary btn-sm" id="sp-edit" style="margin-top:10px">Edit</button>
+                </div>
+              </div>
+            </div>
+            <div class="card">
+              <h3 class="section-title">Teams</h3>
+              <div id="sp-teams-wrap" style="overflow-x:auto">
+                <table class="data-table">
+                  <thead>
+                    <tr><th class="sp-col1">Team</th><th>League</th><th class="col-num">Games</th><th>Conf</th><th>Coach</th></tr>
+                  </thead>
+                  <tbody id="sp-team-tbody">
+                    <tr><td colspan="5" class="list-empty">Loading…</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div class="card">
+              <div class="section-header">
+                <h3 class="section-title" id="sp-games-title">Games</h3>
+                <select id="sp-comptype-filter" class="filter-select"><option value="">All Types</option></select>
+              </div>
+              <div id="sp-count" class="list-count"></div>
+              <div id="sp-games-wrap" style="overflow-x:auto">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th id="sp-date-th" class="sp-col1" style="cursor:pointer;user-select:none">Date <span id="sp-sort-icon">↑</span></th>
+                      <th>Home</th><th>Score</th>
+                      <th>Visitor</th><th>Location</th><th>Type</th><th>Tournament</th>
+                    </tr>
+                  </thead>
+                  <tbody id="sp-games-tbody">
+                    <tr><td colspan="7" class="list-empty">Loading…</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+          <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:12px">
+            <div class="card">
+              <h3 class="section-title">Integrity Report</h3>
+              <div id="sp-stats" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px"></div>
+              <p style="font-size:0.75em;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted);margin:0 0 6px">Metrics</p>
+              <div id="sp-integrity" style="font-size:0.85em"></div>
+            </div>
+            <div class="card">
+              <h3 class="section-title">Standings</h3>
+              <div id="sp-standings"><p style="color:var(--text-muted);font-size:0.85em;margin:0">Loading…</p></div>
+            </div>
+            <div class="card">
+              <h3 class="section-title">Tournaments</h3>
+              <table class="data-table">
+                <thead>
+                  <tr><th>Tournament</th><th>Start</th><th>End</th></tr>
+                </thead>
+                <tbody id="sp-tourn-tbody">
+                  <tr><td colspan="3" class="list-empty">Loading…</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>`;
+    },
+
+    async init(params = {}) {
+      const backHash = params.back ? `#/${params.back}` : '#/leagues';
+      document.getElementById('sp-back').addEventListener('click', () => {
+        window.location.hash = backHash;
+      });
+
+      if (!params.id) {
+        document.getElementById('sp-name').textContent = 'No season specified.';
+        return;
+      }
+
+      try {
+        const data = await fetch(`api/seasons/${params.id}`).then(r => r.json());
+        if (data.error || !data.season) {
+          document.getElementById('sp-name').textContent = data.error || 'Season not found.';
+          return;
+        }
+
+        const { season: s, games: allGames, teams, tournaments, prevSeasonId, nextSeasonId } = data;
+
+        document.getElementById('sp-name').textContent = `${escapeHtml(s.league_name)} — ${escapeHtml(s.name)}`;
+        const fmtDate = d => new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: '2-digit' });
+        document.getElementById('sp-dates').innerHTML =
+          `Start: ${fmtDate(s.start_date)}<br>End: ${fmtDate(s.end_date)}`;
+        document.getElementById('sp-edit').addEventListener('click', () => {
+          SeasonModal.open(s, () => { window.location.reload(); });
+        });
+
+        const navBackQ = params.back ? `&back=${encodeURIComponent(params.back)}` : '';
+        const prevBtn = document.getElementById('sp-prev');
+        const nextBtn = document.getElementById('sp-next');
+        prevBtn.disabled = !prevSeasonId;
+        nextBtn.disabled = !nextSeasonId;
+        if (prevSeasonId) prevBtn.addEventListener('click', () => { window.location.hash = `#/season-profile?id=${prevSeasonId}${navBackQ}`; });
+        if (nextSeasonId) nextBtn.addEventListener('click', () => { window.location.hash = `#/season-profile?id=${nextSeasonId}${navBackQ}`; });
+
+        const statsEl = document.getElementById('sp-stats');
+        [
+          { label: 'Games',     val: s.game_count     },
+          { label: 'Boxscores', val: s.boxscore_count },
+          { label: 'Teams',     val: s.team_count     },
+          { label: 'Players',   val: s.player_count   },
+        ].forEach(({ label, val }) => {
+          const mismatch = label === 'Boxscores' && Number(val) !== Number(s.game_count);
+          const tile = document.createElement('div');
+          tile.className = 'summary-tile';
+          tile.innerHTML = `<span class="summary-count"${mismatch ? ' style="color:#e53935"' : ''}>${Number(val)}</span><span class="summary-label"${mismatch ? ' style="color:#e53935"' : ''}>${label}</span>`;
+          statsEl.appendChild(tile);
+        });
+
+        // ── Teams list ────────────────────────────────────────────
+        const teamTbody      = document.getElementById('sp-team-tbody');
+        const gamesTitle     = document.getElementById('sp-games-title');
+        const leagueSet      = new Set(teams.filter(t => !t.is_guest).map(t => String(t.team_id)));
+        const leagueTeamList = teams.filter(t => !t.is_guest);
+        const guestTeamList  = teams.filter(t =>  t.is_guest);
+
+        const GROUP_HDR = `background:var(--surface2);color:var(--text-muted);font-size:0.75em;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;padding:5px 8px`;
+
+        function teamRow(t) {
+          const zero    = Number(t.game_count) === 0;
+          const fg      = zero ? '#e53935' : null;
+          const fgMuted = zero ? '#e53935' : 'var(--text-muted)';
+          return `<tr data-team-id="${t.team_id}" data-team-name="${escapeHtml(t.name)}">
+            <td class="sp-col1"${fg ? ` style="color:${fg}"` : ''}>${escapeHtml(t.name)}</td>
+            <td style="color:${fgMuted}">${escapeHtml(t.league_name || '')}</td>
+            <td class="col-num"${fg ? ` style="color:${fg}"` : ''}>${Number(t.game_count)}</td>
+            <td style="color:${fgMuted}">${escapeHtml(t.conference || '')}</td>
+            <td style="color:${fgMuted}">${escapeHtml(t.coach || '')}</td>
+          </tr>`;
+        }
+
+        const GH5 = `<td style="${GROUP_HDR}"></td>`.repeat(4);
+        teamTbody.innerHTML =
+          `<tr data-group="league" style="cursor:pointer">
+             <td class="sp-col1" style="${GROUP_HDR}">League</td>${GH5}
+           </tr>` +
+          leagueTeamList.map(teamRow).join('') +
+          (guestTeamList.length
+            ? `<tr data-group="nonleague" style="cursor:pointer">
+                 <td class="sp-col1" style="${GROUP_HDR}">Non-League</td>${GH5}
+               </tr>` + guestTeamList.map(teamRow).join('')
+            : '') +
+          `<tr data-team-id="all" style="font-weight:600;border-top:1px solid var(--border)">
+             <td class="sp-col1">All Teams</td><td></td><td class="col-num">${allGames.length}</td><td></td><td></td>
+           </tr>`;
+
+        // ── Tournaments list ──────────────────────────────────────
+        const tournTbody = document.getElementById('sp-tourn-tbody');
+        const fmtTournDate = d => d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—';
+        tournTbody.innerHTML = tournaments.length
+          ? tournaments.map(t => `<tr>
+              <td>${escapeHtml(t.name)}</td>
+              <td style="color:var(--text-muted);white-space:nowrap">${fmtTournDate(t.startdate)}</td>
+              <td style="color:var(--text-muted);white-space:nowrap">${fmtTournDate(t.enddate)}</td>
+            </tr>`).join('')
+          : '<tr><td colspan="3" class="list-empty">None</td></tr>';
+
+        // ── Integrity report ──────────────────────────────────────
+        const teamsNoGames = leagueTeamList.filter(t => Number(t.game_count) === 0).length;
+        document.getElementById('sp-integrity').innerHTML =
+          `<span style="color:${teamsNoGames === 0 ? '#43a047' : '#e53935'}">Teams with no games: ${teamsNoGames}</span>`;
+
+        // ── Standings ─────────────────────────────────────────────
+        function wl(tid, filter) {
+          let w = 0, l = 0;
+          for (const g of allGames) {
+            const home = String(g.team_id) === tid;
+            const away = String(g.opponent_id) === tid;
+            if (!home && !away) continue;
+            if (!filter(g, home ? String(g.opponent_id) : String(g.team_id))) continue;
+            const my  = home ? g.team_score     : g.opponent_score;
+            const opp = home ? g.opponent_score : g.team_score;
+            if (my == null || opp == null) continue;
+            if (Number(my) > Number(opp)) w++; else if (Number(my) < Number(opp)) l++;
+          }
+          return `${w}–${l}`;
+        }
+
+        const standingRows = teams
+          .filter(t => !t.is_guest)
+          .map(t => {
+            const tid = String(t.team_id);
+            return {
+              ...t,
+              overall: wl(tid, ()    => true),
+              league:  wl(tid, (g, oppId) => leagueSet.has(oppId)),
+              conf:    wl(tid, (g)   => g.comptype === 'Conference'),
+              _w: allGames.filter(g => {
+                const home = String(g.team_id) === tid, away = String(g.opponent_id) === tid;
+                if (!home && !away) return false;
+                const my = home ? g.team_score : g.opponent_score;
+                const op = home ? g.opponent_score : g.team_score;
+                return my != null && op != null && my > op;
+              }).length,
+            };
+          });
+
+        const confMap = {};
+        for (const t of standingRows) {
+          const key = t.conference || '';
+          (confMap[key] ??= []).push(t);
+        }
+        const sortedConfs = Object.keys(confMap).sort((a, b) =>
+          !a ? 1 : !b ? -1 : a.localeCompare(b)
+        );
+        for (const key of sortedConfs) {
+          confMap[key].sort((a, b) => b._w - a._w || a.name.localeCompare(b.name));
+        }
+
+        const standingsEl = document.getElementById('sp-standings');
+        if (!standingRows.length) {
+          standingsEl.innerHTML = '<p style="color:var(--text-muted);font-size:0.85em;margin:0">No league teams.</p>';
+        } else {
+          standingsEl.innerHTML = `
+            <div style="overflow-x:auto">
+            <table class="data-table">
+              <thead>
+                <tr><th class="sp-col1">Team</th><th class="col-num">Conf</th><th class="col-num">LG</th><th class="col-num">Ovrl</th></tr>
+              </thead>
+              <tbody>
+                ${sortedConfs.map(key => `
+                  <tr>
+                    <td class="sp-col1" style="color:var(--accent);font-size:0.75em;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;background:var(--surface);padding:5px 8px">${key ? escapeHtml(key) : 'No Conference'}</td>
+                    <td style="background:var(--surface);padding:5px 0"></td>
+                    <td style="background:var(--surface);padding:5px 0"></td>
+                    <td style="background:var(--surface);padding:5px 0"></td>
+                  </tr>
+                  ${confMap[key].map(t => {
+                    const fg = Number(t.game_count) === 0 ? 'color:#e53935' : '';
+                    return `
+                    <tr>
+                      <td class="sp-col1"${fg ? ` style="${fg}"` : ''}>${escapeHtml(t.name)}</td>
+                      <td class="col-num"${fg ? ` style="${fg}"` : ''}>${t.conf}</td>
+                      <td class="col-num"${fg ? ` style="${fg}"` : ''}>${t.league}</td>
+                      <td class="col-num"${fg ? ` style="${fg}"` : ''}>${t.overall}</td>
+                    </tr>`;
+                  }).join('')}
+                `).join('')}
+              </tbody>
+            </table>
+            </div>`;
+        }
+
+        // ── Games renderer ────────────────────────────────────────
+        const tbody   = document.getElementById('sp-games-tbody');
+        const countEl = document.getElementById('sp-count');
+        const backQ   = encodeURIComponent(`season-profile?id=${params.id}`);
+        const chevron = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>`;
+
+        let sortAsc     = true;
+        let currentList = allGames;
+
+        function renderGames(list) {
+          currentList = list;
+          const ctFilter = document.getElementById('sp-comptype-filter')?.value || '';
+          const filtered = ctFilter ? list.filter(g => g.comptype === ctFilter) : list;
+          const sorted = [...filtered].sort((a, b) => {
+            const cmp = String(a.game_date).localeCompare(String(b.game_date));
+            return sortAsc ? cmp : -cmp;
+          });
+          countEl.textContent = `${sorted.length} game${sorted.length !== 1 ? 's' : ''}`;
+          if (!sorted.length) {
+            tbody.innerHTML = '<tr><td colspan="7" class="list-empty">No games found.</td></tr>';
+            return;
+          }
+          tbody.innerHTML = sorted.map(g => {
+            const date  = String(g.game_date).substring(0, 10);
+            const score = g.team_score != null && g.opponent_score != null
+              ? `${g.team_score}–${g.opponent_score}` : '—';
+            const homeWon = g.team_score != null && g.opponent_score != null && Number(g.team_score) > Number(g.opponent_score);
+            const awayWon = g.team_score != null && g.opponent_score != null && Number(g.opponent_score) > Number(g.team_score);
+            const noBs = !g.has_boxscore;
+            const fg   = noBs ? ' style="color:#e53935"' : '';
+            return `<tr${noBs ? ' style="color:#e53935"' : ''}>
+              <td class="sp-col1"><a href="#/boxscore?id=${g.competition_id}&back=${backQ}" class="tbl-link" style="color:var(--accent);display:inline-flex;align-items:center;gap:3px">${date}${chevron}</a></td>
+              <td${fg}>${homeWon ? `<strong>${escapeHtml(g.team_name)}</strong>` : escapeHtml(g.team_name)}</td>
+              <td class="col-num"${fg}>${score}</td>
+              <td${fg}>${awayWon ? `<strong>${escapeHtml(g.opponent_name)}</strong>` : escapeHtml(g.opponent_name)}</td>
+              <td${fg}>${escapeHtml(g.location || '')}</td>
+              <td${fg}>${escapeHtml(g.comptype || '')}</td>
+              <td${fg}>${escapeHtml(g.tournament_name || '')}</td>
+            </tr>`;
+          }).join('');
+        }
+
+        document.getElementById('sp-date-th').addEventListener('click', () => {
+          sortAsc = !sortAsc;
+          document.getElementById('sp-sort-icon').textContent = sortAsc ? '↑' : '↓';
+          renderGames(currentList);
+        });
+
+        const comptypeSel = document.getElementById('sp-comptype-filter');
+        [...new Set(allGames.map(g => g.comptype).filter(Boolean))].sort().forEach(ct => {
+          const opt = document.createElement('option');
+          opt.value = ct;
+          opt.textContent = ct;
+          comptypeSel.appendChild(opt);
+        });
+        comptypeSel.addEventListener('change', () => renderGames(currentList));
+
+        renderGames(allGames);
+
+        teamTbody.addEventListener('click', e => {
+          const row = e.target.closest('tr[data-team-id], tr[data-group]');
+          if (!row) return;
+          teamTbody.querySelectorAll('tr').forEach(r => r.classList.remove('sp-selected'));
+          row.classList.add('sp-selected');
+          if (row.dataset.teamId === 'all') {
+            gamesTitle.textContent = 'Games';
+            renderGames(allGames);
+          } else if (row.dataset.group === 'league') {
+            gamesTitle.textContent = 'Games — League';
+            renderGames(allGames.filter(g =>
+              leagueSet.has(String(g.team_id)) && leagueSet.has(String(g.opponent_id))
+            ));
+          } else if (row.dataset.group === 'nonleague') {
+            gamesTitle.textContent = 'Games — Non-League';
+            renderGames(allGames.filter(g =>
+              !leagueSet.has(String(g.team_id)) || !leagueSet.has(String(g.opponent_id))
+            ));
+          } else {
+            const tid = row.dataset.teamId;
+            gamesTitle.textContent = `Games — ${row.dataset.teamName}`;
+            renderGames(allGames.filter(g =>
+              String(g.team_id) === tid || String(g.opponent_id) === tid
+            ));
+          }
+        });
+
+      } catch {
+        document.getElementById('sp-name').textContent = 'Could not load season.';
+      }
+    },
   },
 
   'player-profile': {
@@ -1959,11 +2621,10 @@ const pages = {
                   <th>FG</th>
                   <th>3P</th>
                   <th>FT</th>
-                  <th></th>
                 </tr>
               </thead>
               <tbody id="pp-games-tbody">
-                <tr><td colspan="14" class="list-empty">Select a season to view games.</td></tr>
+                <tr><td colspan="13" class="list-empty">Select a season to view games.</td></tr>
               </tbody>
             </table>
           </div>
@@ -2118,9 +2779,6 @@ const pages = {
                 return;
               }
               const totals = { min:0, pts:0, reb:0, ast:0, stl:0, blk:0, to:0, pf:0 };
-              const bsIcon = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 9v9"/>
-              </svg>`;
               const rows = gd.games.map(g => {
                 totals.min += Number(g.min) || 0;
                 totals.pts += Number(g.pts) || 0;
@@ -2131,13 +2789,15 @@ const pages = {
                 totals.to  += Number(g.to)  || 0;
                 totals.pf  += Number(g.pf)  || 0;
                 const date = g.game_date ? String(g.game_date).slice(0, 10) : '—';
-                const opp  = (g.home_away === 'H' ? 'vs. ' : '@ ') + escapeHtml(g.opponent_name);
+                const oppLabel = escapeHtml(g.opponent_abbrev || g.opponent_name);
+                const opp  = (g.home_away === 'H' ? 'vs. ' : '@ ') + oppLabel;
                 const bsQ  = new URLSearchParams({ id: g.competition_id, back: 'player-profile', player_id: params.id });
                 if (params.league) bsQ.set('league', params.league);
                 if (params.season) bsQ.set('season', params.season);
                 if (params.team)   bsQ.set('team',   params.team);
+                const chevron = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>`;
                 return `<tr>
-                  <td style="white-space:nowrap">${date}</td>
+                  <td style="white-space:nowrap"><a href="#/boxscore?${bsQ}" class="tbl-link" style="color:var(--accent);display:inline-flex;align-items:center;gap:3px">${date}${chevron}</a></td>
                   <td>${opp}</td>
                   <td class="col-num">${fmtMin(g.min)}</td>
                   <td class="col-num">${g.pts}</td>
@@ -2150,7 +2810,6 @@ const pages = {
                   <td>${g.fgm}/${g.fga}</td>
                   <td>${g.tpm}/${g.tpa}</td>
                   <td>${g.ftm}/${g.fta}</td>
-                  <td><a href="#/boxscore?${bsQ}" class="icon-link" title="Boxscore">${bsIcon}</a></td>
                 </tr>`;
               });
               const summaryRow = `
@@ -2165,11 +2824,11 @@ const pages = {
                   <td class="col-num">${totals.blk}</td>
                   <td class="col-num">${totals.to}</td>
                   <td class="col-num">${totals.pf}</td>
-                  <td></td><td></td><td></td><td></td>
+                  <td></td><td></td><td></td>
                 </tr>`;
               gamesTbody.innerHTML = rows.join('') + summaryRow;
             } catch {
-              gamesTbody.innerHTML = '<tr><td colspan="14" class="list-empty">Could not load games.</td></tr>';
+              gamesTbody.innerHTML = '<tr><td colspan="13" class="list-empty">Could not load games.</td></tr>';
             }
           });
 
@@ -2395,9 +3054,13 @@ const pages = {
         });
 
         requestAnimationFrame(() => {
-          const refTable = document.querySelector('#bs-tab-boxscore .data-table');
+          const visibleTables = [...document.querySelectorAll('#bs-tab-boxscore .data-table')];
+          const refTable = visibleTables[0];
           if (refTable) {
-            const widths = [...refTable.querySelectorAll('thead th')].map(th => th.offsetWidth);
+            const colCount = refTable.querySelectorAll('thead th').length;
+            const widths = Array.from({ length: colCount }, (_, i) =>
+              Math.max(...visibleTables.map(tbl => tbl.querySelectorAll('thead th')[i]?.offsetWidth || 0))
+            );
             document.querySelectorAll('#bs-tabs .data-table').forEach(tbl => {
               const cg = document.createElement('colgroup');
               widths.forEach(w => {
@@ -2454,10 +3117,6 @@ const pages = {
               <span class="summary-count" id="s-seasons">—</span>
               <span class="summary-label">Seasons</span>
             </a>
-            <a class="summary-tile is-link" href="#/teams">
-              <span class="summary-count" id="s-teams">—</span>
-              <span class="summary-label">Teams</span>
-            </a>
             <a class="summary-tile is-link" href="#/games">
               <span class="summary-count" id="s-competitions">—</span>
               <span class="summary-label">Games</span>
@@ -2466,6 +3125,14 @@ const pages = {
               <span class="summary-count" id="s-boxscores">—</span>
               <span class="summary-label">Boxscores</span>
             </div>
+            <div class="summary-tile">
+              <span class="summary-count" id="s-schools">—</span>
+              <span class="summary-label">Schools</span>
+            </div>
+            <a class="summary-tile is-link" href="#/teams">
+              <span class="summary-count" id="s-teams">—</span>
+              <span class="summary-label">Teams</span>
+            </a>
             <a class="summary-tile is-link" href="#/players">
               <span class="summary-count" id="s-players">—</span>
               <span class="summary-label">Players</span>
@@ -2477,13 +3144,18 @@ const pages = {
           <h3 class="section-title">Missing Box Scores</h3>
           <div id="missing-bs-list" style="color:var(--text-muted)">Loading…</div>
         </div>
+        <div class="card" style="margin-top:16px">
+          <h3 class="section-title">Teams Without Games</h3>
+          <div id="no-games-list" style="color:var(--text-muted)">Loading…</div>
+        </div>
       `;
     },
 
     async init() {
-      const [summaryRes, missingRes] = await Promise.allSettled([
+      const [summaryRes, missingRes, noGamesRes] = await Promise.allSettled([
         fetch('api/summary').then(r => r.json()),
-        fetch('api/games/missing-boxscores').then(r => r.json())
+        fetch('api/games/missing-boxscores').then(r => r.json()),
+        fetch('api/teams/no-games').then(r => r.json())
       ]);
 
       // Summary card
@@ -2501,6 +3173,7 @@ const pages = {
           document.getElementById('s-teams').textContent        = data.teams;
           document.getElementById('s-competitions').textContent = data.competitions;
           document.getElementById('s-boxscores').textContent    = data.boxscores;
+          document.getElementById('s-schools').textContent      = data.schools;
           document.getElementById('s-players').textContent      = data.players;
         }
       } else {
@@ -2530,6 +3203,29 @@ const pages = {
         }
       } else {
         listEl.textContent = 'Could not load missing box scores.';
+      }
+
+      // Teams without games card
+      const noGamesEl = document.getElementById('no-games-list');
+      if (noGamesRes.status === 'fulfilled' && Array.isArray(noGamesRes.value)) {
+        const teams = noGamesRes.value;
+        if (teams.length === 0) {
+          noGamesEl.innerHTML = '<p class="list-empty">All teams have at least one game.</p>';
+        } else {
+          noGamesEl.innerHTML = `
+            <table class="data-table">
+              <thead><tr>
+                <th>League · Season</th>
+                <th>Team</th>
+              </tr></thead>
+              <tbody>${teams.map(t => `<tr>
+                <td>${escapeHtml(t.league_name)} · ${escapeHtml(t.season_name)}</td>
+                <td>${escapeHtml(t.team_name)}</td>
+              </tr>`).join('')}</tbody>
+            </table>`;
+        }
+      } else {
+        noGamesEl.textContent = 'Could not load teams without games.';
       }
     }
   },
@@ -2750,6 +3446,45 @@ const ADD_TEAM_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="non
   <line x1="22" y1="11" x2="16" y2="11"/>
 </svg>`;
 
+const CHEVRON_ICON = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>`;
+
+const GLOBE_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="12" cy="12" r="10"/>
+  <line x1="2" y1="12" x2="22" y2="12"/>
+  <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+</svg>`;
+const MAIL_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+  <polyline points="22,6 12,12 2,6"/>
+</svg>`;
+const FB_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/>
+</svg>`;
+const X_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+  <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+</svg>`;
+const IG_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>
+  <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/>
+  <line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/>
+</svg>`;
+const NAV_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>`;
+
+function buildLinks(lg) {
+  const strip = h => h ? h.replace(/^@/, '') : '';
+  const items = [
+    lg.website_url   ? [lg.website_url,                                    GLOBE_ICON, 'Website']        : null,
+    lg.contact_email ? [`mailto:${lg.contact_email}`,                      MAIL_ICON,  lg.contact_email] : null,
+    lg.facebook      ? [`https://www.facebook.com/${strip(lg.facebook)}`,  FB_ICON,    'Facebook']       : null,
+    lg.x_handle      ? [`https://x.com/${strip(lg.x_handle)}`,             X_ICON,     'X (Twitter)']    : null,
+    lg.instagram     ? [`https://www.instagram.com/${strip(lg.instagram)}`, IG_ICON,   'Instagram']      : null,
+  ].filter(Boolean);
+  if (!items.length) return '<span style="color:var(--text-muted)">—</span>';
+  return items.map(([url, icon, title]) =>
+    `<a class="link-icon" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(title)}">${icon}</a>`
+  ).join('');
+}
+
 // ── Theme ─────────────────────────────────────────────────────────────────────
 function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
@@ -2915,7 +3650,7 @@ const LeagueModal = (() => {
       if (!body.name) { showStatus('lm-status', 'error', 'League name is required.'); return; }
       btn.disabled = true; btn.textContent = 'Saving…';
       try {
-        const res  = await fetch(_league ? `api/leagues/${_league.id}` : 'api/leagues', {
+        const res  = await fetch(_league ? `api/leagues/${_league.league_id}` : 'api/leagues', {
           method:  _league ? 'PUT' : 'POST',
           headers: { 'Content-Type': 'application/json' },
           body:    JSON.stringify(body)
@@ -2970,7 +3705,7 @@ const SeasonModal = (() => {
 
     const leagueId = season?.league_id ?? prefillLeagueId ?? '';
     const leagueOpts = leagues.map(l =>
-      `<option value="${l.id}"${String(l.id) === String(leagueId) ? ' selected' : ''}>${escapeHtml(l.name)}</option>`
+      `<option value="${l.league_id}"${String(l.league_id) === String(leagueId) ? ' selected' : ''}>${escapeHtml(l.name)}</option>`
     ).join('');
 
     const wrap = document.createElement('div');
@@ -2995,12 +3730,12 @@ const SeasonModal = (() => {
             </div>
             <div class="two-col">
               <div class="form-group">
-                <label for="sm-start-year">Start Year <span style="color:var(--accent)">*</span></label>
-                <input type="number" id="sm-start-year" placeholder="2025" min="1900" max="2100">
+                <label for="sm-start-date">Start Date <span style="color:var(--accent)">*</span></label>
+                <input type="date" id="sm-start-date">
               </div>
               <div class="form-group">
-                <label for="sm-end-year">End Year <span style="color:var(--accent)">*</span></label>
-                <input type="number" id="sm-end-year" placeholder="2026" min="1900" max="2100">
+                <label for="sm-end-date">End Date <span style="color:var(--accent)">*</span></label>
+                <input type="date" id="sm-end-date">
               </div>
             </div>
             <div class="form-actions">
@@ -3016,8 +3751,8 @@ const SeasonModal = (() => {
 
     if (season) {
       setValue('sm-name',       season.name);
-      setValue('sm-start-year', season.start_year);
-      setValue('sm-end-year',   season.end_year);
+      setValue('sm-start-date', season.start_date ? String(season.start_date).slice(0, 10) : '');
+      setValue('sm-end-date',   season.end_date   ? String(season.end_date).slice(0, 10)   : '');
     }
 
     const _openedAt = Date.now();
@@ -3035,16 +3770,16 @@ const SeasonModal = (() => {
       const body = {
         league_id:  document.getElementById('sm-league').value,
         name:       document.getElementById('sm-name').value.trim(),
-        start_year: document.getElementById('sm-start-year').value,
-        end_year:   document.getElementById('sm-end-year').value,
+        start_date: document.getElementById('sm-start-date').value,
+        end_date:   document.getElementById('sm-end-date').value,
       };
-      if (!body.league_id || !body.name || !body.start_year || !body.end_year) {
+      if (!body.league_id || !body.name || !body.start_date || !body.end_date) {
         showStatus('sm-status', 'error', 'All fields are required.');
         return;
       }
       btn.disabled = true; btn.textContent = 'Saving…';
       try {
-        const res  = await fetch(_season ? `api/seasons/${_season.id}` : 'api/seasons', {
+        const res  = await fetch(_season ? `api/seasons/${_season.season_id}` : 'api/seasons', {
           method:  _season ? 'PUT' : 'POST',
           headers: { 'Content-Type': 'application/json' },
           body:    JSON.stringify(body)
@@ -3158,7 +3893,7 @@ const TeamModal = (() => {
       if (!body.name) { showStatus('tm2-status', 'error', 'Team name is required.'); return; }
       btn.disabled = true; btn.textContent = 'Saving…';
       try {
-        const res  = await fetch(_team ? `api/teams/${_team.id}` : 'api/teams', {
+        const res  = await fetch(_team ? `api/teams/${_team.team_id}` : 'api/teams', {
           method:  _team ? 'PUT' : 'POST',
           headers: { 'Content-Type': 'application/json' },
           body:    JSON.stringify(body)
@@ -3211,7 +3946,7 @@ const TeamSeasonModal = (() => {
     } catch {}
 
     const leagueOpts = leagues.map(l =>
-      `<option value="${l.id}">${escapeHtml(l.name)}</option>`
+      `<option value="${l.league_id}">${escapeHtml(l.name)}</option>`
     ).join('');
 
     const wrap = document.createElement('div');
@@ -3235,7 +3970,7 @@ const TeamSeasonModal = (() => {
                 <label for="tsm-season">Season <span style="color:var(--accent)">*</span></label>
                 <select id="tsm-season">
                   <option value="">— Select Season —</option>
-                  ${seasons.map(s => `<option value="${s.id}">${escapeHtml(s.name)} (${escapeHtml(s.league_name)})</option>`).join('')}
+                  ${seasons.map(s => `<option value="${s.season_id}">${escapeHtml(s.name)} (${escapeHtml(s.league_name)})</option>`).join('')}
                 </select>
               </div>
             </div>
@@ -3270,7 +4005,7 @@ const TeamSeasonModal = (() => {
       document.getElementById('tsm-season').innerHTML =
         '<option value="">— Select Season —</option>' +
         seasons.filter(s => !lid || String(s.league_id) === lid)
-          .map(s => `<option value="${s.id}">${escapeHtml(s.name)} (${escapeHtml(s.league_name)})</option>`)
+          .map(s => `<option value="${s.season_id}">${escapeHtml(s.name)} (${escapeHtml(s.league_name)})</option>`)
           .join('');
     });
 
@@ -3294,7 +4029,7 @@ const TeamSeasonModal = (() => {
       if (!body.season_id) { showStatus('tsm-status', 'error', 'Season is required.'); return; }
       btn.disabled = true; btn.textContent = 'Saving…';
       try {
-        const res  = await fetch(`api/teams/${_team.id}/seasons`, {
+        const res  = await fetch(`api/teams/${_team.team_id}/seasons`, {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
           body:    JSON.stringify(body)

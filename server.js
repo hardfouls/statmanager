@@ -8,8 +8,68 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const CONFIG_PATH = path.join(__dirname, 'statmanager.ini');
 
-app.use(express.json());
+app.use(express.json({ limit: '2mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
+
+// ── Startup migration ─────────────────────────────────────────────────────────
+(async () => {
+  const iconsDir = path.join(__dirname, 'public', 'leagues', 'icons');
+  if (!fs.existsSync(iconsDir)) fs.mkdirSync(iconsDir, { recursive: true });
+  let conn;
+  try {
+    conn = await dbConnect();
+  } catch {
+    return; // DB not configured yet — migrations will run on next restart
+  }
+  const migrate = async (sql) => { try { await conn.execute(sql); } catch { /* already applied or unsupported */ } };
+  try {
+    await migrate(`ALTER TABLE leagues ADD COLUMN IF NOT EXISTS logo_path VARCHAR(255) NULL`);
+    await migrate(`
+      CREATE TABLE IF NOT EXISTS comptypes (
+        comptype_id TINYINT UNSIGNED NOT NULL,
+        comptype    VARCHAR(30)      NOT NULL,
+        PRIMARY KEY (comptype_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+    await migrate(`
+      INSERT IGNORE INTO comptypes (comptype_id, comptype) VALUES
+        (1, 'Pre-Season'), (2, 'Non-Conference'), (3, 'Conference'), (4, 'Post-Season')`);
+    await migrate(`ALTER TABLE competitions ADD COLUMN IF NOT EXISTS comptype_id TINYINT UNSIGNED NULL`);
+    await migrate(`
+      ALTER TABLE competitions
+        ADD CONSTRAINT IF NOT EXISTS fk_competitions_comptype
+        FOREIGN KEY (comptype_id) REFERENCES comptypes (comptype_id)
+        ON UPDATE CASCADE ON DELETE SET NULL`);
+    await migrate(`
+      CREATE TABLE IF NOT EXISTS tournaments (
+        tournament_id SMALLINT UNSIGNED NOT NULL AUTO_INCREMENT,
+        name          VARCHAR(40)       NOT NULL,
+        startdate     DATE              NULL,
+        enddate       DATE              NULL,
+        PRIMARY KEY (tournament_id),
+        UNIQUE KEY uq_tournaments_name (name)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+    await migrate(`
+      CREATE TABLE IF NOT EXISTS tournament_seasons (
+        tournament_id SMALLINT UNSIGNED NOT NULL,
+        season_id     SMALLINT UNSIGNED NOT NULL,
+        PRIMARY KEY (tournament_id, season_id),
+        CONSTRAINT fk_tournament_seasons_tournament
+          FOREIGN KEY (tournament_id) REFERENCES tournaments (tournament_id)
+          ON UPDATE CASCADE ON DELETE CASCADE,
+        CONSTRAINT fk_tournament_seasons_season
+          FOREIGN KEY (season_id)     REFERENCES seasons (season_id)
+          ON UPDATE CASCADE ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+    await migrate(`ALTER TABLE competitions ADD COLUMN IF NOT EXISTS tournament_id SMALLINT UNSIGNED NULL`);
+    await migrate(`
+      ALTER TABLE competitions
+        ADD CONSTRAINT IF NOT EXISTS fk_competitions_tournament
+        FOREIGN KEY (tournament_id) REFERENCES tournaments (tournament_id)
+        ON UPDATE CASCADE ON DELETE SET NULL`);
+  } finally {
+    await conn.end().catch(() => {});
+  }
+})();
 
 const { version } = require('./package.json');
 app.get('/api/version', (_req, res) => res.json({ version }));
@@ -131,6 +191,7 @@ app.get('/api/summary', async (req, res) => {
         (SELECT COUNT(*) FROM teams)        AS teams,
         (SELECT COUNT(*) FROM competitions) AS competitions,
         (SELECT COUNT(DISTINCT competition_id) FROM boxscores) AS boxscores,
+        (SELECT COUNT(*) FROM members WHERE type = 'school') AS schools,
         (SELECT COUNT(*) FROM players)      AS players
     `);
     res.json({ configured: true, ...row });
@@ -205,25 +266,120 @@ app.get('/api/leagues', async (req, res) => {
         l.*,
         (SELECT COUNT(*)
            FROM seasons s
-          WHERE s.league_id = l.id)                                                          AS season_count,
+          WHERE s.league_id = l.league_id)                                                   AS season_count,
         (SELECT COUNT(DISTINCT ts.team_id)
-           FROM team_seasons ts JOIN seasons s ON ts.season_id = s.id
-          WHERE s.league_id = l.id)                                                          AS team_count,
+           FROM team_seasons ts JOIN seasons s ON ts.season_id = s.season_id
+          WHERE s.league_id = l.league_id)                                                   AS team_count,
         (SELECT COUNT(*)
-           FROM competitions c JOIN seasons s ON c.season_id = s.id
-          WHERE s.league_id = l.id)                                                          AS competition_count,
+           FROM competitions c JOIN seasons s ON c.season_id = s.season_id
+          WHERE s.league_id = l.league_id)                                                   AS competition_count,
         (SELECT COUNT(DISTINCT ps.player_id)
-           FROM player_seasons ps JOIN seasons s ON ps.season_id = s.id
-          WHERE s.league_id = l.id)                                                          AS player_count,
+           FROM player_seasons ps JOIN seasons s ON ps.season_id = s.season_id
+          WHERE s.league_id = l.league_id)                                                   AS player_count,
         (SELECT COUNT(DISTINCT b.competition_id)
            FROM boxscores b
-           JOIN competitions c ON b.competition_id = c.id
-           JOIN seasons s      ON c.season_id = s.id
-          WHERE s.league_id = l.id)                                                          AS boxscore_count
+           JOIN competitions c ON b.competition_id = c.competition_id
+           JOIN seasons s      ON c.season_id = s.season_id
+          WHERE s.league_id = l.league_id)                                                   AS boxscore_count
       FROM leagues l
       ORDER BY l.name
     `);
     res.json({ leagues: rows });
+  } catch (err) {
+    res.json({ error: err.message });
+  } finally {
+    await conn?.end().catch(() => {});
+  }
+});
+
+const ICON_EXTS = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp', 'image/svg+xml': 'svg' };
+
+app.post('/api/leagues/:id/icon', async (req, res) => {
+  const id = parseInt(req.params.id);
+  if (!id) return res.status(400).json({ error: 'Invalid id' });
+  const { data } = req.body;
+  if (!data) return res.status(400).json({ error: 'No image data provided' });
+
+  const match = data.match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/s);
+  if (!match) return res.status(400).json({ error: 'Invalid image data format' });
+  const [, mime, b64] = match;
+  const ext = ICON_EXTS[mime];
+  if (!ext) return res.status(400).json({ error: 'Unsupported type. Use PNG, JPG, GIF, WebP, or SVG.' });
+  if (b64.length > 1_400_000) return res.status(400).json({ error: 'Image too large (max ~1 MB)' });
+
+  const iconsDir = path.join(__dirname, 'public', 'leagues', 'icons');
+  if (!fs.existsSync(iconsDir)) fs.mkdirSync(iconsDir, { recursive: true });
+  for (const f of fs.readdirSync(iconsDir)) {
+    if (f.startsWith(`${id}.`)) fs.unlinkSync(path.join(iconsDir, f));
+  }
+
+  const filename = `${id}.${ext}`;
+  fs.writeFileSync(path.join(iconsDir, filename), Buffer.from(b64, 'base64'));
+  const logoPath = `leagues/icons/${filename}`;
+
+  let conn;
+  try {
+    conn = await dbConnect();
+    await conn.execute('UPDATE leagues SET logo_path = ? WHERE league_id = ?', [logoPath, id]);
+    res.json({ success: true, logo_path: logoPath });
+  } catch (err) {
+    res.json({ error: err.message });
+  } finally {
+    await conn?.end().catch(() => {});
+  }
+});
+
+app.delete('/api/leagues/:id/icon', async (req, res) => {
+  const id = parseInt(req.params.id);
+  if (!id) return res.status(400).json({ error: 'Invalid id' });
+  let conn;
+  try {
+    conn = await dbConnect();
+    const [[row]] = await conn.execute('SELECT logo_path FROM leagues WHERE league_id = ?', [id]);
+    if (row?.logo_path) {
+      const fp = path.join(__dirname, 'public', row.logo_path);
+      if (fs.existsSync(fp)) fs.unlinkSync(fp);
+    }
+    await conn.execute('UPDATE leagues SET logo_path = NULL WHERE league_id = ?', [id]);
+    res.json({ success: true });
+  } catch (err) {
+    res.json({ error: err.message });
+  } finally {
+    await conn?.end().catch(() => {});
+  }
+});
+
+app.get('/api/leagues/:id', async (req, res) => {
+  const id = parseInt(req.params.id);
+  if (!id) return res.status(400).json({ error: 'Invalid id' });
+  let conn;
+  try {
+    conn = await dbConnect();
+    const [[league]] = await conn.execute(`
+      SELECT l.*,
+        (SELECT COUNT(*) FROM seasons s WHERE s.league_id = l.league_id)                                                                AS season_count,
+        (SELECT COUNT(DISTINCT ts.team_id) FROM team_seasons ts JOIN seasons s ON ts.season_id = s.season_id WHERE s.league_id = l.league_id)  AS team_count,
+        (SELECT COUNT(*) FROM competitions c JOIN seasons s ON c.season_id = s.season_id WHERE s.league_id = l.league_id)                      AS competition_count,
+        (SELECT COUNT(DISTINCT ps.player_id) FROM player_seasons ps JOIN seasons s ON ps.season_id = s.season_id WHERE s.league_id = l.league_id) AS player_count,
+        (SELECT COUNT(DISTINCT b.competition_id)
+           FROM boxscores b JOIN competitions c ON b.competition_id = c.competition_id JOIN seasons s ON c.season_id = s.season_id
+          WHERE s.league_id = l.league_id)                                                                                              AS boxscore_count
+      FROM leagues l WHERE l.league_id = ?
+    `, [id]);
+    if (!league) return res.status(404).json({ error: 'League not found' });
+
+    const [seasons] = await conn.execute(`
+      SELECT s.season_id, s.name,
+        (SELECT COUNT(DISTINCT ts.team_id) FROM team_seasons ts WHERE ts.season_id = s.season_id)                             AS team_count,
+        (SELECT COUNT(*) FROM competitions c WHERE c.season_id = s.season_id)                                                 AS game_count,
+        (SELECT COUNT(DISTINCT ps.player_id) FROM player_seasons ps WHERE ps.season_id = s.season_id)                        AS player_count,
+        (SELECT COUNT(DISTINCT b.competition_id) FROM boxscores b JOIN competitions c ON b.competition_id = c.competition_id WHERE c.season_id = s.season_id) AS boxscore_count
+      FROM seasons s
+      WHERE s.league_id = ?
+      ORDER BY s.start_date DESC, s.name
+    `, [id]);
+
+    res.json({ league, seasons });
   } catch (err) {
     res.json({ error: err.message });
   } finally {
@@ -261,7 +417,7 @@ app.put('/api/leagues/:id', async (req, res) => {
       `UPDATE leagues
        SET name=?, contact_person=?, contact_phone=?, contact_email=?,
            website_url=?, founded_date=?, facebook=?, x_handle=?, instagram=?
-       WHERE id=?`,
+       WHERE league_id=?`,
       [name.trim(), contact_person || null, contact_phone || null, contact_email || null,
        website_url || null, founded_date || null, facebook || null, x_handle || null, instagram || null,
        parseInt(req.params.id)]
@@ -279,10 +435,12 @@ app.delete('/api/leagues/:id', async (req, res) => {
   let conn;
   try {
     conn = await dbConnect();
-    const [result] = await conn.execute('DELETE FROM leagues WHERE id=?', [parseInt(req.params.id)]);
+    const [result] = await conn.execute('DELETE FROM leagues WHERE league_id=?', [parseInt(req.params.id)]);
     if (result.affectedRows === 0) return res.status(404).json({ error: 'League not found' });
     res.json({ success: true });
   } catch (err) {
+    if (err.errno === 1451)
+      return res.json({ error: 'This league has seasons. Remove all seasons before deleting the league.' });
     res.json({ error: err.message });
   } finally {
     await conn?.end().catch(() => {});
@@ -311,7 +469,7 @@ app.post('/api/leagues/merge', async (req, res) => {
         throw new Error(`League #${id} still has ${remaining} season(s) that could not be migrated`);
 
       const [[src]] = await conn.execute(
-        'SELECT contact_person, contact_phone, contact_email, website_url, founded_date, facebook, x_handle, instagram FROM leagues WHERE id = ?',
+        'SELECT contact_person, contact_phone, contact_email, website_url, founded_date, facebook, x_handle, instagram FROM leagues WHERE league_id = ?',
         [id]
       );
       if (src) {
@@ -325,13 +483,13 @@ app.post('/api/leagues/merge', async (req, res) => {
              facebook       = COALESCE(facebook,       ?),
              x_handle       = COALESCE(x_handle,       ?),
              instagram      = COALESCE(instagram,      ?)
-           WHERE id = ?`,
+           WHERE league_id = ?`,
           [src.contact_person, src.contact_phone, src.contact_email, src.website_url,
            src.founded_date, src.facebook, src.x_handle, src.instagram, masterId]
         );
       }
 
-      const [delResult] = await conn.execute('DELETE FROM leagues WHERE id = ?', [id]);
+      const [delResult] = await conn.execute('DELETE FROM leagues WHERE league_id = ?', [id]);
       if (delResult.affectedRows === 0)
         throw new Error(`League #${id} could not be deleted — it may no longer exist`);
     }
@@ -354,16 +512,16 @@ app.get('/api/seasons', async (req, res) => {
     const [rows] = await conn.execute(`
       SELECT s.*, l.name AS league_name,
         (SELECT COUNT(*)
-           FROM team_seasons ts WHERE ts.season_id = s.id)                              AS team_count,
+           FROM team_seasons ts WHERE ts.season_id = s.season_id)                       AS team_count,
         (SELECT COUNT(*)
-           FROM competitions c WHERE c.season_id = s.id)                                 AS game_count,
+           FROM competitions c WHERE c.season_id = s.season_id)                          AS game_count,
         (SELECT COUNT(DISTINCT ps.player_id)
-           FROM player_seasons ps WHERE ps.season_id = s.id)                             AS player_count,
+           FROM player_seasons ps WHERE ps.season_id = s.season_id)                      AS player_count,
         (SELECT COUNT(DISTINCT b.competition_id)
-           FROM boxscores b JOIN competitions c ON b.competition_id = c.id
-          WHERE c.season_id = s.id)                                                      AS boxscore_count
-      FROM seasons s JOIN leagues l ON s.league_id = l.id
-      ORDER BY l.name, s.start_year DESC, s.name
+           FROM boxscores b JOIN competitions c ON b.competition_id = c.competition_id
+          WHERE c.season_id = s.season_id)                                               AS boxscore_count
+      FROM seasons s JOIN leagues l ON s.league_id = l.league_id
+      ORDER BY l.name, s.start_date DESC, s.name
     `);
     res.json({ seasons: rows });
   } catch (err) {
@@ -373,16 +531,120 @@ app.get('/api/seasons', async (req, res) => {
   }
 });
 
+app.get('/api/seasons/:id', async (req, res) => {
+  const id = parseInt(req.params.id);
+  if (!id) return res.status(400).json({ error: 'Invalid id' });
+  let conn;
+  try {
+    conn = await dbConnect();
+    const [[season]] = await conn.execute(`
+      SELECT s.*, l.name AS league_name,
+        (SELECT COUNT(DISTINCT tsch.competition_id) FROM team_schedules tsch WHERE tsch.season_id = s.season_id)              AS game_count,
+        (SELECT COUNT(DISTINCT b.competition_id)
+           FROM boxscores b JOIN team_schedules tsch ON tsch.competition_id = b.competition_id WHERE tsch.season_id = s.season_id)  AS boxscore_count,
+        (SELECT COUNT(DISTINCT ts.team_id) FROM team_seasons ts WHERE ts.season_id = s.season_id)                              AS team_count,
+        (SELECT COUNT(DISTINCT ps.player_id) FROM player_seasons ps WHERE ps.season_id = s.season_id)                         AS player_count
+      FROM seasons s JOIN leagues l ON l.league_id = s.league_id
+      WHERE s.season_id = ?
+    `, [id]);
+    if (!season) return res.status(404).json({ error: 'Season not found' });
+
+    const [leagueTeams] = await conn.execute(`
+      SELECT t.team_id, t.name, l.name AS league_name, ts.coach, ts.conference, 0 AS is_guest,
+        (SELECT COUNT(DISTINCT tsch2.competition_id) FROM team_schedules tsch2
+         WHERE tsch2.season_id = ? AND tsch2.team_id = t.team_id) AS game_count
+      FROM team_seasons ts
+      JOIN teams   t  ON t.team_id  = ts.team_id
+      JOIN seasons sn ON sn.season_id = ts.season_id
+      JOIN leagues l  ON l.league_id  = sn.league_id
+      WHERE ts.season_id = ?
+      ORDER BY t.name
+    `, [id, id]);
+
+    const [guestTeams] = await conn.execute(`
+      SELECT t.team_id, t.name,
+        (SELECT l2.name
+         FROM team_schedules tg
+         JOIN seasons sg ON sg.season_id = tg.season_id
+         JOIN leagues l2 ON l2.league_id = sg.league_id
+         WHERE tg.team_id = t.team_id
+           AND tg.competition_id IN (SELECT competition_id FROM team_schedules WHERE season_id = ?)
+         LIMIT 1) AS league_name,
+        NULL AS coach, NULL AS conference, 1 AS is_guest,
+        (SELECT COUNT(DISTINCT c.competition_id)
+         FROM competitions c
+         JOIN team_schedules tsch ON tsch.competition_id = c.competition_id AND tsch.season_id = ?
+         WHERE c.team_id = t.team_id OR c.opponent_id = t.team_id) AS game_count
+      FROM teams t
+      WHERE NOT EXISTS (SELECT 1 FROM team_seasons WHERE team_id = t.team_id AND season_id = ?)
+        AND EXISTS (
+          SELECT 1 FROM competitions c
+          JOIN team_schedules tsch ON tsch.competition_id = c.competition_id AND tsch.season_id = ?
+          WHERE c.team_id = t.team_id OR c.opponent_id = t.team_id
+        )
+      ORDER BY t.name
+    `, [id, id, id, id]);
+
+    const teams = [...leagueTeams, ...guestTeams]
+      .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+
+    const [tournaments] = await conn.execute(`
+      SELECT trn.tournament_id, trn.name, ts.startdate, ts.enddate
+      FROM tournament_seasons ts
+      JOIN tournaments trn ON trn.tournament_id = ts.tournament_id
+      WHERE ts.season_id = ?
+      ORDER BY ts.startdate, trn.name
+    `, [id]);
+
+    const [games] = await conn.execute(`
+      SELECT DISTINCT c.competition_id, c.game_date, c.location, c.team_id, c.opponent_id,
+             ct.comptype, trn.name AS tournament_name,
+             ts.score AS team_score, os.score AS opponent_score,
+             tm.name  AS team_name,     tm.abbrev AS team_abbrev,
+             opp.name AS opponent_name, opp.abbrev AS opponent_abbrev,
+             EXISTS (SELECT 1 FROM boxscores b WHERE b.competition_id = c.competition_id) AS has_boxscore
+      FROM competitions c
+      JOIN team_schedules tsch ON tsch.competition_id = c.competition_id AND tsch.season_id = ?
+      JOIN teams tm    ON c.team_id     = tm.team_id
+      JOIN teams opp   ON c.opponent_id = opp.team_id
+      LEFT JOIN comptypes  ct  ON ct.comptype_id = c.comptype_id
+      LEFT JOIN tournaments trn ON trn.tournament_id = c.tournament_id
+      LEFT JOIN (SELECT competition_id, team_id, SUM(score) AS score
+                 FROM periods GROUP BY competition_id, team_id) ts
+             ON ts.competition_id = c.competition_id AND ts.team_id = c.team_id
+      LEFT JOIN (SELECT competition_id, team_id, SUM(score) AS score
+                 FROM periods GROUP BY competition_id, team_id) os
+             ON os.competition_id = c.competition_id AND os.team_id = c.opponent_id
+      ORDER BY c.game_date ASC
+    `, [id]);
+
+    const [[prevRow]] = await conn.execute(
+      `SELECT season_id FROM seasons WHERE league_id = ? AND start_date < ? ORDER BY start_date DESC LIMIT 1`,
+      [season.league_id, season.start_date]
+    );
+    const [[nextRow]] = await conn.execute(
+      `SELECT season_id FROM seasons WHERE league_id = ? AND start_date > ? ORDER BY start_date ASC LIMIT 1`,
+      [season.league_id, season.start_date]
+    );
+
+    res.json({ season, games, teams, tournaments, prevSeasonId: prevRow?.season_id ?? null, nextSeasonId: nextRow?.season_id ?? null });
+  } catch (err) {
+    res.json({ error: err.message });
+  } finally {
+    await conn?.end().catch(() => {});
+  }
+});
+
 app.post('/api/seasons', async (req, res) => {
-  const { league_id, name, start_year, end_year } = req.body;
-  if (!league_id || !name?.trim() || !start_year || !end_year)
-    return res.status(400).json({ error: 'League, name, start year and end year are required' });
+  const { league_id, name, start_date, end_date } = req.body;
+  if (!league_id || !name?.trim() || !start_date || !end_date)
+    return res.status(400).json({ error: 'League, name, start date and end date are required' });
   let conn;
   try {
     conn = await dbConnect();
     const [result] = await conn.execute(
-      'INSERT INTO seasons (league_id, name, start_year, end_year) VALUES (?, ?, ?, ?)',
-      [parseInt(league_id), name.trim(), parseInt(start_year), parseInt(end_year)]
+      'INSERT INTO seasons (league_id, name, start_date, end_date) VALUES (?, ?, ?, ?)',
+      [parseInt(league_id), name.trim(), start_date, end_date]
     );
     res.json({ success: true, id: result.insertId });
   } catch (err) {
@@ -393,15 +655,15 @@ app.post('/api/seasons', async (req, res) => {
 });
 
 app.put('/api/seasons/:id', async (req, res) => {
-  const { league_id, name, start_year, end_year } = req.body;
-  if (!league_id || !name?.trim() || !start_year || !end_year)
-    return res.status(400).json({ error: 'League, name, start year and end year are required' });
+  const { league_id, name, start_date, end_date } = req.body;
+  if (!league_id || !name?.trim() || !start_date || !end_date)
+    return res.status(400).json({ error: 'League, name, start date and end date are required' });
   let conn;
   try {
     conn = await dbConnect();
     const [result] = await conn.execute(
-      'UPDATE seasons SET league_id=?, name=?, start_year=?, end_year=? WHERE id=?',
-      [parseInt(league_id), name.trim(), parseInt(start_year), parseInt(end_year), parseInt(req.params.id)]
+      'UPDATE seasons SET league_id=?, name=?, start_date=?, end_date=? WHERE season_id=?',
+      [parseInt(league_id), name.trim(), start_date, end_date, parseInt(req.params.id)]
     );
     if (result.affectedRows === 0) return res.status(404).json({ error: 'Season not found' });
     res.json({ success: true });
@@ -416,7 +678,7 @@ app.delete('/api/seasons/:id', async (req, res) => {
   let conn;
   try {
     conn = await dbConnect();
-    const [result] = await conn.execute('DELETE FROM seasons WHERE id=?', [parseInt(req.params.id)]);
+    const [result] = await conn.execute('DELETE FROM seasons WHERE season_id=?', [parseInt(req.params.id)]);
     if (result.affectedRows === 0) return res.status(404).json({ error: 'Season not found' });
     res.json({ success: true });
   } catch (err) {
@@ -457,7 +719,7 @@ app.post('/api/seasons/merge', async (req, res) => {
       );
       await conn.execute('UPDATE player_seasons SET season_id = ? WHERE season_id = ?', [masterId, srcId]);
 
-      await conn.execute('DELETE FROM seasons WHERE id = ?', [srcId]);
+      await conn.execute('DELETE FROM seasons WHERE season_id = ?', [srcId]);
     }
 
     await conn.execute('COMMIT');
@@ -476,33 +738,33 @@ app.get('/api/teams', async (req, res) => {
   try {
     conn = await dbConnect();
     const [rows] = await conn.execute(`
-      SELECT t.id, t.name, t.abbrev, t.nickname,
+      SELECT t.team_id, t.name, t.abbrev, t.nickname,
              t.gender + 0 AS gender,
-             l.id   AS league_id,
+             l.league_id  AS league_id,
              l.name AS league_name,
              (SELECT ts_r.coach
                 FROM team_seasons ts_r
-                JOIN seasons s_r ON ts_r.season_id = s_r.id
-               WHERE ts_r.team_id = t.id AND s_r.league_id = l.id
-               ORDER BY s_r.start_year DESC LIMIT 1) AS coach,
+                JOIN seasons s_r ON ts_r.season_id = s_r.season_id
+               WHERE ts_r.team_id = t.team_id AND s_r.league_id = l.league_id
+               ORDER BY s_r.start_date DESC LIMIT 1) AS coach,
              COUNT(DISTINCT ts.season_id) AS season_count,
-             (SELECT COUNT(*)
-                FROM competitions c
-                JOIN seasons sc ON c.season_id = sc.id
-               WHERE (c.team_id = t.id OR c.opponent_id = t.id)
-                 AND sc.league_id = l.id) AS game_count,
+             (SELECT COUNT(DISTINCT tsch.competition_id)
+                FROM team_schedules tsch
+                JOIN seasons sc ON sc.season_id = tsch.season_id
+               WHERE tsch.team_id = t.team_id
+                 AND sc.league_id = l.league_id) AS game_count,
              GROUP_CONCAT(DISTINCT ts.season_id ORDER BY ts.season_id) AS season_ids
       FROM teams t
-      JOIN team_seasons ts ON ts.team_id  = t.id
-      JOIN seasons      s  ON ts.season_id = s.id
-      JOIN leagues      l  ON s.league_id  = l.id
-      GROUP BY t.id, l.id
+      JOIN team_seasons ts ON ts.team_id  = t.team_id
+      JOIN seasons      s  ON ts.season_id = s.season_id
+      JOIN leagues      l  ON s.league_id  = l.league_id
+      GROUP BY t.team_id, l.league_id
       UNION ALL
-      SELECT t.id, t.name, t.abbrev, t.nickname,
+      SELECT t.team_id, t.name, t.abbrev, t.nickname,
              t.gender + 0 AS gender,
              NULL, NULL, NULL, 0, 0, NULL
       FROM teams t
-      WHERE NOT EXISTS (SELECT 1 FROM team_seasons ts WHERE ts.team_id = t.id)
+      WHERE NOT EXISTS (SELECT 1 FROM team_seasons ts WHERE ts.team_id = t.team_id)
       ORDER BY name, league_name
     `);
     res.json({ teams: rows });
@@ -556,15 +818,15 @@ app.post('/api/teams/merge', async (req, res) => {
       const [srcHomeSeasons] = await conn.execute(`
         SELECT DISTINCT c.season_id, s.name
         FROM   competitions c
-        JOIN   seasons s ON c.season_id = s.id
+        JOIN   seasons s ON c.season_id = s.season_id
         WHERE  c.team_id = ?
       `, [id]);
 
       for (const { season_id: srcSeasonId, name: seasonName } of srcHomeSeasons) {
         const [[masterSeason]] = await conn.execute(`
-          SELECT s.id
+          SELECT s.season_id
           FROM   team_seasons ts
-          JOIN   seasons s ON ts.season_id = s.id
+          JOIN   seasons s ON ts.season_id = s.season_id
           WHERE  ts.team_id = ? AND s.name = ?
           LIMIT  1
         `, [masterId, seasonName]);
@@ -572,7 +834,7 @@ app.post('/api/teams/merge', async (req, res) => {
         if (masterSeason) {
           await conn.execute(
             'UPDATE competitions SET season_id = ? WHERE team_id = ? AND season_id = ?',
-            [masterSeason.id, id, srcSeasonId]
+            [masterSeason.season_id, id, srcSeasonId]
           );
         } else {
           const [[{ has }]] = await conn.execute(
@@ -618,7 +880,7 @@ app.post('/api/teams/merge', async (req, res) => {
 
       // ── Copy null fields from source to master ────────────────────────
       const [[src]] = await conn.execute(
-        'SELECT abbrev, nickname, gender + 0 AS gender FROM teams WHERE id = ?', [id]
+        'SELECT abbrev, nickname, gender + 0 AS gender FROM teams WHERE team_id = ?', [id]
       );
       if (src) {
         await conn.execute(
@@ -626,7 +888,7 @@ app.post('/api/teams/merge', async (req, res) => {
              abbrev   = COALESCE(abbrev,   ?),
              nickname = COALESCE(nickname, ?),
              gender   = COALESCE(gender,   ?)
-           WHERE id = ?`,
+           WHERE team_id = ?`,
           [src.abbrev, src.nickname, src.gender, masterId]
         );
       }
@@ -652,7 +914,7 @@ app.post('/api/teams/merge', async (req, res) => {
         throw new Error(`Team #${id} still has ${remaining} game(s) that could not be migrated`);
 
       await conn.execute('DELETE FROM team_seasons WHERE team_id = ?', [id]);
-      await conn.execute('DELETE FROM teams WHERE id = ?', [id]);
+      await conn.execute('DELETE FROM teams WHERE team_id = ?', [id]);
     }
 
     await conn.execute('COMMIT');
@@ -674,7 +936,7 @@ app.put('/api/teams/:id', async (req, res) => {
   try {
     conn = await dbConnect();
     await conn.execute(
-      'UPDATE teams SET name=?, abbrev=?, nickname=?, gender=? WHERE id=?',
+      'UPDATE teams SET name=?, abbrev=?, nickname=?, gender=? WHERE team_id=?',
       [name.trim(), abbrev || null, nickname || null, toBit(gender), teamId]
     );
     res.json({ success: true });
@@ -697,7 +959,7 @@ app.delete('/api/teams/:id', async (req, res) => {
     if (anyGames > 0)
       return res.json({ error: `Cannot delete — this team has ${anyGames} game(s) on record.` });
     await conn.execute('DELETE FROM team_seasons WHERE team_id=?', [teamId]);
-    await conn.execute('DELETE FROM teams WHERE id=?', [teamId]);
+    await conn.execute('DELETE FROM teams WHERE team_id=?', [teamId]);
     res.json({ success: true });
   } catch (err) {
     res.json({ error: err.message });
@@ -713,16 +975,16 @@ app.delete('/api/teams/:teamId/leagues/:leagueId', async (req, res) => {
   try {
     conn = await dbConnect();
     const [[{ cnt }]] = await conn.execute(
-      `SELECT COUNT(*) AS cnt FROM competitions c
-       JOIN seasons s ON c.season_id = s.id
-       WHERE s.league_id = ? AND (c.team_id = ? OR c.opponent_id = ?)`,
-      [leagueId, teamId, teamId]
+      `SELECT COUNT(*) AS cnt FROM team_schedules tsch
+       JOIN seasons s ON s.season_id = tsch.season_id
+       WHERE s.league_id = ? AND tsch.team_id = ?`,
+      [leagueId, teamId]
     );
     if (cnt > 0)
       return res.json({ error: `Cannot remove — this team has ${cnt} game(s) in this league.` });
     await conn.execute(
       `DELETE ts FROM team_seasons ts
-       JOIN seasons s ON ts.season_id = s.id
+       JOIN seasons s ON ts.season_id = s.season_id
        WHERE ts.team_id = ? AND s.league_id = ?`,
       [teamId, leagueId]
     );
@@ -730,7 +992,7 @@ app.delete('/api/teams/:teamId/leagues/:leagueId', async (req, res) => {
       'SELECT COUNT(*) AS remaining FROM team_seasons WHERE team_id=?', [teamId]
     );
     if (!remaining)
-      await conn.execute('DELETE FROM teams WHERE id=?', [teamId]);
+      await conn.execute('DELETE FROM teams WHERE team_id=?', [teamId]);
     res.json({ success: true });
   } catch (err) {
     res.json({ error: err.message });
@@ -785,7 +1047,7 @@ app.delete('/api/teams/:teamId/seasons/:seasonId', async (req, res) => {
         'SELECT COUNT(*) AS anyGames FROM competitions WHERE team_id=? OR opponent_id=?',
         [teamId, teamId]
       );
-      if (!anyGames) await conn.execute('DELETE FROM teams WHERE id=?', [teamId]);
+      if (!anyGames) await conn.execute('DELETE FROM teams WHERE team_id=?', [teamId]);
     }
     res.json({ success: true });
   } catch (err) {
@@ -801,16 +1063,40 @@ app.get('/api/games/missing-boxscores', async (req, res) => {
   try {
     conn = await dbConnect();
     const [rows] = await conn.execute(`
-      SELECT c.id, c.game_date,
+      SELECT c.competition_id, c.game_date,
              t.name AS team_name, o.name AS opponent_name,
              s.name AS season_name, l.name AS league_name
       FROM   competitions c
-      JOIN   teams   t ON t.id = c.team_id
-      JOIN   teams   o ON o.id = c.opponent_id
-      JOIN   seasons s ON s.id = c.season_id
-      JOIN   leagues l ON l.id = s.league_id
-      WHERE  NOT EXISTS (SELECT 1 FROM boxscores b WHERE b.competition_id = c.id)
+      JOIN   teams   t ON t.team_id = c.team_id
+      JOIN   teams   o ON o.team_id = c.opponent_id
+      JOIN   seasons s ON s.season_id = c.season_id
+      JOIN   leagues l ON l.league_id = s.league_id
+      WHERE  NOT EXISTS (SELECT 1 FROM boxscores b WHERE b.competition_id = c.competition_id)
       ORDER  BY c.game_date DESC
+    `);
+    res.json(rows);
+  } catch (err) { res.json({ error: err.message }); }
+  finally { await conn?.end().catch(() => {}); }
+});
+
+app.get('/api/teams/no-games', async (req, res) => {
+  let conn;
+  try {
+    conn = await dbConnect();
+    const [rows] = await conn.execute(`
+      SELECT t.team_id, t.name AS team_name,
+             s.season_id AS season_id, s.name AS season_name,
+             l.name AS league_name
+      FROM   team_seasons ts
+      JOIN   teams   t ON t.team_id  = ts.team_id
+      JOIN   seasons s ON s.season_id = ts.season_id
+      JOIN   leagues l ON l.league_id = s.league_id
+      WHERE  NOT EXISTS (
+               SELECT 1 FROM team_schedules tsch
+               WHERE  tsch.team_id   = ts.team_id
+                 AND  tsch.season_id = ts.season_id
+             )
+      ORDER  BY l.name, s.start_date DESC, s.name, t.name
     `);
     res.json(rows);
   } catch (err) { res.json({ error: err.message }); }
@@ -822,34 +1108,34 @@ app.get('/api/games', async (req, res) => {
   try {
     conn = await dbConnect();
     const [rows] = await conn.execute(`
-      SELECT c.id, c.season_id, c.team_id, c.opponent_id,
-             c.game_date, c.location,
+      SELECT c.competition_id, c.season_id, c.team_id, c.opponent_id,
+             c.game_date, c.location, ct.comptype, trn.name AS tournament_name,
              ts.score AS team_score,
              os.score AS opponent_score,
              s.name AS season_name, s.league_id,
              l.name AS league_name,
              tm.name  AS team_name,     tm.abbrev AS team_abbrev,
              opp.name AS opponent_name, opp.abbrev AS opponent_abbrev,
-             (SELECT s2.id FROM team_seasons ts2 JOIN seasons s2 ON ts2.season_id = s2.id
-               WHERE ts2.team_id = c.opponent_id
-                 AND s2.start_year = s.start_year AND s2.end_year = s.end_year
+             (SELECT tsch2.season_id FROM team_schedules tsch2
+               WHERE tsch2.team_id = c.opponent_id AND tsch2.competition_id = c.competition_id
                LIMIT 1) AS opponent_season_id,
-             (SELECT s2.league_id FROM team_seasons ts2 JOIN seasons s2 ON ts2.season_id = s2.id
-               WHERE ts2.team_id = c.opponent_id
-                 AND s2.start_year = s.start_year AND s2.end_year = s.end_year
+             (SELECT sc2.league_id FROM team_schedules tsch2 JOIN seasons sc2 ON sc2.season_id = tsch2.season_id
+               WHERE tsch2.team_id = c.opponent_id AND tsch2.competition_id = c.competition_id
                LIMIT 1) AS opponent_league_id
       FROM competitions c
-      JOIN seasons s   ON c.season_id   = s.id
-      JOIN leagues l   ON s.league_id   = l.id
-      JOIN teams tm    ON c.team_id     = tm.id
-      JOIN teams opp   ON c.opponent_id = opp.id
+      JOIN seasons s   ON c.season_id   = s.season_id
+      JOIN leagues l   ON s.league_id   = l.league_id
+      JOIN teams tm    ON c.team_id     = tm.team_id
+      JOIN teams opp   ON c.opponent_id = opp.team_id
+      LEFT JOIN comptypes ct   ON ct.comptype_id  = c.comptype_id
+      LEFT JOIN tournaments trn ON trn.tournament_id = c.tournament_id
       LEFT JOIN (SELECT competition_id, team_id, SUM(score) AS score
                  FROM periods GROUP BY competition_id, team_id) ts
-             ON ts.competition_id = c.id AND ts.team_id = c.team_id
+             ON ts.competition_id = c.competition_id AND ts.team_id = c.team_id
       LEFT JOIN (SELECT competition_id, team_id, SUM(score) AS score
                  FROM periods GROUP BY competition_id, team_id) os
-             ON os.competition_id = c.id AND os.team_id = c.opponent_id
-      ORDER BY s.start_year DESC, c.game_date DESC
+             ON os.competition_id = c.competition_id AND os.team_id = c.opponent_id
+      ORDER BY s.start_date DESC, c.game_date DESC
     `);
     res.json({ games: rows });
   } catch (err) {
@@ -886,7 +1172,7 @@ app.put('/api/games/:id', async (req, res) => {
   try {
     conn = await dbConnect();
     const [result] = await conn.execute(
-      'UPDATE competitions SET season_id=?, team_id=?, game_date=?, opponent_id=?, location=? WHERE id=?',
+      'UPDATE competitions SET season_id=?, team_id=?, game_date=?, opponent_id=?, location=? WHERE competition_id=?',
       [parseInt(season_id), parseInt(team_id), game_date, parseInt(opponent_id), location || 'Home', parseInt(req.params.id)]
     );
     if (result.affectedRows === 0) return res.status(404).json({ error: 'Game not found' });
@@ -902,7 +1188,7 @@ app.delete('/api/games/:id', async (req, res) => {
   let conn;
   try {
     conn = await dbConnect();
-    const [result] = await conn.execute('DELETE FROM competitions WHERE id=?', [parseInt(req.params.id)]);
+    const [result] = await conn.execute('DELETE FROM competitions WHERE competition_id=?', [parseInt(req.params.id)]);
     if (result.affectedRows === 0) return res.status(404).json({ error: 'Game not found' });
     res.json({ success: true });
   } catch (err) {
@@ -919,7 +1205,7 @@ app.get('/api/players', async (req, res) => {
     conn = await dbConnect();
     const [rows] = await conn.execute(`
       SELECT
-        p.id, p.first_name, p.last_name, p.notes,
+        p.player_id, p.first_name, p.last_name, p.notes,
         COUNT(DISTINCT ps.team_id)          AS team_count,
         COUNT(DISTINCT ps.season_id)        AS season_count,
         COUNT(DISTINCT b.competition_id)    AS game_count,
@@ -927,10 +1213,10 @@ app.get('/api/players', async (req, res) => {
         GROUP_CONCAT(DISTINCT ps.season_id ORDER BY ps.season_id SEPARATOR ',') AS season_ids,
         GROUP_CONCAT(DISTINCT s.league_id  ORDER BY s.league_id  SEPARATOR ',') AS league_ids
       FROM players p
-      LEFT JOIN player_seasons ps ON ps.player_id = p.id
-      LEFT JOIN seasons         s  ON  s.id        = ps.season_id
-      LEFT JOIN boxscores       b  ON  b.player_id = p.id
-      GROUP BY p.id
+      LEFT JOIN player_seasons ps ON ps.player_id = p.player_id
+      LEFT JOIN seasons         s  ON  s.season_id = ps.season_id
+      LEFT JOIN boxscores       b  ON  b.player_id = p.player_id
+      GROUP BY p.player_id
       ORDER BY p.last_name, p.first_name
     `);
     res.json({ players: rows });
@@ -947,7 +1233,7 @@ app.get('/api/players/:id', async (req, res) => {
   try {
     conn = await dbConnect();
     const [[player]] = await conn.execute(
-      'SELECT id, first_name, last_name, notes, position, misc1 FROM players WHERE id = ?',
+      'SELECT player_id, first_name, last_name, notes, position, misc1 FROM players WHERE player_id = ?',
       [playerId]
     );
     if (!player) return res.status(404).json({ error: 'Player not found' });
@@ -971,16 +1257,17 @@ app.get('/api/players/:id', async (req, res) => {
           COALESCE(SUM(b.stl),    0)                                           AS total_stl,
           COALESCE(SUM(b.\`to\`), 0)                                           AS total_to
       FROM player_seasons ps
-      JOIN seasons       s  ON  s.id          = ps.season_id
-      JOIN leagues       l  ON  l.id          = s.league_id
-      JOIN teams         t  ON  t.id          = ps.team_id
-      LEFT JOIN competitions c  ON  c.season_id  = ps.season_id
-                                AND (c.team_id   = ps.team_id OR c.opponent_id = ps.team_id)
-      LEFT JOIN boxscores    b  ON  b.competition_id = c.id
+      JOIN seasons       s  ON  s.season_id    = ps.season_id
+      JOIN leagues       l  ON  l.league_id    = s.league_id
+      JOIN teams         t  ON  t.team_id      = ps.team_id
+      LEFT JOIN team_schedules tsch ON tsch.team_id   = ps.team_id
+                                    AND tsch.season_id = ps.season_id
+      LEFT JOIN competitions c  ON  c.competition_id = tsch.competition_id
+      LEFT JOIN boxscores    b  ON  b.competition_id = c.competition_id
                                 AND b.player_id      = ps.player_id
       WHERE ps.player_id = ?
       GROUP BY ps.season_id, ps.team_id
-      ORDER BY l.name, s.start_year, s.name, t.name
+      ORDER BY l.name, s.start_date, s.name, t.name
     `, [playerId]);
 
     res.json({ player, seasons });
@@ -999,10 +1286,11 @@ app.get('/api/players/:id/games', async (req, res) => {
     if (seasonId && teamId) {
       [rows] = await conn.execute(`
         SELECT
-            c.id                                                    AS competition_id,
+            c.competition_id                                        AS competition_id,
             c.game_date,
-            CASE WHEN c.team_id = ? THEN 'H' ELSE 'A' END         AS home_away,
-            CASE WHEN c.team_id = ? THEN vt.name ELSE ht.name END AS opponent_name,
+            CASE WHEN c.team_id = ? THEN 'H' ELSE 'A' END                   AS home_away,
+            CASE WHEN c.team_id = ? THEN vt.name   ELSE ht.name   END       AS opponent_name,
+            CASE WHEN c.team_id = ? THEN vt.abbrev ELSE ht.abbrev END       AS opponent_abbrev,
             SUM(b.min)  AS min,  SUM(b.pts)  AS pts,
             SUM(b.oreb) AS oreb, SUM(b.dreb) AS dreb, SUM(b.reb)  AS reb,
             SUM(b.ast)  AS ast,  SUM(b.stl)  AS stl,  SUM(b.blk)  AS blk,
@@ -1011,22 +1299,23 @@ app.get('/api/players/:id/games', async (req, res) => {
             SUM(b.tpm)  AS tpm,  SUM(b.tpa)  AS tpa,
             SUM(b.ftm)  AS ftm,  SUM(b.fta)  AS fta
         FROM   boxscores    b
-        JOIN   competitions c  ON  c.id  = b.competition_id
-        JOIN   teams        ht ON  ht.id = c.team_id
-        JOIN   teams        vt ON  vt.id = c.opponent_id
+        JOIN   competitions c  ON  c.competition_id = b.competition_id
+        JOIN   teams        ht ON  ht.team_id = c.team_id
+        JOIN   teams        vt ON  vt.team_id = c.opponent_id
         WHERE  b.player_id = ?
           AND  c.season_id = ?
-        GROUP  BY c.id
+        GROUP  BY c.competition_id
         ORDER  BY c.game_date
-      `, [teamId, teamId, playerId, seasonId]);
+      `, [teamId, teamId, teamId, playerId, seasonId]);
     } else {
       // All seasons — join player_seasons to determine H/A per game
       [rows] = await conn.execute(`
         SELECT
-            c.id                                                        AS competition_id,
+            c.competition_id                                            AS competition_id,
             c.game_date,
-            CASE WHEN c.team_id = ps.team_id THEN 'H' ELSE 'A' END    AS home_away,
-            CASE WHEN c.team_id = ps.team_id THEN vt.name ELSE ht.name END AS opponent_name,
+            CASE WHEN c.team_id = ps.team_id THEN 'H' ELSE 'A' END              AS home_away,
+            CASE WHEN c.team_id = ps.team_id THEN vt.name   ELSE ht.name   END  AS opponent_name,
+            CASE WHEN c.team_id = ps.team_id THEN vt.abbrev ELSE ht.abbrev END  AS opponent_abbrev,
             SUM(b.min)  AS min,  SUM(b.pts)  AS pts,
             SUM(b.oreb) AS oreb, SUM(b.dreb) AS dreb, SUM(b.reb)  AS reb,
             SUM(b.ast)  AS ast,  SUM(b.stl)  AS stl,  SUM(b.blk)  AS blk,
@@ -1035,14 +1324,15 @@ app.get('/api/players/:id/games', async (req, res) => {
             SUM(b.tpm)  AS tpm,  SUM(b.tpa)  AS tpa,
             SUM(b.ftm)  AS ftm,  SUM(b.fta)  AS fta
         FROM   boxscores    b
-        JOIN   competitions c  ON  c.id         = b.competition_id
-        JOIN   player_seasons ps ON ps.player_id = b.player_id
-                                AND ps.season_id = c.season_id
-                                AND (ps.team_id  = c.team_id OR ps.team_id = c.opponent_id)
-        JOIN   teams        ht ON  ht.id = c.team_id
-        JOIN   teams        vt ON  vt.id = c.opponent_id
+        JOIN   competitions c    ON  c.competition_id   = b.competition_id
+        JOIN   team_schedules tsch ON tsch.competition_id = c.competition_id
+        JOIN   player_seasons ps ON  ps.player_id      = b.player_id
+                                 AND ps.team_id        = tsch.team_id
+                                 AND ps.season_id      = tsch.season_id
+        JOIN   teams        ht ON  ht.team_id = c.team_id
+        JOIN   teams        vt ON  vt.team_id = c.opponent_id
         WHERE  b.player_id = ?
-        GROUP  BY c.id, ps.team_id
+        GROUP  BY c.competition_id, ps.team_id
         ORDER  BY c.game_date
       `, [playerId]);
     }
@@ -1080,7 +1370,7 @@ app.put('/api/players/:id', async (req, res) => {
   try {
     conn = await dbConnect();
     const [result] = await conn.execute(
-      'UPDATE players SET first_name=?, last_name=?, position=?, misc1=?, notes=? WHERE id=?',
+      'UPDATE players SET first_name=?, last_name=?, position=?, misc1=?, notes=? WHERE player_id=?',
       [first_name.trim(), last_name.trim(),
        position?.trim() || null, misc1?.trim() || null,
        notes?.trim() || null, parseInt(req.params.id)]
@@ -1105,7 +1395,7 @@ app.delete('/api/players/:id', async (req, res) => {
     if (anyStats > 0)
       return res.json({ error: `Cannot delete — this player has ${anyStats} game stat record(s).` });
     await conn.execute('DELETE FROM player_seasons WHERE player_id=?', [playerId]);
-    const [result] = await conn.execute('DELETE FROM players WHERE id=?', [playerId]);
+    const [result] = await conn.execute('DELETE FROM players WHERE player_id=?', [playerId]);
     if (result.affectedRows === 0) return res.status(404).json({ error: 'Player not found' });
     res.json({ success: true });
   } catch (err) {
@@ -1123,24 +1413,24 @@ app.get('/api/games/:id/boxscore', async (req, res) => {
 
     const [[comp]] = await conn.execute(`
       SELECT
-        c.id, c.game_date, c.location,
+        c.competition_id, c.game_date, c.location,
         c.team_id, ht.name AS team_name,
         c.opponent_id, vt.name AS opponent_name,
         s.name AS season_name, l.name AS league_name,
         COALESCE(ts.score, 0) AS team_score,
         COALESCE(os.score, 0) AS opponent_score
       FROM competitions c
-      JOIN seasons  s   ON s.id  = c.season_id
-      JOIN leagues  l   ON l.id  = s.league_id
-      JOIN teams    ht  ON ht.id = c.team_id
-      JOIN teams    vt  ON vt.id = c.opponent_id
+      JOIN seasons  s   ON s.season_id  = c.season_id
+      JOIN leagues  l   ON l.league_id  = s.league_id
+      JOIN teams    ht  ON ht.team_id = c.team_id
+      JOIN teams    vt  ON vt.team_id = c.opponent_id
       LEFT JOIN (SELECT competition_id, team_id, SUM(score) AS score
                  FROM periods GROUP BY competition_id, team_id) ts
-             ON ts.competition_id = c.id AND ts.team_id = c.team_id
+             ON ts.competition_id = c.competition_id AND ts.team_id = c.team_id
       LEFT JOIN (SELECT competition_id, team_id, SUM(score) AS score
                  FROM periods GROUP BY competition_id, team_id) os
-             ON os.competition_id = c.id AND os.team_id = c.opponent_id
-      WHERE c.id = ?
+             ON os.competition_id = c.competition_id AND os.team_id = c.opponent_id
+      WHERE c.competition_id = ?
     `, [compId]);
     if (!comp) return res.status(404).json({ error: 'Game not found' });
 
@@ -1159,8 +1449,8 @@ app.get('/api/games/:id/boxscore', async (req, res) => {
         MAX(CASE WHEN b.period = 1 AND b.started = 1 THEN 1 ELSE 0 END)        AS gs,
         MAX(CASE WHEN ps.team_id = c.team_id THEN 'team' ELSE 'opponent' END)  AS side
       FROM boxscores    b
-      JOIN competitions c  ON c.id = b.competition_id
-      JOIN players      p  ON p.id = b.player_id
+      JOIN competitions c  ON c.competition_id = b.competition_id
+      JOIN players      p  ON p.player_id = b.player_id
       LEFT JOIN player_seasons ps ON ps.player_id = b.player_id
                                  AND ps.season_id  = c.season_id
                                  AND (ps.team_id = c.team_id OR ps.team_id = c.opponent_id)
@@ -1188,8 +1478,8 @@ app.get('/api/games/:id/boxscore', async (req, res) => {
             AND ps.team_id   = c.team_id
         ) THEN 'team' ELSE 'opponent' END AS side
       FROM boxscores    b
-      JOIN competitions c ON c.id = b.competition_id
-      JOIN players      p ON p.id = b.player_id
+      JOIN competitions c ON c.competition_id = b.competition_id
+      JOIN players      p ON p.player_id = b.player_id
       WHERE b.competition_id = ?
         AND b.period > 0
       ORDER BY side, b.jersey_number, b.period
