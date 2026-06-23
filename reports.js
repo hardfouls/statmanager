@@ -37,6 +37,10 @@ tr.tot:nth-child(even) td{background:#f0f0f0}
 .small{font-size:11px;color:#666}
 .w{color:green;font-weight:bold}
 td.l{color:#c00;font-weight:bold}
+.rec{margin:0 auto 16px}
+.rec td,.rec th{background:none;border:none;padding:2px 10px;color:#111}
+.rec td{text-align:right}
+.rec td:first-child{text-align:left;padding-left:0}
 </style>
 </head><body>${body}</body></html>`;
   }
@@ -316,26 +320,62 @@ td.l{color:#c00;font-weight:bold}
       const info = await getInfo(conn, teamId, seasonId);
       if (!info) return res.status(404).send('Not found.');
 
+      const games  = await getGames(conn, teamId, seasonId);
+      const scores = await getScores(conn, teamId, seasonId);
+
+      let hw=0,hl=0, aw=0,al=0, nw=0,nl=0;
+      let cw=0,cl=0, chw=0,chl=0, caw=0,cal=0, cnw=0,cnl=0;
+      let ncw=0,ncl=0, nchw=0,nchl=0, ncaw=0,ncal=0, ncnw=0,ncnl=0;
+      for (const g of games) {
+        const sc  = scores.get(g.competition_id) || { our: 0, their: 0 };
+        const won  = (sc.our || sc.their) && sc.our > sc.their;
+        const lost = (sc.our || sc.their) && sc.our < sc.their;
+        if (!won && !lost) continue;
+        const conf = g.comptype_id === 3;
+        if (won) {
+          if (g.ha==='h') hw++; else if (g.ha==='a') aw++; else nw++;
+          if (conf) { cw++;  if (g.ha==='h') chw++; else if (g.ha==='a') caw++; else cnw++; }
+          else      { ncw++; if (g.ha==='h') nchw++; else if (g.ha==='a') ncaw++; else ncnw++; }
+        } else {
+          if (g.ha==='h') hl++; else if (g.ha==='a') al++; else nl++;
+          if (conf) { cl++;  if (g.ha==='h') chl++; else if (g.ha==='a') cal++; else cnl++; }
+          else      { ncl++; if (g.ha==='h') nchl++; else if (g.ha==='a') ncal++; else ncnl++; }
+        }
+      }
+      const wl = (w, l) => `${w}-${l}`;
+      const recTable = `<table class="rec" style="margin-bottom:16px">
+        <tr>
+          <th style="text-align:left">Record</th>
+          <th>Overall</th><th>Home</th><th>Away</th><th>Neutral</th>
+        </tr>
+        <tr>
+          <td>All Games</td>
+          <td>${wl(hw+aw+nw, hl+al+nl)}</td>
+          <td>${wl(hw,hl)}</td><td>${wl(aw,al)}</td><td>${wl(nw,nl)}</td>
+        </tr>
+        <tr>
+          <td>Conference</td>
+          <td>${wl(cw,cl)}</td>
+          <td>${wl(chw,chl)}</td><td>${wl(caw,cal)}</td><td>${wl(cnw,cnl)}</td>
+        </tr>
+        <tr>
+          <td>Non-Conference</td>
+          <td>${wl(ncw,ncl)}</td>
+          <td>${wl(nchw,nchl)}</td><td>${wl(ncaw,ncal)}</td><td>${wl(ncnw,ncnl)}</td>
+        </tr>
+      </table>`;
+
       const [players] = await conn.execute(`
         SELECT pl.player_id, pl.first_name, pl.last_name, ps.jersey_number,
-               COUNT(DISTINCT b.competition_id)                               AS gp,
+               COUNT(DISTINCT b.competition_id)                                 AS gp,
                SUM(CASE WHEN b.period = 1 AND b.started = 1 THEN 1 ELSE 0 END) AS gs,
-               SUM(CASE WHEN b.period = 1 THEN b.min   ELSE 0 END)           AS min_tot,
-               SUM(CASE WHEN b.period = 1 THEN b.fgm   ELSE 0 END)           AS fgm,
-               SUM(CASE WHEN b.period = 1 THEN b.fga   ELSE 0 END)           AS fga,
-               SUM(CASE WHEN b.period = 1 THEN b.tpm   ELSE 0 END)           AS tpm,
-               SUM(CASE WHEN b.period = 1 THEN b.tpa   ELSE 0 END)           AS tpa,
-               SUM(CASE WHEN b.period = 1 THEN b.ftm   ELSE 0 END)           AS ftm,
-               SUM(CASE WHEN b.period = 1 THEN b.fta   ELSE 0 END)           AS fta,
-               SUM(CASE WHEN b.period = 1 THEN b.oreb  ELSE 0 END)           AS oreb,
-               SUM(CASE WHEN b.period = 1 THEN b.dreb  ELSE 0 END)           AS dreb,
-               SUM(CASE WHEN b.period = 1 THEN b.reb   ELSE 0 END)           AS reb,
-               SUM(CASE WHEN b.period = 1 THEN b.ast   ELSE 0 END)           AS ast,
-               SUM(CASE WHEN b.period = 1 THEN b.stl   ELSE 0 END)           AS stl,
-               SUM(CASE WHEN b.period = 1 THEN b.blk   ELSE 0 END)           AS blk,
-               SUM(CASE WHEN b.period = 1 THEN b.\`to\` ELSE 0 END)          AS to_,
-               SUM(CASE WHEN b.period = 1 THEN b.pf    ELSE 0 END)           AS pf,
-               SUM(CASE WHEN b.period = 1 THEN b.pts   ELSE 0 END)           AS pts
+               SUM(b.min)   AS min_tot,
+               SUM(b.fgm)   AS fgm,  SUM(b.fga)  AS fga,
+               SUM(b.tpm)   AS tpm,  SUM(b.tpa)  AS tpa,
+               SUM(b.ftm)   AS ftm,  SUM(b.fta)  AS fta,
+               SUM(b.oreb)  AS oreb, SUM(b.dreb) AS dreb, SUM(b.reb) AS reb,
+               SUM(b.ast)   AS ast,  SUM(b.stl)  AS stl,  SUM(b.blk) AS blk,
+               SUM(b.\`to\`) AS to_,  SUM(b.pf)   AS pf,  SUM(b.pts) AS pts
         FROM player_seasons ps
         JOIN players pl ON pl.player_id = ps.player_id
         JOIN team_schedules tsch
@@ -435,7 +475,7 @@ td.l{color:#c00;font-weight:bold}
       </table>`;
 
       res.send(page(`Season Stats – ${info.team_name} ${info.season_name}`,
-        reportHeading(info, 'Season Stats', teamId, seasonId) + tbl));
+        reportHeading(info, 'Season Stats', teamId, seasonId) + recTable + tbl));
     } catch (e) {
       res.status(500).send(esc(e.message));
     } finally {

@@ -1352,14 +1352,16 @@ app.get('/api/players/:id/games', async (req, res) => {
             SUM(b.tpm)  AS tpm,  SUM(b.tpa)  AS tpa,
             SUM(b.ftm)  AS ftm,  SUM(b.fta)  AS fta
         FROM   boxscores    b
-        JOIN   competitions c  ON  c.competition_id = b.competition_id
+        JOIN   competitions c    ON  c.competition_id  = b.competition_id
+        JOIN   team_schedules tsch ON tsch.competition_id = b.competition_id
+                                  AND tsch.team_id     = ?
+                                  AND tsch.season_id   = ?
         JOIN   teams        ht ON  ht.team_id = c.team_id
         JOIN   teams        vt ON  vt.team_id = c.opponent_id
         WHERE  b.player_id = ?
-          AND  c.season_id = ?
         GROUP  BY c.competition_id
         ORDER  BY c.start_time
-      `, [teamId, teamId, teamId, playerId, seasonId]);
+      `, [teamId, teamId, teamId, teamId, seasonId, playerId]);
     } else {
       // All seasons — join player_seasons to determine H/A per game
       [rows] = await conn.execute(`
