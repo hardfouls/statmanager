@@ -2,7 +2,9 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const ini = require('ini');
-const mysql = require('mysql2/promise');
+const mysql   = require('mysql2/promise');
+const bcrypt  = require('bcryptjs');
+const session = require('express-session');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -10,6 +12,32 @@ const CONFIG_PATH = path.join(__dirname, 'statmanager.ini');
 
 app.use(express.json({ limit: '2mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
+
+// ── Session ───────────────────────────────────────────────────────────────────
+function getOrCreateSessionSecret() {
+  const cfg = readConfig();
+  if (cfg.server?.session_secret) return cfg.server.session_secret;
+  const secret = require('crypto').randomBytes(32).toString('hex');
+  cfg.server = Object.assign({}, cfg.server, { session_secret: secret });
+  try { writeConfig(cfg); } catch {}
+  return secret;
+}
+
+app.use(session({
+  secret: getOrCreateSessionSecret(),
+  resave: false,
+  saveUninitialized: false,
+  cookie: { httpOnly: true, sameSite: 'lax', maxAge: 7 * 24 * 60 * 60 * 1000 }
+}));
+
+// ── Auth guard ────────────────────────────────────────────────────────────────
+app.use('/api', (req, res, next) => {
+  const p = req.path;
+  if (p === '/version' || p.startsWith('/auth/') ||
+      p.startsWith('/settings') || p === '/db/create') return next();
+  if (!req.session?.userId) return res.status(401).json({ error: 'Unauthorized' });
+  next();
+});
 
 // ── Startup migration ─────────────────────────────────────────────────────────
 (async () => {
@@ -89,6 +117,20 @@ app.use(express.static(path.join(__dirname, 'public')));
         CONSTRAINT fk_tgs_team FOREIGN KEY (team_id) REFERENCES teams (team_id)
           ON DELETE RESTRICT
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+    await migrate(`
+      CREATE TABLE IF NOT EXISTS app_users (
+        user_id       INT UNSIGNED  NOT NULL AUTO_INCREMENT,
+        username      VARCHAR(64)   NOT NULL,
+        password_hash VARCHAR(255)  NOT NULL,
+        created_at    DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (user_id),
+        UNIQUE KEY uq_app_users_username (username)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+    await migrate(`ALTER TABLE app_users
+      ADD COLUMN IF NOT EXISTS first_name VARCHAR(64)  NULL,
+      ADD COLUMN IF NOT EXISTS last_name  VARCHAR(64)  NULL,
+      ADD COLUMN IF NOT EXISTS email      VARCHAR(255) NULL,
+      ADD COLUMN IF NOT EXISTS phone      VARCHAR(30)  NULL`);
   } finally {
     await conn.end().catch(() => {});
   }
@@ -96,6 +138,169 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const { version } = require('./package.json');
 app.get('/api/version', (_req, res) => res.json({ version }));
+
+// ── Auth routes ───────────────────────────────────────────────────────────────
+app.get('/api/auth/me', async (req, res) => {
+  let conn;
+  try {
+    conn = await dbConnect();
+    const [[{ cnt }]] = await conn.execute('SELECT COUNT(*) AS cnt FROM app_users');
+    if (!cnt) return res.json({ status: 'setup' });
+    if (!req.session?.userId) return res.status(401).json({ error: 'Unauthorized' });
+    res.json({ user_id: req.session.userId, username: req.session.username });
+  } catch (err) {
+    if (err.code === 'NOT_CONFIGURED') return res.json({ status: 'no_db' });
+    res.json({ status: 'no_db' });
+  } finally {
+    await conn?.end().catch(() => {});
+  }
+});
+
+app.post('/api/auth/setup', async (req, res) => {
+  const { username, password } = req.body;
+  if (!username?.trim() || !password) return res.status(400).json({ error: 'Username and password required' });
+  let conn;
+  try {
+    conn = await dbConnect();
+    const [[{ cnt }]] = await conn.execute('SELECT COUNT(*) AS cnt FROM app_users');
+    if (cnt > 0) return res.status(400).json({ error: 'Setup already complete' });
+    const hash = await bcrypt.hash(password, 12);
+    const user = username.trim().toLowerCase();
+    const [result] = await conn.execute(
+      'INSERT INTO app_users (username, password_hash) VALUES (?, ?)', [user, hash]
+    );
+    req.session.userId   = result.insertId;
+    req.session.username = user;
+    res.json({ success: true, user_id: result.insertId, username: user });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  } finally {
+    await conn?.end().catch(() => {});
+  }
+});
+
+app.post('/api/auth/login', async (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
+  let conn;
+  try {
+    conn = await dbConnect();
+    const [[user]] = await conn.execute(
+      'SELECT user_id, username, password_hash FROM app_users WHERE username = ?',
+      [username.trim().toLowerCase()]
+    );
+    if (!user || !(await bcrypt.compare(password, user.password_hash)))
+      return res.status(401).json({ error: 'Invalid username or password' });
+    req.session.userId   = user.user_id;
+    req.session.username = user.username;
+    res.json({ user_id: user.user_id, username: user.username });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  } finally {
+    await conn?.end().catch(() => {});
+  }
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  req.session.destroy(() => res.json({ success: true }));
+});
+
+// ── Users CRUD ────────────────────────────────────────────────────────────────
+app.get('/api/users', async (req, res) => {
+  let conn;
+  try {
+    conn = await dbConnect();
+    const [rows] = await conn.execute(
+      'SELECT user_id, username, first_name, last_name, email, phone, created_at FROM app_users ORDER BY username'
+    );
+    res.json({ users: rows });
+  } catch (err) {
+    res.json({ error: err.message });
+  } finally {
+    await conn?.end().catch(() => {});
+  }
+});
+
+app.post('/api/users', async (req, res) => {
+  const { username, password } = req.body;
+  if (!username?.trim() || !password) return res.status(400).json({ error: 'Username and password required' });
+  let conn;
+  try {
+    conn = await dbConnect();
+    const hash = await bcrypt.hash(password, 12);
+    const [result] = await conn.execute(
+      'INSERT INTO app_users (username, password_hash) VALUES (?, ?)',
+      [username.trim().toLowerCase(), hash]
+    );
+    res.json({ success: true, user_id: result.insertId });
+  } catch (err) {
+    if (err.errno === 1062) return res.json({ error: 'Username already taken' });
+    res.json({ error: err.message });
+  } finally {
+    await conn?.end().catch(() => {});
+  }
+});
+
+app.put('/api/users/:id/password', async (req, res) => {
+  const userId = parseInt(req.params.id);
+  if (req.session.userId !== userId) return res.status(403).json({ error: 'Forbidden' });
+  const { current_password, new_password } = req.body;
+  if (!new_password) return res.status(400).json({ error: 'New password required' });
+  let conn;
+  try {
+    conn = await dbConnect();
+    const [[user]] = await conn.execute(
+      'SELECT password_hash FROM app_users WHERE user_id = ?', [userId]
+    );
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (!(await bcrypt.compare(current_password || '', user.password_hash)))
+      return res.status(401).json({ error: 'Current password is incorrect' });
+    const hash = await bcrypt.hash(new_password, 12);
+    await conn.execute('UPDATE app_users SET password_hash = ? WHERE user_id = ?', [hash, userId]);
+    res.json({ success: true });
+  } catch (err) {
+    res.json({ error: err.message });
+  } finally {
+    await conn?.end().catch(() => {});
+  }
+});
+
+app.put('/api/users/:id/profile', async (req, res) => {
+  const userId = parseInt(req.params.id);
+  if (req.session.userId !== userId) return res.status(403).json({ error: 'Forbidden' });
+  const { first_name, last_name, email, phone } = req.body;
+  let conn;
+  try {
+    conn = await dbConnect();
+    await conn.execute(
+      'UPDATE app_users SET first_name=?, last_name=?, email=?, phone=? WHERE user_id=?',
+      [first_name?.trim() || null, last_name?.trim() || null,
+       email?.trim() || null, phone?.trim() || null, userId]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    res.json({ error: err.message });
+  } finally {
+    await conn?.end().catch(() => {});
+  }
+});
+
+app.delete('/api/users/:id', async (req, res) => {
+  const userId = parseInt(req.params.id);
+  if (req.session.userId === userId) return res.status(400).json({ error: 'Cannot delete your own account' });
+  let conn;
+  try {
+    conn = await dbConnect();
+    const [[{ cnt }]] = await conn.execute('SELECT COUNT(*) AS cnt FROM app_users');
+    if (cnt <= 1) return res.status(400).json({ error: 'Cannot delete the last user account' });
+    await conn.execute('DELETE FROM app_users WHERE user_id = ?', [userId]);
+    res.json({ success: true });
+  } catch (err) {
+    res.json({ error: err.message });
+  } finally {
+    await conn?.end().catch(() => {});
+  }
+});
 
 function readConfig() {
   if (!fs.existsSync(CONFIG_PATH)) return {};

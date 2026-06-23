@@ -1,5 +1,7 @@
 'use strict';
 
+let currentUser = null;
+
 // ── Menu definition ──────────────────────────────────────────────────────────
 const MENU_ITEMS = [
   {
@@ -58,6 +60,11 @@ const MENU_ITEMS = [
       <circle cx="12" cy="12" r="3"/>
       <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
     </svg>`
+  },
+  {
+    label: 'Users',
+    route: 'users',
+    icon: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`
   }
 ];
 
@@ -3538,6 +3545,187 @@ const pages = {
         }
       });
     }
+  },
+
+  users: {
+    render() {
+      return `
+        <h2 class="page-title">Users</h2>
+        <div class="card">
+          <div class="section-header">
+            <h3 class="section-title">User Accounts</h3>
+            <button class="btn btn-primary btn-sm" id="new-user-btn">+ Add User</button>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead><tr>
+                <th>Username</th>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Phone</th>
+                <th>Created</th>
+                <th class="col-actions"></th>
+              </tr></thead>
+              <tbody id="user-list">
+                <tr><td colspan="6" class="list-empty">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card">
+          <h3 class="section-title">My Profile</h3>
+          <div class="two-col">
+            <div class="form-group">
+              <label for="prof-first">First Name</label>
+              <input id="prof-first" type="text" autocomplete="given-name" name="given-name">
+            </div>
+            <div class="form-group">
+              <label for="prof-last">Last Name</label>
+              <input id="prof-last" type="text" autocomplete="family-name" name="family-name">
+            </div>
+          </div>
+          <div class="two-col">
+            <div class="form-group">
+              <label for="prof-email">Email</label>
+              <input id="prof-email" type="email" autocomplete="email" name="email">
+            </div>
+            <div class="form-group">
+              <label for="prof-phone">Phone</label>
+              <input id="prof-phone" type="tel" autocomplete="tel" name="tel">
+            </div>
+          </div>
+          <div class="form-actions">
+            <button class="btn btn-primary" id="prof-save">Save Profile</button>
+          </div>
+          <div class="status-msg" id="prof-status"></div>
+        </div>
+        <div class="card">
+          <h3 class="section-title">Change My Password</h3>
+          <div class="form-group">
+            <label for="cp-current">Current Password</label>
+            <input id="cp-current" type="password" autocomplete="current-password">
+          </div>
+          <div class="form-group">
+            <label for="cp-new">New Password</label>
+            <input id="cp-new" type="password" autocomplete="new-password">
+          </div>
+          <div class="form-group">
+            <label for="cp-confirm">Confirm New Password</label>
+            <input id="cp-confirm" type="password" autocomplete="new-password">
+          </div>
+          <div class="form-actions">
+            <button class="btn btn-primary" id="cp-save">Change Password</button>
+          </div>
+          <div class="status-msg" id="cp-status"></div>
+        </div>`;
+    },
+
+    async init() {
+      async function loadUsers() {
+        const res  = await fetch('api/users');
+        const data = await res.json();
+        const list = document.getElementById('user-list');
+        if (data.error) {
+          list.innerHTML = `<tr><td colspan="6" class="list-empty">${escapeHtml(data.error)}</td></tr>`;
+          return;
+        }
+        list.innerHTML = data.users.map(u => {
+          const isMe = u.user_id === currentUser?.user_id;
+          const name = [u.first_name, u.last_name].filter(Boolean).join(' ');
+          return `
+          <tr>
+            <td>${escapeHtml(u.username)}${isMe ? ' <span style="font-size:.75rem;color:var(--text-muted)">(you)</span>' : ''}</td>
+            <td>${escapeHtml(name || '—')}</td>
+            <td>${u.email ? `<a href="mailto:${escapeHtml(u.email)}" class="row-link">${escapeHtml(u.email)}</a>` : '<span style="color:var(--text-muted)">—</span>'}</td>
+            <td>${escapeHtml(u.phone || '—')}</td>
+            <td style="color:var(--text-muted)">${u.created_at ? new Date(u.created_at).toLocaleDateString() : ''}</td>
+            <td class="col-actions">
+              ${!isMe ? `<button class="btn-icon delete-btn" data-id="${u.user_id}" title="Delete">${DELETE_ICON}</button>` : ''}
+            </td>
+          </tr>`;
+        }).join('');
+
+        list.querySelectorAll('.delete-btn').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            const u = data.users.find(x => x.user_id === parseInt(btn.dataset.id));
+            if (!await confirmDialog('Delete User', `Delete "${u.username}"? This cannot be undone.`)) return;
+            const r  = await fetch(`api/users/${btn.dataset.id}`, { method: 'DELETE' });
+            const d2 = await r.json();
+            if (d2.error) { await alertDialog('Error', d2.error); return; }
+            await loadUsers();
+          });
+        });
+
+        // Populate profile form with current user's data
+        const me = data.users.find(u => u.user_id === currentUser?.user_id);
+        if (me) {
+          document.getElementById('prof-first').value = me.first_name || '';
+          document.getElementById('prof-last').value  = me.last_name  || '';
+          document.getElementById('prof-email').value = me.email      || '';
+          document.getElementById('prof-phone').value = me.phone      || '';
+        }
+      }
+
+      await loadUsers();
+
+      document.getElementById('new-user-btn').addEventListener('click', () => {
+        showAddUserModal(loadUsers);
+      });
+
+      document.getElementById('prof-save').addEventListener('click', async () => {
+        const btn = document.getElementById('prof-save');
+        btn.disabled = true; btn.textContent = 'Saving…';
+        try {
+          const res  = await fetch(`api/users/${currentUser.user_id}/profile`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              first_name: document.getElementById('prof-first').value,
+              last_name:  document.getElementById('prof-last').value,
+              email:      document.getElementById('prof-email').value,
+              phone:      document.getElementById('prof-phone').value
+            })
+          });
+          const data = await res.json();
+          if (data.success) showStatus('prof-status', 'success', 'Profile saved.');
+          else showStatus('prof-status', 'error', data.error || 'Save failed');
+        } catch {
+          showStatus('prof-status', 'error', 'Request failed');
+        } finally {
+          btn.disabled = false; btn.textContent = 'Save Profile';
+        }
+      });
+
+      document.getElementById('cp-save').addEventListener('click', async () => {
+        const current = document.getElementById('cp-current').value;
+        const newPw   = document.getElementById('cp-new').value;
+        const confirm = document.getElementById('cp-confirm').value;
+        if (!newPw) { showStatus('cp-status', 'error', 'New password is required'); return; }
+        if (newPw !== confirm) { showStatus('cp-status', 'error', 'Passwords do not match'); return; }
+        const btn = document.getElementById('cp-save');
+        btn.disabled = true; btn.textContent = 'Saving…';
+        try {
+          const res  = await fetch(`api/users/${currentUser.user_id}/password`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ current_password: current, new_password: newPw })
+          });
+          const data = await res.json();
+          if (data.success) {
+            showStatus('cp-status', 'success', 'Password changed.');
+            document.getElementById('cp-current').value = '';
+            document.getElementById('cp-new').value = '';
+            document.getElementById('cp-confirm').value = '';
+          } else {
+            showStatus('cp-status', 'error', data.error || 'Failed to change password');
+          }
+        } catch {
+          showStatus('cp-status', 'error', 'Request failed');
+        } finally {
+          btn.disabled = false; btn.textContent = 'Change Password';
+        }
+      });
+    }
   }
 };
 
@@ -4470,6 +4658,148 @@ const TeamMergeModal = (() => {
   return { open, close: _close };
 })();
 
+// ── Auth screens ─────────────────────────────────────────────────────────────
+function showAuthScreen(mode) {
+  const isSetup = mode === 'setup';
+  document.getElementById('sidebar').style.display = 'none';
+  const main = document.getElementById('main');
+  main.style.cssText = 'margin-left:0;display:flex;align-items:center;justify-content:center;min-height:calc(100vh - var(--header-h))';
+  main.innerHTML = `
+    <div style="width:100%;max-width:360px">
+      <div class="card">
+        <div class="section-title">${isSetup ? 'Create Admin Account' : 'Sign In'}</div>
+        ${isSetup ? '<p style="font-size:.85rem;color:var(--text-muted);margin-bottom:16px">No users exist yet. Create the first account to get started.</p>' : ''}
+        <div class="form-group">
+          <label for="auth-user">Username</label>
+          <input id="auth-user" type="text" autocomplete="username" autocapitalize="none" spellcheck="false">
+        </div>
+        <div class="form-group">
+          <label for="auth-pass">Password</label>
+          <input id="auth-pass" type="password" autocomplete="${isSetup ? 'new-password' : 'current-password'}">
+        </div>
+        <div style="margin-top:16px">
+          <button class="btn btn-primary" id="auth-submit" style="width:100%">
+            ${isSetup ? 'Create Account' : 'Sign In'}
+          </button>
+        </div>
+        <div class="status-msg" id="auth-status"></div>
+      </div>
+    </div>`;
+
+  const userEl   = document.getElementById('auth-user');
+  const passEl   = document.getElementById('auth-pass');
+  const submitEl = document.getElementById('auth-submit');
+
+  async function submit() {
+    const username = userEl.value.trim();
+    const password = passEl.value;
+    if (!username || !password) { showStatus('auth-status', 'error', 'Username and password required'); return; }
+    submitEl.disabled = true;
+    submitEl.textContent = isSetup ? 'Creating…' : 'Signing in…';
+    try {
+      const res  = await fetch(isSetup ? 'api/auth/setup' : 'api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      });
+      const data = await res.json();
+      if (data.error) {
+        showStatus('auth-status', 'error', data.error);
+        submitEl.disabled = false;
+        submitEl.textContent = isSetup ? 'Create Account' : 'Sign In';
+        return;
+      }
+      currentUser = { user_id: data.user_id, username: data.username };
+      document.getElementById('sidebar').style.display = '';
+      main.style.cssText = '';
+      bootApp();
+    } catch {
+      showStatus('auth-status', 'error', 'Request failed');
+      submitEl.disabled = false;
+      submitEl.textContent = isSetup ? 'Create Account' : 'Sign In';
+    }
+  }
+
+  submitEl.addEventListener('click', submit);
+  passEl.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
+  userEl.addEventListener('keydown', e => { if (e.key === 'Enter') passEl.focus(); });
+  userEl.focus();
+}
+
+function renderHeaderUser() {
+  const el = document.getElementById('header-user');
+  if (!el) return;
+  if (!currentUser) { el.innerHTML = ''; return; }
+  el.innerHTML = `
+    <span style="font-size:.8rem;color:var(--text-muted)">${escapeHtml(currentUser.username)}</span>
+    <button class="btn btn-secondary btn-sm" id="logout-btn">Sign out</button>`;
+  document.getElementById('logout-btn').addEventListener('click', async () => {
+    await fetch('api/auth/logout', { method: 'POST' }).catch(() => {});
+    window.location.reload();
+  });
+}
+
+function showAddUserModal(onDone) {
+  const CLOSE = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+  const wrap = document.createElement('div');
+  wrap.innerHTML = `
+    <div class="modal-overlay" id="adduser-modal">
+      <div class="modal" style="max-width:380px">
+        <div class="modal-header">
+          <span class="modal-title">Add User</span>
+          <button class="modal-close" id="adduser-x" aria-label="Close">${CLOSE}</button>
+        </div>
+        <div class="form-group">
+          <label for="adduser-name">Username</label>
+          <input id="adduser-name" type="text" autocomplete="off" autocapitalize="none" spellcheck="false">
+        </div>
+        <div class="form-group">
+          <label for="adduser-pass">Password</label>
+          <input id="adduser-pass" type="password" autocomplete="new-password">
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-primary" id="adduser-save">Add User</button>
+          <button class="btn btn-secondary" id="adduser-cancel">Cancel</button>
+        </div>
+        <div class="status-msg" id="adduser-status"></div>
+      </div>
+    </div>`;
+  document.body.appendChild(wrap.firstElementChild);
+  const overlay = document.getElementById('adduser-modal');
+  const close   = () => overlay.remove();
+  document.getElementById('adduser-x').addEventListener('click', close);
+  document.getElementById('adduser-cancel').addEventListener('click', close);
+  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+
+  document.getElementById('adduser-save').addEventListener('click', async () => {
+    const username = document.getElementById('adduser-name').value.trim();
+    const password = document.getElementById('adduser-pass').value;
+    if (!username || !password) { showStatus('adduser-status', 'error', 'Username and password required'); return; }
+    const btn = document.getElementById('adduser-save');
+    btn.disabled = true; btn.textContent = 'Adding…';
+    try {
+      const res  = await fetch('api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      });
+      const data = await res.json();
+      if (data.success) { close(); onDone?.(); }
+      else { showStatus('adduser-status', 'error', data.error || 'Failed'); btn.disabled = false; btn.textContent = 'Add User'; }
+    } catch {
+      showStatus('adduser-status', 'error', 'Request failed');
+      btn.disabled = false; btn.textContent = 'Add User';
+    }
+  });
+  document.getElementById('adduser-name').focus();
+}
+
+function bootApp() {
+  renderHeaderUser();
+  initSidebar();
+  renderPage();
+}
+
 // ── Router ────────────────────────────────────────────────────────────────────
 function getRoute() {
   const hash = window.location.hash.replace(/^#\/?/, '') || 'home';
@@ -4502,11 +4832,12 @@ function buildMenu(activeRoute) {
         <span class="menu-label">${item.label}</span>
       </a>
     </li>`;
-  const main     = MENU_ITEMS.filter(i => i.route !== 'settings');
-  const settings = MENU_ITEMS.find(i => i.route === 'settings');
+  const BOTTOM = ['settings', 'users'];
+  const main   = MENU_ITEMS.filter(i => !BOTTOM.includes(i.route));
+  const bottom = MENU_ITEMS.filter(i => BOTTOM.includes(i.route));
   document.getElementById('menu').innerHTML =
     main.map(renderItem).join('') +
-    (settings ? `<li class="menu-divider"></li>${renderItem(settings)}` : '');
+    (bottom.length ? `<li class="menu-divider"></li>` + bottom.map(renderItem).join('') : '');
 }
 
 function initSidebar() {
@@ -4554,15 +4885,21 @@ function initSidebar() {
 // ── Boot ──────────────────────────────────────────────────────────────────────
 window.addEventListener('hashchange', renderPage);
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   fetch('api/version').then(r => r.json()).then(d => {
     if (d.version) document.getElementById('app-version').textContent = `v${d.version}`;
   }).catch(() => {});
 
-  initSidebar();
-  renderPage();
-
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   }
+
+  try {
+    const res  = await fetch('api/auth/me');
+    const data = res.ok ? await res.json() : null;
+    if (data?.status === 'no_db') { bootApp(); return; }
+    if (data?.status === 'setup') { showAuthScreen('setup'); return; }
+    if (res.ok && data?.user_id) { currentUser = data; bootApp(); return; }
+  } catch {}
+  showAuthScreen('login');
 });
