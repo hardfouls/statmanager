@@ -16,10 +16,9 @@
 -- Assumptions:
 --   • SEASON is formatted 'YYYY-YYYY' (e.g. '2021-2022').
 --     start_date is set to October 10 of the start year; end_date to February 28 of the end year.
---   • League names are formed as "LEAGUE DIVISION" (e.g. 'NBIAA Women').
---     When DIVISION is blank the name is just LEAGUE (e.g. 'NBIAA').
---     Teams with no LEAGUE default to 'NBIAA'; teams with no LEAGUE and
---     no DIVISION default to the league 'NBIAA AAA SRB'.
+--   • League names are derived from the DIVISION field only.
+--     ' SRB' is appended unless the value already contains it.
+--     Blank DIVISION defaults to 'D1 SRB'.
 --     Edit league contact info in the leagues table afterwards.
 --   • GENDER encoding: 0 = male, 1 = female — same as statmanager.
 --     If the source uses the opposite convention, change every
@@ -121,17 +120,31 @@ WHERE  TRIM(COALESCE(src.LOCATION, '')) <> ''
 ORDER  BY TRIM(src.LOCATION);
 
 -- ── Step 1: Leagues ──────────────────────────────────────────
--- One row per distinct "LEAGUE DIVISION" combination.
+-- One row per distinct DIVISION value (with ' SRB' suffix).
 INSERT IGNORE INTO leagues (name)
 SELECT DISTINCT
-    CASE WHEN TRIM(COALESCE(DIVISION, '')) <> ''
-         THEN CONCAT(COALESCE(NULLIF(TRIM(LEAGUE), ''), 'NBIAA'), ' ', TRIM(DIVISION))
-         WHEN TRIM(COALESCE(LEAGUE, '')) = ''
-         THEN 'NBIAA AAA SRB'
-         ELSE TRIM(LEAGUE)
+    CASE WHEN TRIM(COALESCE(DIVISION, '')) = ''  THEN CONCAT(COALESCE(NULLIF(TRIM(LEAGUE), ''), 'NBIAA'), ' D1 SRB')
+         WHEN TRIM(DIVISION) LIKE '%SRB%'         THEN TRIM(DIVISION)
+         ELSE CONCAT(TRIM(DIVISION), ' SRB')
     END
 FROM   dakstats_history.teams
-ORDER  BY LEAGUE, DIVISION;
+ORDER  BY DIVISION;
+
+-- ── Step 1b: League → governing org ─────────────────────────
+-- Build a mapping of constructed league name → source LEAGUE acronym,
+-- then join to organizations to set governing_org_id.
+UPDATE leagues l
+JOIN (
+    SELECT DISTINCT
+        CASE WHEN TRIM(COALESCE(DIVISION, '')) = ''  THEN CONCAT(COALESCE(NULLIF(TRIM(LEAGUE), ''), 'NBIAA'), ' D1 SRB')
+             WHEN TRIM(DIVISION) LIKE '%SRB%'         THEN TRIM(DIVISION)
+             ELSE CONCAT(TRIM(DIVISION), ' SRB')
+        END                                        AS league_name,
+        COALESCE(NULLIF(TRIM(LEAGUE), ''), 'NBIAA') AS league_acronym
+    FROM dakstats_history.teams
+) src ON src.league_name = l.name
+JOIN organizations o ON o.acronym = src.league_acronym
+SET l.governing_org_id = o.org_id;
 
 -- ── Step 2: Seasons ──────────────────────────────────────────
 -- One row per unique (league, season-name) pair.
@@ -143,7 +156,7 @@ SELECT DISTINCT
     STR_TO_DATE(CONCAT(LEFT(TRIM(src.SEASON), 4), '-10-10'), '%Y-%m-%d'),
     STR_TO_DATE(CONCAT(RIGHT(TRIM(src.SEASON), 4), '-02-28'), '%Y-%m-%d')
 FROM       dakstats_history.teams src
-INNER JOIN leagues l ON l.name = CASE WHEN TRIM(COALESCE(src.DIVISION, '')) <> '' THEN CONCAT(COALESCE(NULLIF(TRIM(src.LEAGUE), ''), 'NBIAA'), ' ', TRIM(src.DIVISION)) WHEN TRIM(COALESCE(src.LEAGUE, '')) = '' THEN 'NBIAA AAA SRB' ELSE TRIM(src.LEAGUE) END
+INNER JOIN leagues l ON l.name = CASE WHEN TRIM(COALESCE(src.DIVISION, '')) = '' THEN CONCAT(COALESCE(NULLIF(TRIM(src.LEAGUE), ''), 'NBIAA'), ' D1 SRB') WHEN TRIM(src.DIVISION) LIKE '%SRB%' THEN TRIM(src.DIVISION) ELSE CONCAT(TRIM(src.DIVISION), ' SRB') END
 WHERE  src.SEASON IS NOT NULL
 ORDER  BY l.league_id, TRIM(src.SEASON);
 
@@ -185,7 +198,7 @@ SELECT
     NULLIF(TRIM(src.CONFERENCE), ''),
     src.TMACTIVE + 0
 FROM       dakstats_history.teams src
-INNER JOIN leagues l  ON  l.name      = CASE WHEN TRIM(COALESCE(src.DIVISION, '')) <> '' THEN CONCAT(COALESCE(NULLIF(TRIM(src.LEAGUE), ''), 'NBIAA'), ' ', TRIM(src.DIVISION)) WHEN TRIM(COALESCE(src.LEAGUE, '')) = '' THEN 'NBIAA AAA SRB' ELSE TRIM(src.LEAGUE) END
+INNER JOIN leagues l  ON  l.name      = CASE WHEN TRIM(COALESCE(src.DIVISION, '')) = '' THEN CONCAT(COALESCE(NULLIF(TRIM(src.LEAGUE), ''), 'NBIAA'), ' D1 SRB') WHEN TRIM(src.DIVISION) LIKE '%SRB%' THEN TRIM(src.DIVISION) ELSE CONCAT(TRIM(src.DIVISION), ' SRB') END
 INNER JOIN seasons s  ON  s.league_id = l.league_id
                       AND s.name      = TRIM(src.SEASON)
 INNER JOIN teams   t  ON  t.name      = TRIM(src.TEAMSHORT)
@@ -253,16 +266,17 @@ ON DUPLICATE KEY UPDATE
 --     be resolved in statmanager are silently skipped (INNER JOIN).
 --   • competitions has no formal unique key, so INSERT IGNORE cannot
 --     suppress duplicates.  A WHERE NOT EXISTS guard on
---     (season_id, team_id, game_date, opponent_id) makes the step
+--     (season_id, team_id, start_time, opponent_id) makes the step
 --     safe to re-run.
 --   • tournament_id is resolved via dakstats_history.tournaments
 --     (matched on TOURNID + SEASON) then to the statmanager tournaments
 --     table by name, assuming the 'NBIAA' league. NULL when no tournament.
-INSERT INTO competitions (season_id, team_id, game_date, opponent_id, comptype_id, location, tournament_id)
+INSERT INTO competitions (season_id, team_id, start_time, end_time, opponent_id, comptype_id, location, tournament_id)
 SELECT
     s.season_id                                                           AS season_id,
     ht.team_id                                                            AS team_id,
-    DATE(comp.DATE)                                                       AS game_date,
+    comp.STARTTIME                                                        AS start_time,
+    comp.ENDTIME                                                          AS end_time,
     vt.team_id                                                            AS opponent_id,
     CASE WHEN comp.COMPTYPEID IN (1,2,3,4) THEN comp.COMPTYPEID ELSE NULL END AS comptype_id,
     comp.ARENA                                                            AS location,
@@ -275,10 +289,10 @@ INNER JOIN dakstats_history.teams v_src
         ON v_src.TMID         = comp.V_TMID
        AND TRIM(v_src.SEASON) = TRIM(comp.SEASON)
 INNER JOIN leagues                        l
-        ON l.name                = CASE WHEN TRIM(COALESCE(h_src.DIVISION, '')) <> '' THEN CONCAT(COALESCE(NULLIF(TRIM(h_src.LEAGUE), ''), 'NBIAA'), ' ', TRIM(h_src.DIVISION)) WHEN TRIM(COALESCE(h_src.LEAGUE, '')) = '' THEN 'NBIAA AAA SRB' ELSE TRIM(h_src.LEAGUE) END
+        ON l.name                = CASE WHEN TRIM(COALESCE(h_src.DIVISION, '')) = '' THEN CONCAT(COALESCE(NULLIF(TRIM(h_src.LEAGUE), ''), 'NBIAA'), ' D1 SRB') WHEN TRIM(h_src.DIVISION) LIKE '%SRB%' THEN TRIM(h_src.DIVISION) ELSE CONCAT(TRIM(h_src.DIVISION), ' SRB') END
 INNER JOIN seasons                        s
         ON s.league_id           = l.league_id
-       AND DATE(comp.DATE) BETWEEN s.start_date AND s.end_date
+       AND DATE(comp.STARTTIME) BETWEEN s.start_date AND s.end_date
 INNER JOIN teams                          ht
         ON ht.name               = TRIM(h_src.TEAMSHORT)
        AND ht.gender            <=> h_src.GENDER + 0
@@ -290,7 +304,7 @@ LEFT  JOIN dakstats_history.tournaments   dkt
        AND TRIM(dkt.SEASON)      = TRIM(comp.SEASON)
 LEFT  JOIN tournaments                    trn
         ON trn.name              = TRIM(dkt.TOURNNAME)
-WHERE  comp.DATE    IS NOT NULL
+WHERE  comp.STARTTIME    IS NOT NULL
   AND  comp.SEASON  IS NOT NULL
   AND  comp.H_TMID  IS NOT NULL
   AND  comp.V_TMID  IS NOT NULL
@@ -299,7 +313,7 @@ WHERE  comp.DATE    IS NOT NULL
            FROM   competitions ex
            WHERE  ex.season_id   = s.season_id
              AND  ex.team_id     = ht.team_id
-             AND  ex.game_date   = DATE(comp.DATE)
+             AND  DATE(ex.start_time) = DATE(comp.STARTTIME)
              AND  ex.opponent_id = vt.team_id
        );
 
@@ -324,10 +338,10 @@ INNER JOIN dakstats_history.teams v_src
         ON v_src.TMID         = comp.V_TMID
        AND TRIM(v_src.SEASON) = TRIM(comp.SEASON)
 INNER JOIN leagues                        l
-        ON l.name                = CASE WHEN TRIM(COALESCE(h_src.DIVISION, '')) <> '' THEN CONCAT(COALESCE(NULLIF(TRIM(h_src.LEAGUE), ''), 'NBIAA'), ' ', TRIM(h_src.DIVISION)) WHEN TRIM(COALESCE(h_src.LEAGUE, '')) = '' THEN 'NBIAA AAA SRB' ELSE TRIM(h_src.LEAGUE) END
+        ON l.name                = CASE WHEN TRIM(COALESCE(h_src.DIVISION, '')) = '' THEN CONCAT(COALESCE(NULLIF(TRIM(h_src.LEAGUE), ''), 'NBIAA'), ' D1 SRB') WHEN TRIM(h_src.DIVISION) LIKE '%SRB%' THEN TRIM(h_src.DIVISION) ELSE CONCAT(TRIM(h_src.DIVISION), ' SRB') END
 INNER JOIN seasons                        s
         ON s.league_id           = l.league_id
-       AND DATE(comp.DATE) BETWEEN s.start_date AND s.end_date
+       AND DATE(comp.STARTTIME) BETWEEN s.start_date AND s.end_date
 INNER JOIN teams                          ht
         ON ht.name               = TRIM(h_src.TEAMSHORT)
        AND ht.gender            <=> h_src.GENDER + 0
@@ -337,9 +351,9 @@ INNER JOIN teams                          vt
 INNER JOIN competitions                   sm_comp
         ON sm_comp.season_id     = s.season_id
        AND sm_comp.team_id       = ht.team_id
-       AND sm_comp.game_date     = DATE(comp.DATE)
+       AND DATE(sm_comp.start_time) = DATE(comp.STARTTIME)
        AND sm_comp.opponent_id   = vt.team_id
-WHERE  comp.DATE   IS NOT NULL
+WHERE  comp.STARTTIME   IS NOT NULL
   AND  comp.SEASON IS NOT NULL
   AND  comp.H_TMID IS NOT NULL
   AND  comp.V_TMID IS NOT NULL;
@@ -358,10 +372,10 @@ INNER JOIN dakstats_history.teams v_src
         ON v_src.TMID         = comp.V_TMID
        AND TRIM(v_src.SEASON) = TRIM(comp.SEASON)
 INNER JOIN leagues                        l_ht
-        ON l_ht.name             = CASE WHEN TRIM(COALESCE(h_src.DIVISION, '')) <> '' THEN CONCAT(COALESCE(NULLIF(TRIM(h_src.LEAGUE), ''), 'NBIAA'), ' ', TRIM(h_src.DIVISION)) WHEN TRIM(COALESCE(h_src.LEAGUE, '')) = '' THEN 'NBIAA AAA SRB' ELSE TRIM(h_src.LEAGUE) END
+        ON l_ht.name             = CASE WHEN TRIM(COALESCE(h_src.DIVISION, '')) = '' THEN CONCAT(COALESCE(NULLIF(TRIM(h_src.LEAGUE), ''), 'NBIAA'), ' D1 SRB') WHEN TRIM(h_src.DIVISION) LIKE '%SRB%' THEN TRIM(h_src.DIVISION) ELSE CONCAT(TRIM(h_src.DIVISION), ' SRB') END
 INNER JOIN seasons                        s_ht
         ON s_ht.league_id        = l_ht.league_id
-       AND DATE(comp.DATE) BETWEEN s_ht.start_date AND s_ht.end_date
+       AND DATE(comp.STARTTIME) BETWEEN s_ht.start_date AND s_ht.end_date
 INNER JOIN teams                          ht
         ON ht.name               = TRIM(h_src.TEAMSHORT)
        AND ht.gender            <=> h_src.GENDER + 0
@@ -371,14 +385,14 @@ INNER JOIN teams                          vt
 INNER JOIN competitions                   sm_comp
         ON sm_comp.season_id     = s_ht.season_id
        AND sm_comp.team_id       = ht.team_id
-       AND sm_comp.game_date     = DATE(comp.DATE)
+       AND DATE(sm_comp.start_time) = DATE(comp.STARTTIME)
        AND sm_comp.opponent_id   = vt.team_id
 INNER JOIN leagues                        l_vt
-        ON l_vt.name             = CASE WHEN TRIM(COALESCE(v_src.DIVISION, '')) <> '' THEN CONCAT(COALESCE(NULLIF(TRIM(v_src.LEAGUE), ''), 'NBIAA'), ' ', TRIM(v_src.DIVISION)) WHEN TRIM(COALESCE(v_src.LEAGUE, '')) = '' THEN 'NBIAA AAA SRB' ELSE TRIM(v_src.LEAGUE) END
+        ON l_vt.name             = CASE WHEN TRIM(COALESCE(v_src.DIVISION, '')) = '' THEN CONCAT(COALESCE(NULLIF(TRIM(v_src.LEAGUE), ''), 'NBIAA'), ' D1 SRB') WHEN TRIM(v_src.DIVISION) LIKE '%SRB%' THEN TRIM(v_src.DIVISION) ELSE CONCAT(TRIM(v_src.DIVISION), ' SRB') END
 INNER JOIN seasons                        s_vt
         ON s_vt.league_id        = l_vt.league_id
-       AND DATE(comp.DATE) BETWEEN s_vt.start_date AND s_vt.end_date
-WHERE  comp.DATE   IS NOT NULL
+       AND DATE(comp.STARTTIME) BETWEEN s_vt.start_date AND s_vt.end_date
+WHERE  comp.STARTTIME   IS NOT NULL
   AND  comp.SEASON IS NOT NULL
   AND  comp.H_TMID IS NOT NULL
   AND  comp.V_TMID IS NOT NULL;
@@ -414,10 +428,10 @@ INNER JOIN dakstats_history.teams tm_src
         ON tm_src.TMID         = p.TMID
        AND TRIM(tm_src.SEASON) = TRIM(dcomp.SEASON)
 INNER JOIN leagues  l
-        ON l.name                    = CASE WHEN TRIM(COALESCE(h_src.DIVISION, '')) <> '' THEN CONCAT(COALESCE(NULLIF(TRIM(h_src.LEAGUE), ''), 'NBIAA'), ' ', TRIM(h_src.DIVISION)) WHEN TRIM(COALESCE(h_src.LEAGUE, '')) = '' THEN 'NBIAA AAA SRB' ELSE TRIM(h_src.LEAGUE) END
+        ON l.name                    = CASE WHEN TRIM(COALESCE(h_src.DIVISION, '')) = '' THEN CONCAT(COALESCE(NULLIF(TRIM(h_src.LEAGUE), ''), 'NBIAA'), ' D1 SRB') WHEN TRIM(h_src.DIVISION) LIKE '%SRB%' THEN TRIM(h_src.DIVISION) ELSE CONCAT(TRIM(h_src.DIVISION), ' SRB') END
 INNER JOIN seasons  s
         ON s.league_id               = l.league_id
-       AND DATE(dcomp.DATE) BETWEEN s.start_date AND s.end_date
+       AND DATE(dcomp.STARTTIME) BETWEEN s.start_date AND s.end_date
 INNER JOIN teams    ht
         ON ht.name                   = TRIM(h_src.TEAMSHORT)
        AND ht.gender                <=> h_src.GENDER + 0
@@ -427,7 +441,7 @@ INNER JOIN teams    vt
 INNER JOIN competitions sm_comp
         ON sm_comp.season_id         = s.season_id
        AND sm_comp.team_id           = ht.team_id
-       AND sm_comp.game_date         = DATE(dcomp.DATE)
+       AND DATE(sm_comp.start_time)   = DATE(dcomp.STARTTIME)
        AND sm_comp.opponent_id       = vt.team_id
 INNER JOIN teams    t
         ON t.name                    = TRIM(tm_src.TEAMSHORT)
@@ -518,7 +532,7 @@ SELECT DISTINCT
 FROM       dakstats_history.rosters r
 INNER JOIN dakstats_history.teams   tm ON  tm.TMID         = r.TMID
                                        AND TRIM(tm.SEASON) = TRIM(r.SEASON)
-INNER JOIN leagues                  l  ON  l.name          = CASE WHEN TRIM(COALESCE(tm.DIVISION, '')) <> '' THEN CONCAT(COALESCE(NULLIF(TRIM(tm.LEAGUE), ''), 'NBIAA'), ' ', TRIM(tm.DIVISION)) WHEN TRIM(COALESCE(tm.LEAGUE, '')) = '' THEN 'NBIAA AAA SRB' ELSE TRIM(tm.LEAGUE) END
+INNER JOIN leagues                  l  ON  l.name          = CASE WHEN TRIM(COALESCE(tm.DIVISION, '')) = '' THEN CONCAT(COALESCE(NULLIF(TRIM(tm.LEAGUE), ''), 'NBIAA'), ' D1 SRB') WHEN TRIM(tm.DIVISION) LIKE '%SRB%' THEN TRIM(tm.DIVISION) ELSE CONCAT(TRIM(tm.DIVISION), ' SRB') END
 INNER JOIN seasons                  s  ON  s.league_id     = l.league_id
                                        AND s.name          = TRIM(r.SEASON)
 INNER JOIN teams                    t  ON  t.name          = TRIM(tm.TEAMSHORT)
@@ -578,10 +592,10 @@ INNER JOIN dakstats_history.teams v_src
         ON v_src.TMID         = dcomp.V_TMID
        AND TRIM(v_src.SEASON) = TRIM(dcomp.SEASON)
 INNER JOIN leagues                        l
-        ON l.name                = CASE WHEN TRIM(COALESCE(h_src.DIVISION, '')) <> '' THEN CONCAT(COALESCE(NULLIF(TRIM(h_src.LEAGUE), ''), 'NBIAA'), ' ', TRIM(h_src.DIVISION)) WHEN TRIM(COALESCE(h_src.LEAGUE, '')) = '' THEN 'NBIAA AAA SRB' ELSE TRIM(h_src.LEAGUE) END
+        ON l.name                = CASE WHEN TRIM(COALESCE(h_src.DIVISION, '')) = '' THEN CONCAT(COALESCE(NULLIF(TRIM(h_src.LEAGUE), ''), 'NBIAA'), ' D1 SRB') WHEN TRIM(h_src.DIVISION) LIKE '%SRB%' THEN TRIM(h_src.DIVISION) ELSE CONCAT(TRIM(h_src.DIVISION), ' SRB') END
 INNER JOIN seasons                        s
         ON s.league_id           = l.league_id
-       AND DATE(dcomp.DATE) BETWEEN s.start_date AND s.end_date
+       AND DATE(dcomp.STARTTIME) BETWEEN s.start_date AND s.end_date
 INNER JOIN teams                          ht
         ON ht.name               = TRIM(h_src.TEAMSHORT)
        AND ht.gender            <=> h_src.GENDER + 0
@@ -591,7 +605,7 @@ INNER JOIN teams                          vt
 INNER JOIN competitions                   sm_comp
         ON sm_comp.season_id     = s.season_id
        AND sm_comp.team_id       = ht.team_id
-       AND sm_comp.game_date     = DATE(dcomp.DATE)
+       AND DATE(sm_comp.start_time) = DATE(dcomp.STARTTIME)
        AND sm_comp.opponent_id   = vt.team_id
 INNER JOIN players                        p
         ON p.first_name          = TRIM(r.FIRSTNAME)
@@ -600,6 +614,64 @@ WHERE  gs.COMPID  IS NOT NULL
   AND  gs.SEASON  IS NOT NULL
   AND  gs.PLRID   IS NOT NULL
   AND  TRIM(r.NUMBER) REGEXP '^[0-9]+$';
+
+-- ── Step 9b: Team game stats ─────────────────────────────────────────────────
+-- Team rebounds and turnovers from dakstats's "Team" dummy player
+-- (LASTNAME='TEAM', NUMBER='TM'). Stored separately from boxscores because
+-- each game has two "Team" entries (one per team), which would conflict on the
+-- boxscores unique key (competition_id, player_id, period).
+INSERT IGNORE INTO team_game_stats
+    (competition_id, team_id, period, oreb, dreb, reb, `to`)
+SELECT
+    sm_comp.competition_id                                                   AS competition_id,
+    tm.team_id                                                               AS team_id,
+    COALESCE(gs.PERIODNUM, 0)                                                AS period,
+    COALESCE(gs.OREB,  0) + COALESCE(gs.ODEAD, 0)                           AS oreb,
+    COALESCE(gs.DREB,  0) + COALESCE(gs.DDEAD, 0)                           AS dreb,
+    COALESCE(gs.OREB,  0) + COALESCE(gs.ODEAD, 0)
+      + COALESCE(gs.DREB,  0) + COALESCE(gs.DDEAD, 0)                       AS reb,
+    COALESCE(gs.`TO`,  0)                                                    AS `to`
+FROM       dakstats_history.season        gs
+INNER JOIN dakstats_history.rosters       r
+        ON r.PLRID               = gs.PLRID
+       AND TRIM(r.SEASON)        = TRIM(gs.SEASON)
+       AND TRIM(r.NUMBER)        = 'TM'
+       AND TRIM(r.LASTNAME)      = 'TEAM'
+INNER JOIN dakstats_history.competitions  dcomp
+        ON dcomp.COMPID          = gs.COMPID
+       AND TRIM(dcomp.SEASON)    = TRIM(gs.SEASON)
+       AND r.TMID                IN (dcomp.H_TMID, dcomp.V_TMID)
+INNER JOIN dakstats_history.teams         h_src
+        ON h_src.TMID            = dcomp.H_TMID
+       AND TRIM(h_src.SEASON)    = TRIM(dcomp.SEASON)
+INNER JOIN dakstats_history.teams         v_src
+        ON v_src.TMID            = dcomp.V_TMID
+       AND TRIM(v_src.SEASON)    = TRIM(dcomp.SEASON)
+INNER JOIN dakstats_history.teams         tm_src
+        ON tm_src.TMID           = r.TMID
+       AND TRIM(tm_src.SEASON)   = TRIM(dcomp.SEASON)
+INNER JOIN leagues                        l
+        ON l.name                = CASE WHEN TRIM(COALESCE(h_src.DIVISION, '')) = '' THEN CONCAT(COALESCE(NULLIF(TRIM(h_src.LEAGUE), ''), 'NBIAA'), ' D1 SRB') WHEN TRIM(h_src.DIVISION) LIKE '%SRB%' THEN TRIM(h_src.DIVISION) ELSE CONCAT(TRIM(h_src.DIVISION), ' SRB') END
+INNER JOIN seasons                        s
+        ON s.league_id           = l.league_id
+       AND DATE(dcomp.STARTTIME) BETWEEN s.start_date AND s.end_date
+INNER JOIN teams                          ht
+        ON ht.name               = TRIM(h_src.TEAMSHORT)
+       AND ht.gender            <=> h_src.GENDER + 0
+INNER JOIN teams                          vt
+        ON vt.name               = TRIM(v_src.TEAMSHORT)
+       AND vt.gender            <=> v_src.GENDER + 0
+INNER JOIN competitions                   sm_comp
+        ON sm_comp.season_id     = s.season_id
+       AND sm_comp.team_id       = ht.team_id
+       AND DATE(sm_comp.start_time) = DATE(dcomp.STARTTIME)
+       AND sm_comp.opponent_id   = vt.team_id
+INNER JOIN teams                          tm
+        ON tm.name               = TRIM(tm_src.TEAMSHORT)
+       AND tm.gender            <=> tm_src.GENDER + 0
+WHERE  gs.COMPID   IS NOT NULL
+  AND  gs.SEASON   IS NOT NULL
+  AND  gs.PLRID    IS NOT NULL;
 
 COMMIT;
 
@@ -638,7 +710,7 @@ SELECT 'source season rows',             COUNT(*)        FROM dakstats_history.s
 -- (unmatched TEAMSHORT, LEAGUE, or SEASON)
 SELECT src.TEAMSHORT, src.LEAGUE, src.SEASON, src.GENDER + 0 AS gender
 FROM       dakstats_history.teams src
-LEFT JOIN  leagues l  ON  l.name      = CASE WHEN TRIM(COALESCE(src.DIVISION, '')) <> '' THEN CONCAT(COALESCE(NULLIF(TRIM(src.LEAGUE), ''), 'NBIAA'), ' ', TRIM(src.DIVISION)) WHEN TRIM(COALESCE(src.LEAGUE, '')) = '' THEN 'NBIAA AAA SRB' ELSE TRIM(src.LEAGUE) END
+LEFT JOIN  leagues l  ON  l.name      = CASE WHEN TRIM(COALESCE(src.DIVISION, '')) = '' THEN CONCAT(COALESCE(NULLIF(TRIM(src.LEAGUE), ''), 'NBIAA'), ' D1 SRB') WHEN TRIM(src.DIVISION) LIKE '%SRB%' THEN TRIM(src.DIVISION) ELSE CONCAT(TRIM(src.DIVISION), ' SRB') END
 LEFT JOIN  seasons s  ON  s.league_id = l.league_id AND s.name = TRIM(src.SEASON)
 LEFT JOIN  teams   t  ON  t.name      = TRIM(src.TEAMSHORT)
                       AND t.gender   <=> src.GENDER + 0
@@ -647,17 +719,17 @@ WHERE  ts.team_id IS NULL
   AND  src.TEAMSHORT IS NOT NULL AND TRIM(src.TEAMSHORT) <> '';
 
 -- Source competitions that were skipped (unresolved team or season)
-SELECT comp.SEASON, comp.H_TMID, comp.V_TMID, DATE(comp.DATE) AS game_date
+SELECT comp.SEASON, comp.H_TMID, comp.V_TMID, DATE(comp.STARTTIME) AS start_time
 FROM       dakstats_history.competitions  comp
 LEFT JOIN  dakstats_history.teams         h_src ON h_src.TMID = comp.H_TMID AND TRIM(h_src.SEASON) = TRIM(comp.SEASON)
 LEFT JOIN  dakstats_history.teams v_src
         ON v_src.TMID         = comp.V_TMID
        AND TRIM(v_src.SEASON) = TRIM(comp.SEASON)
-LEFT JOIN  leagues                        l     ON l.name     = CASE WHEN TRIM(COALESCE(h_src.DIVISION, '')) <> '' THEN CONCAT(COALESCE(NULLIF(TRIM(h_src.LEAGUE), ''), 'NBIAA'), ' ', TRIM(h_src.DIVISION)) WHEN TRIM(COALESCE(h_src.LEAGUE, '')) = '' THEN 'NBIAA AAA SRB' ELSE TRIM(h_src.LEAGUE) END
+LEFT JOIN  leagues                        l     ON l.name     = CASE WHEN TRIM(COALESCE(h_src.DIVISION, '')) = '' THEN CONCAT(COALESCE(NULLIF(TRIM(h_src.LEAGUE), ''), 'NBIAA'), ' D1 SRB') WHEN TRIM(h_src.DIVISION) LIKE '%SRB%' THEN TRIM(h_src.DIVISION) ELSE CONCAT(TRIM(h_src.DIVISION), ' SRB') END
 LEFT JOIN  seasons                        s     ON s.league_id = l.league_id AND s.name = TRIM(comp.SEASON)
 LEFT JOIN  teams                          ht    ON ht.name    = TRIM(h_src.TEAMSHORT) AND ht.gender <=> h_src.GENDER + 0
 LEFT JOIN  teams                          vt    ON vt.name    = TRIM(v_src.TEAMSHORT) AND vt.gender <=> v_src.GENDER + 0
-WHERE  comp.DATE   IS NOT NULL
+WHERE  comp.STARTTIME   IS NOT NULL
   AND  comp.SEASON IS NOT NULL
   AND  (s.season_id IS NULL OR ht.team_id IS NULL OR vt.team_id IS NULL);
 
@@ -680,12 +752,12 @@ LEFT JOIN  dakstats_history.teams v_src
 LEFT JOIN  dakstats_history.teams tm_src
         ON tm_src.TMID         = p.TMID
        AND TRIM(tm_src.SEASON) = TRIM(dcomp.SEASON)
-LEFT JOIN  leagues    l       ON l.name        = CASE WHEN TRIM(COALESCE(h_src.DIVISION, '')) <> '' THEN CONCAT(COALESCE(NULLIF(TRIM(h_src.LEAGUE), ''), 'NBIAA'), ' ', TRIM(h_src.DIVISION)) WHEN TRIM(COALESCE(h_src.LEAGUE, '')) = '' THEN 'NBIAA AAA SRB' ELSE TRIM(h_src.LEAGUE) END
+LEFT JOIN  leagues    l       ON l.name        = CASE WHEN TRIM(COALESCE(h_src.DIVISION, '')) = '' THEN CONCAT(COALESCE(NULLIF(TRIM(h_src.LEAGUE), ''), 'NBIAA'), ' D1 SRB') WHEN TRIM(h_src.DIVISION) LIKE '%SRB%' THEN TRIM(h_src.DIVISION) ELSE CONCAT(TRIM(h_src.DIVISION), ' SRB') END
 LEFT JOIN  seasons    s       ON s.league_id   = l.league_id AND s.name = TRIM(dcomp.SEASON)
 LEFT JOIN  teams      ht      ON ht.name       = TRIM(h_src.TEAMSHORT) AND ht.gender <=> h_src.GENDER + 0
 LEFT JOIN  teams      vt      ON vt.name       = TRIM(v_src.TEAMSHORT) AND vt.gender <=> v_src.GENDER + 0
 LEFT JOIN  competitions sm_c  ON sm_c.season_id = s.season_id AND sm_c.team_id = ht.team_id
-                              AND sm_c.game_date = DATE(dcomp.DATE) AND sm_c.opponent_id = vt.team_id
+                              AND DATE(sm_c.start_time) = DATE(dcomp.STARTTIME) AND sm_c.opponent_id = vt.team_id
 LEFT JOIN  teams      t       ON t.name        = TRIM(tm_src.TEAMSHORT) AND t.gender <=> tm_src.GENDER + 0
 WHERE  p.COMPID IS NOT NULL AND p.SEASON IS NOT NULL
   AND  (sm_c.competition_id IS NULL OR t.team_id IS NULL);

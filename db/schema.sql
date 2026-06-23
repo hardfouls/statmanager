@@ -3,6 +3,7 @@
 
 SET FOREIGN_KEY_CHECKS = 0;
 
+DROP TABLE IF EXISTS team_game_stats;
 DROP TABLE IF EXISTS boxscores;
 DROP TABLE IF EXISTS periods;
 DROP TABLE IF EXISTS team_schedules;
@@ -100,19 +101,23 @@ CREATE TABLE tournaments (
 
 
 CREATE TABLE leagues (
-    league_id       SMALLINT UNSIGNED   NOT NULL AUTO_INCREMENT,
-    name            VARCHAR(100)        NOT NULL,
-    contact_person  VARCHAR(100)        NULL,
-    contact_phone   VARCHAR(25)         NULL,
-    contact_email   VARCHAR(100)        NULL,
-    website_url     VARCHAR(255)        NULL,
-    founded_date    DATE                NULL,
-    facebook        VARCHAR(100)        NULL,
-    x_handle        VARCHAR(50)         NULL,
-    instagram       VARCHAR(50)         NULL,
-    logo_path       VARCHAR(255)        NULL,
+    league_id           SMALLINT UNSIGNED   NOT NULL AUTO_INCREMENT,
+    name                VARCHAR(100)        NOT NULL,
+    governing_org_id    SMALLINT UNSIGNED   NULL,
+    contact_person      VARCHAR(100)        NULL,
+    contact_phone       VARCHAR(25)         NULL,
+    contact_email       VARCHAR(100)        NULL,
+    website_url         VARCHAR(255)        NULL,
+    founded_date        DATE                NULL,
+    facebook            VARCHAR(100)        NULL,
+    x_handle            VARCHAR(50)         NULL,
+    instagram           VARCHAR(50)         NULL,
+    logo_path           VARCHAR(255)        NULL,
     PRIMARY KEY (league_id),
-    UNIQUE KEY uq_leagues_name (name)
+    UNIQUE KEY uq_leagues_name (name),
+    CONSTRAINT fk_leagues_governing_org
+        FOREIGN KEY (governing_org_id) REFERENCES organizations (org_id)
+        ON UPDATE CASCADE ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 
@@ -216,14 +221,15 @@ CREATE TABLE competitions (
     competition_id  INT UNSIGNED        NOT NULL AUTO_INCREMENT,
     season_id       SMALLINT UNSIGNED   NOT NULL,
     team_id         SMALLINT UNSIGNED   NOT NULL,
-    game_date       DATE                NOT NULL,
+    start_time      DATETIME            NOT NULL,
+    end_time        DATETIME            NULL,
     opponent_id     SMALLINT UNSIGNED   NOT NULL,
     comptype_id     TINYINT UNSIGNED    NULL,
     location        VARCHAR(25)         NULL,
     PRIMARY KEY (competition_id),
     KEY idx_competitions_season (season_id),
     KEY idx_competitions_team   (team_id),
-    KEY idx_competitions_date   (game_date),
+    KEY idx_competitions_starttime (start_time),
     CONSTRAINT fk_competitions_season
         FOREIGN KEY (season_id)   REFERENCES seasons (season_id)
         ON UPDATE CASCADE ON DELETE RESTRICT,
@@ -282,11 +288,29 @@ CREATE TABLE periods (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 
+CREATE TABLE team_game_stats (
+    stat_id        INT UNSIGNED        NOT NULL AUTO_INCREMENT,
+    competition_id INT UNSIGNED        NOT NULL,
+    team_id        SMALLINT UNSIGNED   NOT NULL,
+    period         TINYINT UNSIGNED    NOT NULL DEFAULT 1,
+    oreb           TINYINT UNSIGNED    NOT NULL DEFAULT 0,
+    dreb           TINYINT UNSIGNED    NOT NULL DEFAULT 0,
+    reb            TINYINT UNSIGNED    NOT NULL DEFAULT 0,
+    `to`           TINYINT UNSIGNED    NOT NULL DEFAULT 0,
+    PRIMARY KEY (stat_id),
+    UNIQUE KEY uq_tgs (competition_id, team_id, period),
+    CONSTRAINT fk_tgs_comp FOREIGN KEY (competition_id) REFERENCES competitions (competition_id)
+        ON DELETE CASCADE,
+    CONSTRAINT fk_tgs_team FOREIGN KEY (team_id) REFERENCES teams (team_id)
+        ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+
 CREATE TABLE boxscores (
     boxscore_id     INT UNSIGNED        NOT NULL AUTO_INCREMENT,
     competition_id  INT UNSIGNED        NOT NULL,
     player_id       INT UNSIGNED        NOT NULL,
-    period          TINYINT UNSIGNED    NOT NULL DEFAULT 0,  -- 0 = full game; 1+ = period number
+    period          TINYINT UNSIGNED    NOT NULL DEFAULT 0,  -- 1 = full game (dakstats PERIODNUM=1); 2+ = period number
     started         TINYINT UNSIGNED    NOT NULL DEFAULT 0,  -- 1 if player was on floor to start this period
     jersey_number   TINYINT UNSIGNED    NOT NULL,       -- number actually worn in this game
     min             SMALLINT UNSIGNED   NOT NULL DEFAULT 0,  -- stored as total seconds

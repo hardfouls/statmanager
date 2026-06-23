@@ -1406,7 +1406,7 @@ const pages = {
             (!tid || String(g.team_id) === tid || String(g.opponent_id) === tid)
           )
           .sort((a, b) => {
-            const cmp = String(a.game_date).localeCompare(String(b.game_date));
+            const cmp = String(a.start_time).localeCompare(String(b.start_time));
             return sortAsc ? cmp : -cmp;
           });
         countEl.textContent = `${visible.length} game${visible.length !== 1 ? 's' : ''}`;
@@ -1417,7 +1417,7 @@ const pages = {
         listEl.innerHTML = visible.map(g => {
           const score = g.team_score != null && g.opponent_score != null
             ? `${g.team_score}–${g.opponent_score}` : '—';
-          const date = String(g.game_date).substring(0, 10);
+          const date = String(g.start_time).substring(0, 10);
           const chevron = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>`;
           const bsUrl = `#/boxscore?id=${g.competition_id}&back=games`;
           return `
@@ -1618,7 +1618,7 @@ const pages = {
       refreshFormTeams(seasonId, teamId, oppId);
 
       if (game) {
-        setValue('gf-date', String(game.game_date).substring(0, 10));
+        setValue('gf-date', String(game.start_time).substring(0, 10));
         document.getElementById('gf-location').value = game.location || 'Home';
         const scoreDisplay = document.getElementById('gf-score-display');
         scoreDisplay.style.display = '';
@@ -1645,10 +1645,10 @@ const pages = {
           season_id:   document.getElementById('gf-season').value,
           team_id:     document.getElementById('gf-team').value,
           opponent_id: document.getElementById('gf-opponent').value,
-          game_date:   document.getElementById('gf-date').value,
+          start_time:   document.getElementById('gf-date').value,
           location:    document.getElementById('gf-location').value,
         };
-        if (!body.season_id || !body.team_id || !body.opponent_id || !body.game_date) {
+        if (!body.season_id || !body.team_id || !body.opponent_id || !body.start_time) {
           showStatus('gf-status', 'error', 'Season, team, opponent and date are required.');
           return;
         }
@@ -1998,6 +1998,13 @@ const pages = {
           <button class="btn btn-secondary btn-sm" id="lp-back">← Leagues</button>
         </div>
         <div class="card" style="margin-bottom:12px">
+          <div class="section-header">
+            <h3 class="section-title">League Profile</h3>
+            <div style="display:flex;gap:4px">
+              <button class="btn btn-secondary btn-sm" id="lp-prev-btn">← Prev</button>
+              <button class="btn btn-secondary btn-sm" id="lp-next-btn">Next →</button>
+            </div>
+          </div>
           <div style="display:flex;align-items:flex-start;gap:16px">
             <div id="lp-icon-wrap" style="flex-shrink:0;width:72px;height:72px;background:var(--surface2);border-radius:8px;display:flex;align-items:center;justify-content:center;overflow:hidden">
               <svg id="lp-icon-placeholder" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-muted)">
@@ -2007,12 +2014,13 @@ const pages = {
             </div>
             <div style="flex:1;min-width:0">
               <div id="lp-name" style="font-size:1.1em;font-weight:600;color:var(--accent)">Loading…</div>
-              <div id="lp-attrs" style="color:var(--text-muted);font-size:0.85em;margin-top:4px;display:none"></div>
+              <div id="lp-org" style="color:var(--text-muted);font-size:0.85em;margin-top:3px;display:none"></div>
+              <div id="lp-attrs" style="color:var(--text-muted);font-size:0.85em;margin-top:3px;display:none"></div>
               <div id="lp-links" style="margin-top:6px;display:none"></div>
-            </div>
-            <div style="display:flex;gap:8px;align-self:flex-start;flex-shrink:0">
-              <button class="btn btn-secondary btn-sm" id="lp-edit-btn">Edit League</button>
-              <button class="btn btn-danger btn-sm" id="lp-delete-btn">Delete</button>
+              <div style="display:flex;gap:8px;margin-top:10px">
+                <button class="btn btn-secondary btn-sm" id="lp-edit-btn">Edit League</button>
+                <button class="btn btn-danger btn-sm" id="lp-delete-btn">Delete</button>
+              </div>
             </div>
           </div>
         </div>
@@ -2083,15 +2091,22 @@ const pages = {
           return;
         }
 
-        const { league: lg, seasons } = data;
+        const { league: lg, seasons, prevLeagueId, nextLeagueId } = data;
 
-        document.getElementById('lp-name').textContent = escapeHtml(lg.name);
+        document.getElementById('lp-name').textContent = lg.name;
 
         if (lg.logo_path) {
           document.getElementById('lp-icon-img').src = lg.logo_path + '?t=' + Date.now();
           document.getElementById('lp-icon-img').style.display = '';
           document.getElementById('lp-icon-placeholder').style.display = 'none';
         }
+
+        const orgEl = document.getElementById('lp-org');
+        const orgDisplay = lg.org_name
+          ? escapeHtml(lg.org_name) + (lg.org_acronym ? ` (${escapeHtml(lg.org_acronym)})` : '')
+          : '<em style="color:var(--text-muted)">unassigned</em>';
+        orgEl.innerHTML = `<span style="color:var(--text-muted);font-weight:500">Governing Body:</span> ${orgDisplay}`;
+        orgEl.style.display = '';
 
         const attrParts = [
           lg.contact_person || null,
@@ -2100,7 +2115,7 @@ const pages = {
         ].filter(Boolean);
         if (attrParts.length) {
           const el = document.getElementById('lp-attrs');
-          el.textContent = attrParts.join(' · ');
+          el.innerHTML = `<span style="color:var(--text-muted);font-weight:500">Contact Info:</span> ${escapeHtml(attrParts.join(' · '))}`;
           el.style.display = '';
         }
 
@@ -2110,6 +2125,13 @@ const pages = {
           el.innerHTML = links;
           el.style.display = '';
         }
+
+        const prevBtn = document.getElementById('lp-prev-btn');
+        const nextBtn = document.getElementById('lp-next-btn');
+        prevBtn.disabled = !prevLeagueId;
+        nextBtn.disabled = !nextLeagueId;
+        prevBtn.addEventListener('click', () => { window.location.hash = `#/league-profile?id=${prevLeagueId}`; });
+        nextBtn.addEventListener('click', () => { window.location.hash = `#/league-profile?id=${nextLeagueId}`; });
 
         const statsEl = document.getElementById('lp-stats');
         const tiles = [
@@ -2469,7 +2491,7 @@ const pages = {
           const ctFilter = document.getElementById('sp-comptype-filter')?.value || '';
           const filtered = ctFilter ? list.filter(g => g.comptype === ctFilter) : list;
           const sorted = [...filtered].sort((a, b) => {
-            const cmp = String(a.game_date).localeCompare(String(b.game_date));
+            const cmp = String(a.start_time).localeCompare(String(b.start_time));
             return sortAsc ? cmp : -cmp;
           });
           countEl.textContent = `${sorted.length} game${sorted.length !== 1 ? 's' : ''}`;
@@ -2478,7 +2500,7 @@ const pages = {
             return;
           }
           tbody.innerHTML = sorted.map(g => {
-            const date  = String(g.game_date).substring(0, 10);
+            const date  = String(g.start_time).substring(0, 10);
             const score = g.team_score != null && g.opponent_score != null
               ? `${g.team_score}–${g.opponent_score}` : '—';
             const homeWon = g.team_score != null && g.opponent_score != null && Number(g.team_score) > Number(g.opponent_score);
@@ -2788,7 +2810,7 @@ const pages = {
                 totals.blk += Number(g.blk) || 0;
                 totals.to  += Number(g.to)  || 0;
                 totals.pf  += Number(g.pf)  || 0;
-                const date = g.game_date ? String(g.game_date).slice(0, 10) : '—';
+                const date = g.start_time ? String(g.start_time).slice(0, 10) : '—';
                 const oppLabel = escapeHtml(g.opponent_abbrev || g.opponent_name);
                 const opp  = (g.home_away === 'H' ? 'vs. ' : '@ ') + oppLabel;
                 const bsQ  = new URLSearchParams({ id: g.competition_id, back: 'player-profile', player_id: params.id });
@@ -2914,7 +2936,7 @@ const pages = {
           return;
         }
         const { competition: c, team, opponent, periodRows = [] } = data;
-        const date = c.game_date ? String(c.game_date).slice(0, 10) : '—';
+        const date = c.start_time ? String(c.start_time).slice(0, 10) : '—';
         const loc  = c.location  ? ` · ${escapeHtml(c.location)}`   : '';
 
         document.getElementById('bs-loading').style.display = 'none';
@@ -3106,7 +3128,7 @@ const pages = {
     render() {
       return `
         <h2 class="page-title">Dashboard</h2>
-        <div class="card">
+        <div class="card" style="margin-bottom:16px">
           <h3 class="section-title">Quick Summary</h3>
           <div class="summary-grid">
             <a class="summary-tile is-link" href="#/leagues">
@@ -3140,22 +3162,38 @@ const pages = {
           </div>
           <p class="summary-msg" id="summary-msg"></p>
         </div>
-        <div class="card" style="margin-top:16px">
-          <h3 class="section-title">Missing Box Scores</h3>
-          <div id="missing-bs-list" style="color:var(--text-muted)">Loading…</div>
-        </div>
-        <div class="card" style="margin-top:16px">
-          <h3 class="section-title">Teams Without Games</h3>
-          <div id="no-games-list" style="color:var(--text-muted)">Loading…</div>
+        <div style="display:flex;gap:16px;align-items:flex-start">
+          <div style="flex:0 0 220px;min-width:0">
+            <div class="card">
+              <div class="section-header">
+                <h3 class="section-title">Leagues</h3>
+                <select id="home-org-filter" class="form-control" style="font-size:0.8em;padding:2px 6px;height:auto">
+                  <option value="">All</option>
+                </select>
+              </div>
+              <div id="home-leagues-list" style="color:var(--text-muted)">Loading…</div>
+            </div>
+          </div>
+          <div style="flex:1;min-width:0">
+            <div class="card">
+              <h3 class="section-title">Missing Box Scores</h3>
+              <div id="missing-bs-list" style="color:var(--text-muted)">Loading…</div>
+            </div>
+            <div class="card" style="margin-top:16px">
+              <h3 class="section-title">Teams Without Games</h3>
+              <div id="no-games-list" style="color:var(--text-muted)">Loading…</div>
+            </div>
+          </div>
         </div>
       `;
     },
 
     async init() {
-      const [summaryRes, missingRes, noGamesRes] = await Promise.allSettled([
+      const [summaryRes, missingRes, noGamesRes, leaguesRes] = await Promise.allSettled([
         fetch('api/summary').then(r => r.json()),
         fetch('api/games/missing-boxscores').then(r => r.json()),
-        fetch('api/teams/no-games').then(r => r.json())
+        fetch('api/teams/no-games').then(r => r.json()),
+        fetch('api/leagues').then(r => r.json())
       ]);
 
       // Summary card
@@ -3195,7 +3233,7 @@ const pages = {
                 <th>Game</th>
               </tr></thead>
               <tbody>${games.map(g => `<tr>
-                <td>${g.game_date ? String(g.game_date).slice(0, 10) : '—'}</td>
+                <td>${g.start_time ? String(g.start_time).slice(0, 10) : '—'}</td>
                 <td>${escapeHtml(g.league_name)} · ${escapeHtml(g.season_name)}</td>
                 <td>${escapeHtml(g.team_name)} vs ${escapeHtml(g.opponent_name)}</td>
               </tr>`).join('')}</tbody>
@@ -3226,6 +3264,48 @@ const pages = {
         }
       } else {
         noGamesEl.textContent = 'Could not load teams without games.';
+      }
+
+      // Leagues list
+      const leaguesEl  = document.getElementById('home-leagues-list');
+      const orgFilter  = document.getElementById('home-org-filter');
+      if (leaguesRes.status === 'fulfilled' && Array.isArray(leaguesRes.value?.leagues)) {
+        const leagues = leaguesRes.value.leagues;
+        if (leagues.length === 0) {
+          leaguesEl.innerHTML = '<p class="list-empty">No leagues yet.</p>';
+        } else {
+          const mkLabel = lg => lg.org_acronym ? `${lg.org_acronym}-${lg.name}` : lg.name;
+          const sorted  = [...leagues].sort((a, b) => mkLabel(a).localeCompare(mkLabel(b)));
+
+          // Populate org filter with unique acronyms present in the data
+          const orgs = [...new Map(
+            leagues.filter(lg => lg.org_acronym)
+                   .map(lg => [lg.org_acronym, lg.org_acronym])
+          ).values()].sort();
+          orgFilter.innerHTML = '<option value="">All</option>' +
+            orgs.map(a => `<option value="${escapeHtml(a)}">${escapeHtml(a)}</option>`).join('');
+
+          const renderLeagues = () => {
+            const sel = orgFilter.value;
+            const visible = sel ? sorted.filter(lg => lg.org_acronym === sel) : sorted;
+            if (visible.length === 0) {
+              leaguesEl.innerHTML = '<p class="list-empty">No leagues for this organization.</p>';
+              return;
+            }
+            leaguesEl.innerHTML = visible.map(lg => {
+              const label = mkLabel(lg);
+              return `<a href="#/league-profile?id=${lg.league_id}" class="tbl-link" style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);color:var(--text);text-decoration:none">
+                <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:0.85em">${escapeHtml(label)}</span>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;color:var(--text-muted)"><polyline points="9 18 15 12 9 6"/></svg>
+              </a>`;
+            }).join('');
+          };
+
+          orgFilter.addEventListener('change', renderLeagues);
+          renderLeagues();
+        }
+      } else {
+        leaguesEl.textContent = 'Could not load leagues.';
       }
     }
   },
@@ -3286,6 +3366,24 @@ const pages = {
           </form>
         </div>
         <div class="card">
+          <h3 class="section-title">Server</h3>
+          <form id="server-form" novalidate>
+            <div class="form-group">
+              <label for="srv-base-url">Report Base URL</label>
+              <input type="text" id="srv-base-url" name="base_url"
+                     placeholder="e.g. http://nas/statmanager (leave blank for root)"
+                     autocomplete="off" spellcheck="false">
+            </div>
+            <p style="font-size:0.8em;color:var(--text-muted);margin:0 0 10px">
+              Prefix for all report links. Set to your public URL if served under a path (e.g. nginx subdirectory). Leave blank if served at root.
+            </p>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary">Save</button>
+            </div>
+            <div class="status-msg" id="srv-status"></div>
+          </form>
+        </div>
+        <div class="card">
           <h3 class="section-title">Database Setup</h3>
           <p class="setup-warning">
             Creates the database if it does not exist, then runs the schema.
@@ -3327,6 +3425,7 @@ const pages = {
           document.getElementById('db-password').placeholder = 'Saved — leave blank to keep';
         }
         original = db;
+        setValue('srv-base-url', (data.server || {}).base_url);
       } catch {
         showStatus('db-status', 'error', 'Could not load saved settings.');
       }
@@ -3386,6 +3485,29 @@ const pages = {
         } finally {
           btn.disabled = false;
           btn.textContent = 'Initialize Database';
+        }
+      });
+
+      document.getElementById('server-form').addEventListener('submit', async e => {
+        e.preventDefault();
+        const btn = e.target.querySelector('[type=submit]');
+        btn.disabled = true; btn.textContent = 'Saving…';
+        try {
+          const res = await fetch('api/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              database: readForm(),
+              server: { base_url: document.getElementById('srv-base-url').value.trim() }
+            })
+          });
+          const data = await res.json();
+          if (data.success) showStatus('srv-status', 'success', 'Saved.');
+          else showStatus('srv-status', 'error', data.error || 'Save failed');
+        } catch {
+          showStatus('srv-status', 'error', 'Request failed.');
+        } finally {
+          btn.disabled = false; btn.textContent = 'Save';
         }
       });
 

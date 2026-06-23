@@ -1,6 +1,6 @@
 services:
   app:
-    image: statmanager:0.1.0-alpha
+    image: statmanager:0.2.0-alpha
     container_name: statmanager
     restart: unless-stopped
     ports:
