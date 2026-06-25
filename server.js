@@ -131,6 +131,35 @@ app.use('/api', (req, res, next) => {
       ADD COLUMN IF NOT EXISTS last_name  VARCHAR(64)  NULL,
       ADD COLUMN IF NOT EXISTS email      VARCHAR(255) NULL,
       ADD COLUMN IF NOT EXISTS phone      VARCHAR(30)  NULL`);
+    await migrate(`ALTER TABLE boxscores CHANGE COLUMN IF EXISTS pts tp  TINYINT UNSIGNED NOT NULL DEFAULT 0`);
+    await migrate(`ALTER TABLE boxscores CHANGE COLUMN IF EXISTS tpm fgm3 TINYINT UNSIGNED NOT NULL DEFAULT 0`);
+    await migrate(`ALTER TABLE boxscores CHANGE COLUMN IF EXISTS tpa fga3 TINYINT UNSIGNED NOT NULL DEFAULT 0`);
+    await migrate(`ALTER TABLE boxscores ADD COLUMN IF NOT EXISTS tf TINYINT UNSIGNED NOT NULL DEFAULT 0 AFTER pf`);
+    await migrate(`ALTER TABLE boxscores ADD COLUMN IF NOT EXISTS dq TINYINT UNSIGNED NOT NULL DEFAULT 0 AFTER tf`);
+    await migrate(`RENAME TABLE plays TO playbyplay`);
+    await migrate(`CREATE TABLE IF NOT EXISTS playbyplay (
+      play_id        INT UNSIGNED      NOT NULL AUTO_INCREMENT,
+      competition_id INT UNSIGNED      NOT NULL,
+      period         TINYINT UNSIGNED  NOT NULL,
+      clock          VARCHAR(8)        NOT NULL,
+      team_id        SMALLINT UNSIGNED NULL,
+      player_id      INT UNSIGNED      NULL,
+      action         VARCHAR(12)       NOT NULL,
+      play_type      VARCHAR(10)       NULL,
+      is_paint       TINYINT(1)        NOT NULL DEFAULT 0,
+      home_score     SMALLINT UNSIGNED NULL,
+      visitor_score  SMALLINT UNSIGNED NULL,
+      wall_clock     DATETIME          NULL,
+      x              SMALLINT          NULL,
+      y              SMALLINT          NULL,
+      seq            SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+      PRIMARY KEY (play_id),
+      KEY idx_playbyplay_comp_seq (competition_id, period, seq),
+      KEY idx_playbyplay_player   (player_id),
+      CONSTRAINT fk_playbyplay_comp   FOREIGN KEY (competition_id) REFERENCES competitions (competition_id) ON DELETE CASCADE,
+      CONSTRAINT fk_playbyplay_team   FOREIGN KEY (team_id)   REFERENCES teams (team_id),
+      CONSTRAINT fk_playbyplay_player FOREIGN KEY (player_id) REFERENCES players (player_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
   } finally {
     await conn.end().catch(() => {});
   }
@@ -1508,8 +1537,8 @@ app.get('/api/players/:id', async (req, res) => {
           ps.\`year\`,
           COUNT(DISTINCT b.competition_id)                                                        AS game_count,
           COALESCE(SUM(CASE WHEN b.period = 1 AND b.started = 1 THEN 1 ELSE 0 END), 0)         AS gs,
-          ROUND(SUM(b.pts) / NULLIF(COUNT(DISTINCT b.competition_id), 0), 1) AS ppg,
-          COALESCE(SUM(b.pts),    0)                                           AS total_pts,
+          ROUND(SUM(b.tp) / NULLIF(COUNT(DISTINCT b.competition_id), 0), 1) AS ppg,
+          COALESCE(SUM(b.tp),    0)                                           AS total_pts,
           COALESCE(SUM(b.reb),    0)                                           AS total_reb,
           COALESCE(SUM(b.ast),    0)                                           AS total_ast,
           COALESCE(SUM(b.stl),    0)                                           AS total_stl,
@@ -1549,12 +1578,12 @@ app.get('/api/players/:id/games', async (req, res) => {
             CASE WHEN c.team_id = ? THEN 'H' ELSE 'A' END                   AS home_away,
             CASE WHEN c.team_id = ? THEN vt.name   ELSE ht.name   END       AS opponent_name,
             CASE WHEN c.team_id = ? THEN vt.abbrev ELSE ht.abbrev END       AS opponent_abbrev,
-            SUM(b.min)  AS min,  SUM(b.pts)  AS pts,
+            SUM(b.min)  AS min,  SUM(b.tp)  AS tp,
             SUM(b.oreb) AS oreb, SUM(b.dreb) AS dreb, SUM(b.reb)  AS reb,
             SUM(b.ast)  AS ast,  SUM(b.stl)  AS stl,  SUM(b.blk)  AS blk,
             SUM(b.\`to\`) AS \`to\`, SUM(b.pf) AS pf,
             SUM(b.fgm)  AS fgm,  SUM(b.fga)  AS fga,
-            SUM(b.tpm)  AS tpm,  SUM(b.tpa)  AS tpa,
+            SUM(b.fgm3)  AS fgm3,  SUM(b.fga3)  AS fga3,
             SUM(b.ftm)  AS ftm,  SUM(b.fta)  AS fta
         FROM   boxscores    b
         JOIN   competitions c    ON  c.competition_id  = b.competition_id
@@ -1576,12 +1605,12 @@ app.get('/api/players/:id/games', async (req, res) => {
             CASE WHEN c.team_id = ps.team_id THEN 'H' ELSE 'A' END              AS home_away,
             CASE WHEN c.team_id = ps.team_id THEN vt.name   ELSE ht.name   END  AS opponent_name,
             CASE WHEN c.team_id = ps.team_id THEN vt.abbrev ELSE ht.abbrev END  AS opponent_abbrev,
-            SUM(b.min)  AS min,  SUM(b.pts)  AS pts,
+            SUM(b.min)  AS min,  SUM(b.tp)  AS tp,
             SUM(b.oreb) AS oreb, SUM(b.dreb) AS dreb, SUM(b.reb)  AS reb,
             SUM(b.ast)  AS ast,  SUM(b.stl)  AS stl,  SUM(b.blk)  AS blk,
             SUM(b.\`to\`) AS \`to\`, SUM(b.pf) AS pf,
             SUM(b.fgm)  AS fgm,  SUM(b.fga)  AS fga,
-            SUM(b.tpm)  AS tpm,  SUM(b.tpa)  AS tpa,
+            SUM(b.fgm3)  AS fgm3,  SUM(b.fga3)  AS fga3,
             SUM(b.ftm)  AS ftm,  SUM(b.fta)  AS fta
         FROM   boxscores    b
         JOIN   competitions c    ON  c.competition_id   = b.competition_id
@@ -1699,9 +1728,9 @@ app.get('/api/games/:id/boxscore', async (req, res) => {
         b.player_id,
         p.first_name, p.last_name,
         MAX(b.jersey_number)                                                    AS jersey_number,
-        SUM(b.min)  AS min,  SUM(b.pts)  AS pts,
+        SUM(b.min)  AS min,  SUM(b.tp)  AS tp,
         SUM(b.fgm)  AS fgm,  SUM(b.fga)  AS fga,
-        SUM(b.tpm)  AS tpm,  SUM(b.tpa)  AS tpa,
+        SUM(b.fgm3)  AS fgm3,  SUM(b.fga3)  AS fga3,
         SUM(b.ftm)  AS ftm,  SUM(b.fta)  AS fta,
         SUM(b.oreb) AS oreb, SUM(b.dreb) AS dreb, SUM(b.reb)  AS reb,
         SUM(b.ast)  AS ast,  SUM(b.stl)  AS stl,  SUM(b.blk)  AS blk,
@@ -1727,8 +1756,8 @@ app.get('/api/games/:id/boxscore', async (req, res) => {
         b.player_id,
         p.first_name, p.last_name,
         b.jersey_number, b.period, b.started,
-        b.min, b.pts,
-        b.fgm, b.fga, b.tpm, b.tpa, b.ftm, b.fta,
+        b.min, b.tp,
+        b.fgm, b.fga, b.fgm3, b.fga3, b.ftm, b.fta,
         b.oreb, b.dreb, b.reb,
         b.ast, b.stl, b.blk, b.\`to\`, b.pf,
         CASE WHEN EXISTS (
@@ -1746,6 +1775,27 @@ app.get('/api/games/:id/boxscore', async (req, res) => {
     `, [compId]);
 
     res.json({ competition: comp, team, opponent, periodRows });
+  } catch (err) { res.json({ error: err.message }); }
+  finally { await conn?.end().catch(() => {}); }
+});
+
+app.get('/api/games/:id/playbyplay', async (req, res) => {
+  const compId = parseInt(req.params.id);
+  let conn;
+  try {
+    conn = await dbConnect();
+    const [plays] = await conn.execute(`
+      SELECT
+        pb.period, pb.clock, pb.action, pb.play_type,
+        pb.home_score, pb.visitor_score, pb.team_id,
+        pl.first_name, pl.last_name
+      FROM playbyplay pb
+      LEFT JOIN players pl ON pl.player_id = pb.player_id
+      WHERE pb.competition_id = ?
+        AND pb.action != 'PERIOD'
+      ORDER BY pb.period, pb.seq
+    `, [compId]);
+    res.json(plays);
   } catch (err) { res.json({ error: err.message }); }
   finally { await conn?.end().catch(() => {}); }
 });

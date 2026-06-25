@@ -5,6 +5,7 @@
 --   • dakstats_history.periods      → periods
 --   • dakstats_history.rosters      → players, player_seasons
 --   • dakstats_history.season       → boxscores
+--   • dakstats_history.playbyplay   → playbyplay
 --
 -- Prerequisites:
 --   • Both databases must be on the same MariaDB/MySQL instance.
@@ -546,15 +547,15 @@ WHERE  TRIM(r.NUMBER) REGEXP '^[0-9]+$'
 -- ── Step 9: Boxscores ────────────────────────────────────────
 -- One row per player per period per game (PERIODNUM from the source).
 -- When PERIODNUM is NULL the row is stored with period = 0 (full-game).
--- pts is derived: 2*FGM + M3P + FTM
+-- tp is derived: 2*FGM + M3P + FTM
 --   (= 2*(FGM-M3P) + 3*M3P + FTM, algebraically equivalent)
 -- Jersey number comes from the roster (same number all season).
 -- The UNIQUE KEY uq_boxscores_game_player makes re-runs safe via
 -- INSERT IGNORE.
 INSERT IGNORE INTO boxscores
     (competition_id, player_id, period, started, jersey_number,
-     min,  fgm,  fga,  tpm,  tpa,  ftm,  fta,
-     oreb, dreb, reb,  ast,  stl,  blk,  `to`, pf, pts)
+     min,  fgm,  fga,  fgm3, fga3, ftm,  fta,
+     oreb, dreb, reb,  ast,  stl,  blk,  `to`, pf, tf, tp)
 SELECT
     sm_comp.competition_id                                               AS competition_id,
     p.player_id                                                          AS player_id,
@@ -564,8 +565,8 @@ SELECT
     COALESCE(gs.MINUTES, 0)                                              AS min,
     COALESCE(gs.FGM,      0)                                             AS fgm,
     COALESCE(gs.FGA,      0)                                             AS fga,
-    COALESCE(gs.M3P,      0)                                             AS tpm,
-    COALESCE(gs.A3P,      0)                                             AS tpa,
+    COALESCE(gs.M3P,      0)                                             AS fgm3,
+    COALESCE(gs.A3P,      0)                                             AS fga3,
     COALESCE(gs.FTM,      0)                                             AS ftm,
     COALESCE(gs.FTA,      0)                                             AS fta,
     COALESCE(gs.OREB,     0)                                             AS oreb,
@@ -576,7 +577,8 @@ SELECT
     COALESCE(gs.BLOCKS,   0)                                             AS blk,
     COALESCE(gs.`TO`,     0)                                             AS `to`,
     COALESCE(gs.PF,       0)                                             AS pf,
-    COALESCE(gs.FGM, 0) * 2 + COALESCE(gs.M3P, 0) + COALESCE(gs.FTM, 0) AS pts
+    COALESCE(gs.TF,       0)                                             AS tf,
+    COALESCE(gs.FGM, 0) * 2 + COALESCE(gs.M3P, 0) + COALESCE(gs.FTM, 0) AS tp
 FROM       dakstats_history.season        gs
 INNER JOIN dakstats_history.competitions  dcomp
         ON dcomp.COMPID          = gs.COMPID
@@ -673,6 +675,138 @@ WHERE  gs.COMPID   IS NOT NULL
   AND  gs.SEASON   IS NOT NULL
   AND  gs.PLRID    IS NOT NULL;
 
+-- ── Step 10: Play-by-play ────────────────────────────────────────────────────
+-- Decodes ACTION/RESULT numeric codes to string action/play_type:
+--   1=ASSIST  2=TURNOVER  3=STEAL  4=GOOD(2pt)  5=FOUL  6=BLOCK
+--   14=FT (RESULT: 8=GOOD, 9=MISS)
+--   15=REBOUND(OFF)  16=REBOUND(DEF)
+--   18=SHOT (RESULT: 1=3pt made, 3=2pt made, 2/4=MISS)
+--   19=SUB (RESULT: 7=starter/IN, 5=OUT, 6=IN)
+--   23=PERIOD START  24=PERIOD END
+--   Codes 21, 25 and any others are excluded (action IS NOT NULL filter).
+-- TEAM dummy roster entries → team_id resolved, player_id NULL.
+-- NULL PLRID (period events) → team_id NULL, player_id NULL.
+-- X=0/Y=0 normalised to NULL (dakstats uses 0 for "no location").
+-- seq from ROW_NUMBER() ordered by AUTO_PLAY_ID — stable across re-runs.
+-- Deduplication via NOT EXISTS on (competition_id, period, seq).
+INSERT INTO playbyplay
+    (competition_id, period, clock, team_id, player_id,
+     action, play_type, is_paint, home_score, visitor_score,
+     wall_clock, x, y, seq)
+SELECT
+    src.competition_id,
+    src.period,
+    src.clock,
+    src.team_id,
+    src.player_id,
+    src.action,
+    src.play_type,
+    0,
+    src.home_score,
+    src.visitor_score,
+    NULL,
+    src.x,
+    src.y,
+    src.seq
+FROM (
+    SELECT
+        sm_comp.competition_id,
+        pbp.PERIODNUM                                                              AS period,
+        CONCAT(LPAD(FLOOR(pbp.CLOCK / 60), 2, '0'), ':',
+               LPAD(MOD(pbp.CLOCK, 60), 2, '0'))                                  AS clock,
+        CASE
+            WHEN r.TMID = dcomp.H_TMID THEN ht.team_id
+            WHEN r.TMID = dcomp.V_TMID THEN vt.team_id
+            ELSE NULL
+        END                                                                        AS team_id,
+        CASE WHEN TRIM(COALESCE(r.LASTNAME, '')) = 'TEAM' THEN NULL
+             ELSE p.player_id
+        END                                                                        AS player_id,
+        CASE pbp.ACTION
+            WHEN  1 THEN 'ASSIST'
+            WHEN  2 THEN 'TURNOVER'
+            WHEN  3 THEN 'STEAL'
+            WHEN  4 THEN 'GOOD'
+            WHEN  5 THEN 'FOUL'
+            WHEN  6 THEN 'BLOCK'
+            WHEN 14 THEN CASE WHEN pbp.RESULT = 8 THEN 'GOOD' ELSE 'MISS' END
+            WHEN 15 THEN 'REBOUND'
+            WHEN 16 THEN 'REBOUND'
+            WHEN 18 THEN CASE WHEN pbp.RESULT IN (1, 3) THEN 'GOOD' ELSE 'MISS' END
+            WHEN 19 THEN 'SUB'
+            WHEN 23 THEN 'PERIOD'
+            WHEN 24 THEN 'PERIOD'
+            ELSE NULL
+        END                                                                        AS action,
+        CASE pbp.ACTION
+            WHEN  4 THEN '2PTR'
+            WHEN 14 THEN 'FT'
+            WHEN 15 THEN 'OFF'
+            WHEN 16 THEN 'DEF'
+            WHEN 18 THEN CASE WHEN pbp.RESULT = 1 THEN '3PTR' ELSE '2PTR' END
+            WHEN 19 THEN CASE pbp.RESULT WHEN 5 THEN 'OUT'
+                                         WHEN 6 THEN 'IN'
+                                         WHEN 7 THEN 'IN'
+                                         ELSE NULL END
+            WHEN 23 THEN 'START'
+            WHEN 24 THEN 'END'
+            ELSE NULL
+        END                                                                        AS play_type,
+        pbp.HSCORE                                                                 AS home_score,
+        pbp.VSCORE                                                                 AS visitor_score,
+        NULLIF(pbp.X, 0)                                                           AS x,
+        NULLIF(pbp.Y, 0)                                                           AS y,
+        ROW_NUMBER() OVER (
+            PARTITION BY pbp.COMPID, pbp.SEASON, pbp.PERIODNUM
+            ORDER BY pbp.AUTO_PLAY_ID
+        )                                                                          AS seq
+    FROM       dakstats_history.playbyplay     pbp
+    INNER JOIN dakstats_history.competitions   dcomp
+            ON dcomp.COMPID              = pbp.COMPID
+           AND TRIM(dcomp.SEASON)        = TRIM(pbp.SEASON)
+    INNER JOIN dakstats_history.teams          h_src
+            ON h_src.TMID                = dcomp.H_TMID
+           AND TRIM(h_src.SEASON)        = TRIM(dcomp.SEASON)
+    INNER JOIN dakstats_history.teams          v_src
+            ON v_src.TMID                = dcomp.V_TMID
+           AND TRIM(v_src.SEASON)        = TRIM(dcomp.SEASON)
+    INNER JOIN leagues                         l
+            ON l.name                    = CASE WHEN TRIM(COALESCE(h_src.DIVISION, '')) = '' THEN CONCAT(COALESCE(NULLIF(TRIM(h_src.LEAGUE), ''), 'NBIAA'), ' D1 SRB') WHEN TRIM(h_src.DIVISION) LIKE '%SRB%' THEN TRIM(h_src.DIVISION) ELSE CONCAT(TRIM(h_src.DIVISION), ' SRB') END
+    INNER JOIN seasons                         s
+            ON s.league_id               = l.league_id
+           AND DATE(dcomp.STARTTIME)    BETWEEN s.start_date AND s.end_date
+    INNER JOIN teams                           ht
+            ON ht.name                   = TRIM(h_src.TEAMSHORT)
+           AND ht.gender                <=> h_src.GENDER + 0
+    INNER JOIN teams                           vt
+            ON vt.name                   = TRIM(v_src.TEAMSHORT)
+           AND vt.gender                <=> v_src.GENDER + 0
+    INNER JOIN competitions                    sm_comp
+            ON sm_comp.season_id         = s.season_id
+           AND sm_comp.team_id           = ht.team_id
+           AND DATE(sm_comp.start_time)  = DATE(dcomp.STARTTIME)
+           AND sm_comp.opponent_id       = vt.team_id
+    LEFT  JOIN dakstats_history.rosters        r
+            ON r.PLRID                   = pbp.PLRID
+           AND TRIM(r.SEASON)            = TRIM(pbp.SEASON)
+           AND r.TMID                   IN (dcomp.H_TMID, dcomp.V_TMID)
+    LEFT  JOIN players                         p
+            ON p.first_name              = TRIM(r.FIRSTNAME)
+           AND p.last_name               = TRIM(r.LASTNAME)
+           AND TRIM(COALESCE(r.LASTNAME, '')) <> 'TEAM'
+    WHERE  pbp.COMPID    IS NOT NULL
+      AND  pbp.SEASON    IS NOT NULL
+      AND  pbp.PERIODNUM IS NOT NULL
+) AS src
+WHERE  src.action IS NOT NULL
+  AND  NOT EXISTS (
+           SELECT 1
+           FROM   playbyplay ex
+           WHERE  ex.competition_id = src.competition_id
+             AND  ex.period         = src.period
+             AND  ex.seq            = src.seq
+       );
+
 COMMIT;
 
 -- ── Verification queries (run manually after import) ─────────
@@ -694,7 +828,9 @@ SELECT 'players',             COUNT(*)        FROM players
 UNION ALL
 SELECT 'player_seasons',      COUNT(*)        FROM player_seasons
 UNION ALL
-SELECT 'boxscores',           COUNT(*)        FROM boxscores;
+SELECT 'boxscores',           COUNT(*)        FROM boxscores
+UNION ALL
+SELECT 'playbyplay',          COUNT(*)        FROM playbyplay;
 
 SELECT 'source team rows'        AS tbl, COUNT(*) AS n FROM dakstats_history.teams
 UNION ALL
@@ -704,7 +840,9 @@ SELECT 'source period rows',             COUNT(*)        FROM dakstats_history.p
 UNION ALL
 SELECT 'source roster rows',             COUNT(*)        FROM dakstats_history.rosters
 UNION ALL
-SELECT 'source season rows',             COUNT(*)        FROM dakstats_history.season;
+SELECT 'source season rows',             COUNT(*)        FROM dakstats_history.season
+UNION ALL
+SELECT 'source playbyplay rows',         COUNT(*)        FROM dakstats_history.playbyplay;
 
 -- Source rows that produced no team_seasons entry
 -- (unmatched TEAMSHORT, LEAGUE, or SEASON)

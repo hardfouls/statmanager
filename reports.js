@@ -219,7 +219,7 @@ td.l{color:#c00;font-weight:bold}
 
       // Per-game leaders (our team's players only, period=1 = full-game total in dakstats)
       const [leaderRows] = await conn.execute(`
-        SELECT b.competition_id, pl.last_name, b.pts, b.reb, b.ast
+        SELECT b.competition_id, pl.last_name, b.tp, b.reb, b.ast
         FROM team_schedules tsch
         JOIN boxscores b ON b.competition_id = tsch.competition_id AND b.period = 1
         JOIN player_seasons ps ON ps.player_id = b.player_id
@@ -267,7 +267,7 @@ td.l{color:#c00;font-weight:bold}
           <td style="text-align:center">${hasScore ? `${sc.our}-${sc.their}` : ''}</td>
           <td class="${won ? 'w' : lost ? 'l' : ''}">${won ? 'W' : lost ? 'L' : ''}</td>
           <td style="text-align:right">${wins}-${losses}</td>
-          <td style="padding-left:12px">${esc(gameLeader(lr, 'pts'))}</td>
+          <td style="padding-left:12px">${esc(gameLeader(lr, 'tp'))}</td>
           <td style="padding-left:8px">${esc(gameLeader(lr, 'reb'))}</td>
           <td style="padding-left:8px">${esc(gameLeader(lr, 'ast'))}</td>
         </tr>`;
@@ -371,11 +371,11 @@ td.l{color:#c00;font-weight:bold}
                SUM(CASE WHEN b.period = 1 AND b.started = 1 THEN 1 ELSE 0 END) AS gs,
                SUM(b.min)   AS min_tot,
                SUM(b.fgm)   AS fgm,  SUM(b.fga)  AS fga,
-               SUM(b.tpm)   AS tpm,  SUM(b.tpa)  AS tpa,
+               SUM(b.fgm3)   AS fgm3, SUM(b.fga3)  AS fga3,
                SUM(b.ftm)   AS ftm,  SUM(b.fta)  AS fta,
                SUM(b.oreb)  AS oreb, SUM(b.dreb) AS dreb, SUM(b.reb) AS reb,
                SUM(b.ast)   AS ast,  SUM(b.stl)  AS stl,  SUM(b.blk) AS blk,
-               SUM(b.\`to\`) AS to_,  SUM(b.pf)   AS pf,  SUM(b.pts) AS pts
+               SUM(b.\`to\`) AS to_,  SUM(b.pf)   AS pf,  SUM(b.tp) AS tp
         FROM player_seasons ps
         JOIN players pl ON pl.player_id = ps.player_id
         JOIN team_schedules tsch
@@ -399,9 +399,9 @@ td.l{color:#c00;font-weight:bold}
       `, [teamId, seasonId]);
 
       const tot = players.reduce((acc, r) => {
-        for (const k of ['gp','fgm','fga','tpm','tpa','ftm','fta','oreb','dreb','reb','ast','stl','blk','to_','pf','pts'])
+        for (const k of ['gp','fgm','fga','fgm3','fga3','ftm','fta','oreb','dreb','reb','ast','stl','blk','to_','pf','tp'])
           acc[k] = (acc[k] || 0) + Number(r[k]);
-        acc.ppg_sum = (acc.ppg_sum || 0) + Number(r.pts) / Math.max(Number(r.gp), 1);
+        acc.ppg_sum = (acc.ppg_sum || 0) + Number(r.tp) / Math.max(Number(r.gp), 1);
         return acc;
       }, {});
       const hasTeamStats = teamStats && (teamStats.oreb || teamStats.dreb || teamStats.reb || teamStats.to_);
@@ -417,8 +417,8 @@ td.l{color:#c00;font-weight:bold}
           <td style="text-align:right">${isTot ? '' : (Number(r.min_tot) / 60 / gp).toFixed(1)}</td>
           <td style="text-align:right">${r.fgm}</td><td style="text-align:right">${r.fga}</td>
           <td style="text-align:right">${isTot ? pct(tot.fgm, tot.fga) : pct(r.fgm, r.fga)}</td>
-          <td style="text-align:right">${r.tpm}</td><td style="text-align:right">${r.tpa}</td>
-          <td style="text-align:right">${isTot ? pct(tot.tpm, tot.tpa) : pct(r.tpm, r.tpa)}</td>
+          <td style="text-align:right">${r.fgm3}</td><td style="text-align:right">${r.fga3}</td>
+          <td style="text-align:right">${isTot ? pct(tot.fgm3, tot.fga3) : pct(r.fgm3, r.fga3)}</td>
           <td style="text-align:right">${r.ftm}</td><td style="text-align:right">${r.fta}</td>
           <td style="text-align:right">${isTot ? pct(tot.ftm, tot.fta) : pct(r.ftm, r.fta)}</td>
           <td style="text-align:right">${r.oreb}</td><td style="text-align:right">${r.dreb}</td>
@@ -429,8 +429,8 @@ td.l{color:#c00;font-weight:bold}
           <td style="text-align:right">${r.to_}</td>
           <td style="text-align:right">${r.blk}</td>
           <td style="text-align:right">${r.stl}</td>
-          <td style="text-align:right;font-weight:bold">${r.pts}</td>
-          <td style="text-align:right">${isTot ? tot.ppg_sum.toFixed(1) : (Number(r.pts) / gp).toFixed(1)}</td>
+          <td style="text-align:right;font-weight:bold">${r.tp}</td>
+          <td style="text-align:right">${isTot ? tot.ppg_sum.toFixed(1) : (Number(r.tp) / gp).toFixed(1)}</td>
         </tr>`;
       }
 
@@ -507,12 +507,12 @@ td.l{color:#c00;font-weight:bold}
       const [allBs] = await conn.execute(`
         SELECT b.competition_id, b.player_id, MAX(b.started) AS started,
                SUM(b.fgm) AS fgm, SUM(b.fga) AS fga,
-               SUM(b.tpm) AS tpm, SUM(b.tpa) AS tpa,
+               SUM(b.fgm3) AS fgm3, SUM(b.fga3) AS fga3,
                SUM(b.ftm) AS ftm, SUM(b.fta) AS fta,
                SUM(b.oreb) AS oreb, SUM(b.dreb) AS dreb, SUM(b.reb) AS reb,
                SUM(b.ast) AS ast, SUM(b.\`to\`) AS to_,
                SUM(b.blk) AS blk, SUM(b.stl) AS stl,
-               SUM(b.min) AS min, SUM(b.pf) AS pf, SUM(b.pts) AS pts
+               SUM(b.min) AS min, SUM(b.pf) AS pf, SUM(b.tp) AS tp
         FROM team_schedules tsch
         JOIN boxscores b
           ON b.competition_id = tsch.competition_id
@@ -553,8 +553,8 @@ td.l{color:#c00;font-weight:bold}
         const pbsMap = bsMap.get(pl.player_id);
         if (!pbsMap || pbsMap.size === 0) continue;
 
-        let gp=0, gs=0, mins=0, fgm=0, fga=0, tpm=0, tpa=0, ftm=0, fta=0,
-            oreb=0, dreb=0, reb=0, ast=0, to_=0, blk=0, stl=0, pf=0, pts=0;
+        let gp=0, gs=0, mins=0, fgm=0, fga=0, fgm3=0, fga3=0, ftm=0, fta=0,
+            oreb=0, dreb=0, reb=0, ast=0, to_=0, blk=0, stl=0, pf=0, tp=0;
         let rows = '';
 
         for (const g of games) {
@@ -567,10 +567,10 @@ td.l{color:#c00;font-weight:bold}
           }
           gp++; if (b.started) gs++;
           mins += Number(b.min); fgm += Number(b.fgm); fga += Number(b.fga);
-          tpm  += Number(b.tpm); tpa += Number(b.tpa); ftm += Number(b.ftm); fta += Number(b.fta);
+          fgm3 += Number(b.fgm3); fga3 += Number(b.fga3); ftm += Number(b.ftm); fta += Number(b.fta);
           oreb += Number(b.oreb); dreb += Number(b.dreb); reb += Number(b.reb);
           ast  += Number(b.ast); to_  += Number(b.to_); blk += Number(b.blk);
-          stl  += Number(b.stl); pf   += Number(b.pf); pts += Number(b.pts);
+          stl  += Number(b.stl); pf   += Number(b.pf); tp  += Number(b.tp);
 
           rows += `<tr>
             <td>${esc(g.opponent_name)}</td>
@@ -578,8 +578,8 @@ td.l{color:#c00;font-weight:bold}
             <td style="text-align:center">${b.started ? '1' : ''}</td>
             <td style="text-align:right">${b.fgm}</td><td style="text-align:right">${b.fga}</td>
             <td style="text-align:right">${pct(b.fgm, b.fga)}</td>
-            <td style="text-align:right">${b.tpm}</td><td style="text-align:right">${b.tpa}</td>
-            <td style="text-align:right">${pct(b.tpm, b.tpa)}</td>
+            <td style="text-align:right">${b.fgm3}</td><td style="text-align:right">${b.fga3}</td>
+            <td style="text-align:right">${pct(b.fgm3, b.fga3)}</td>
             <td style="text-align:right">${b.ftm}</td><td style="text-align:right">${b.fta}</td>
             <td style="text-align:right">${pct(b.ftm, b.fta)}</td>
             <td style="text-align:right">${b.oreb}</td><td style="text-align:right">${b.dreb}</td>
@@ -590,7 +590,7 @@ td.l{color:#c00;font-weight:bold}
             <td style="text-align:right">${b.blk}</td>
             <td style="text-align:right">${b.stl}</td>
             <td style="text-align:right">${fmtMin(b.min)}</td>
-            <td style="text-align:right;font-weight:bold">${b.pts}</td>
+            <td style="text-align:right;font-weight:bold">${b.tp}</td>
           </tr>`;
         }
 
@@ -600,8 +600,8 @@ td.l{color:#c00;font-weight:bold}
           <td style="text-align:center">${gs}</td>
           <td style="text-align:right">${fgm}</td><td style="text-align:right">${fga}</td>
           <td style="text-align:right">${pct(fgm, fga)}</td>
-          <td style="text-align:right">${tpm}</td><td style="text-align:right">${tpa}</td>
-          <td style="text-align:right">${pct(tpm, tpa)}</td>
+          <td style="text-align:right">${fgm3}</td><td style="text-align:right">${fga3}</td>
+          <td style="text-align:right">${pct(fgm3, fga3)}</td>
           <td style="text-align:right">${ftm}</td><td style="text-align:right">${fta}</td>
           <td style="text-align:right">${pct(ftm, fta)}</td>
           <td style="text-align:right">${oreb}</td><td style="text-align:right">${dreb}</td>
@@ -613,7 +613,7 @@ td.l{color:#c00;font-weight:bold}
           <td style="text-align:right">${blk}</td>
           <td style="text-align:right">${stl}</td>
           <td style="text-align:right">${fmtMin(mins)}</td>
-          <td style="text-align:right;font-weight:bold">${pts}</td>
+          <td style="text-align:right;font-weight:bold">${tp}</td>
         </tr>`;
 
         sections += `<h2>${esc(pl.jersey_number)} ${esc(pl.first_name)} ${esc(pl.last_name)}</h2>
@@ -643,8 +643,8 @@ td.l{color:#c00;font-weight:bold}
       const [allStats] = await conn.execute(`
         SELECT b.competition_id, pl.first_name, pl.last_name,
                opp.name AS opponent_name, c.start_time,
-               b.pts, b.reb, b.ast, b.stl, b.blk,
-               b.fgm, b.fga, b.tpm, b.tpa, b.ftm, b.fta,
+               b.tp, b.reb, b.ast, b.stl, b.blk,
+               b.fgm, b.fga, b.fgm3, b.fga3, b.ftm, b.fta,
                b.oreb, b.dreb, b.pf
         FROM team_schedules tsch
         JOIN competitions c ON c.competition_id = tsch.competition_id
@@ -659,11 +659,11 @@ td.l{color:#c00;font-weight:bold}
       `, [teamId, teamId, seasonId]);
 
       const cats = [
-        { label: 'Total Points',             field: 'pts'  },
+        { label: 'Total Points',             field: 'tp'   },
         { label: 'Field Goals Made',         field: 'fgm'  },
         { label: 'Field Goals Attempted',    field: 'fga'  },
-        { label: '3-Point FG Made',          field: 'tpm'  },
-        { label: '3-Point FG Attempted',     field: 'tpa'  },
+        { label: '3-Point FG Made',          field: 'fgm3' },
+        { label: '3-Point FG Attempted',     field: 'fga3' },
         { label: 'Free Throws Made',         field: 'ftm'  },
         { label: 'Free Throws Attempted',    field: 'fta'  },
         { label: 'Total Rebounds',           field: 'reb'  },
@@ -764,12 +764,12 @@ td.l{color:#c00;font-weight:bold}
                MAX(b.jersey_number) AS jersey_number,
                MAX(b.started) AS started,
                SUM(b.min) AS min, SUM(b.fgm) AS fgm, SUM(b.fga) AS fga,
-               SUM(b.tpm) AS tpm, SUM(b.tpa) AS tpa,
+               SUM(b.fgm3) AS fgm3, SUM(b.fga3) AS fga3,
                SUM(b.ftm) AS ftm, SUM(b.fta) AS fta,
                SUM(b.oreb) AS oreb, SUM(b.dreb) AS dreb, SUM(b.reb) AS reb,
                SUM(b.ast) AS ast, SUM(b.\`to\`) AS to_,
                SUM(b.blk) AS blk, SUM(b.stl) AS stl, SUM(b.pf) AS pf,
-               SUM(b.pts) AS pts,
+               SUM(b.tp) AS tp,
                COALESCE(MAX(psh.team_id), MAX(psa.team_id)) AS player_team_id
         FROM boxscores b
         JOIN players pl ON pl.player_id = b.player_id
@@ -781,7 +781,7 @@ td.l{color:#c00;font-weight:bold}
           AND psa.season_id = ? AND psa.team_id = ?
         WHERE b.competition_id = ?
         GROUP BY b.player_id, pl.first_name, pl.last_name
-        ORDER BY COALESCE(MAX(psh.team_id), MAX(psa.team_id)), SUM(b.pts) DESC
+        ORDER BY COALESCE(MAX(psh.team_id), MAX(psa.team_id)), SUM(b.tp) DESC
       `, [comp.home_season_id, comp.home_team_id, awaySeasonId, comp.away_team_id, competitionId]);
 
       const boxHdr = `<tr>
@@ -793,21 +793,21 @@ td.l{color:#c00;font-weight:bold}
       </tr>`;
 
       function teamBox(tid) {
-        const tp = players.filter(p => Number(p.player_team_id) === Number(tid));
-        if (!tp.length) return `<tr><td colspan="16" style="color:#999">No stats</td></tr>`;
-        let fgm=0,fga=0,tpm=0,tpa=0,ftm=0,fta=0,oreb=0,dreb=0,reb=0,
-            ast=0,to_=0,blk=0,stl=0,pf=0,pts=0;
-        let rows = tp.map(p => {
-          fgm+=Number(p.fgm); fga+=Number(p.fga); tpm+=Number(p.tpm); tpa+=Number(p.tpa);
+        const tplayers = players.filter(p => Number(p.player_team_id) === Number(tid));
+        if (!tplayers.length) return `<tr><td colspan="16" style="color:#999">No stats</td></tr>`;
+        let fgm=0,fga=0,fgm3=0,fga3=0,ftm=0,fta=0,oreb=0,dreb=0,reb=0,
+            ast=0,to_=0,blk=0,stl=0,pf=0,tp=0;
+        let rows = tplayers.map(p => {
+          fgm+=Number(p.fgm); fga+=Number(p.fga); fgm3+=Number(p.fgm3); fga3+=Number(p.fga3);
           ftm+=Number(p.ftm); fta+=Number(p.fta); oreb+=Number(p.oreb); dreb+=Number(p.dreb);
           reb+=Number(p.reb); ast+=Number(p.ast); to_+=Number(p.to_); blk+=Number(p.blk);
-          stl+=Number(p.stl); pf+=Number(p.pf); pts+=Number(p.pts);
+          stl+=Number(p.stl); pf+=Number(p.pf); tp+=Number(p.tp);
           return `<tr>
             <td>${esc(p.jersey_number)}</td>
             <td>${p.started ? '<b>' : ''}${esc(`${p.first_name} ${p.last_name}`)}${p.started ? '</b>' : ''}</td>
             <td style="text-align:center;color:#666">${p.started ? '*' : ''}</td>
             <td style="text-align:center">${p.fgm}-${p.fga}</td>
-            <td style="text-align:center">${p.tpm}-${p.tpa}</td>
+            <td style="text-align:center">${p.fgm3}-${p.fga3}</td>
             <td style="text-align:center">${p.ftm}-${p.fta}</td>
             <td style="text-align:right">${p.oreb}</td><td style="text-align:right">${p.dreb}</td>
             <td style="text-align:right">${p.reb}</td>
@@ -817,13 +817,13 @@ td.l{color:#c00;font-weight:bold}
             <td style="text-align:right">${p.blk}</td>
             <td style="text-align:right">${p.stl}</td>
             <td style="text-align:right">${fmtMin(p.min)}</td>
-            <td style="text-align:right;font-weight:bold">${p.pts}</td>
+            <td style="text-align:right;font-weight:bold">${p.tp}</td>
           </tr>`;
         }).join('');
         rows += `<tr class="tot">
           <td colspan="2">Totals</td><td></td>
           <td style="text-align:center">${fgm}-${fga}</td>
-          <td style="text-align:center">${tpm}-${tpa}</td>
+          <td style="text-align:center">${fgm3}-${fga3}</td>
           <td style="text-align:center">${ftm}-${fta}</td>
           <td style="text-align:right">${oreb}</td><td style="text-align:right">${dreb}</td>
           <td style="text-align:right">${reb}</td>
@@ -833,7 +833,7 @@ td.l{color:#c00;font-weight:bold}
           <td style="text-align:right">${blk}</td>
           <td style="text-align:right">${stl}</td>
           <td></td>
-          <td style="text-align:right;font-weight:bold">${pts}</td>
+          <td style="text-align:right;font-weight:bold">${tp}</td>
         </tr>`;
         return rows;
       }

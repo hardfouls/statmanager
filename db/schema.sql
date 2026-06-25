@@ -20,6 +20,7 @@ DROP TABLE IF EXISTS members;
 DROP TABLE IF EXISTS addresses;
 DROP TABLE IF EXISTS organizations;
 DROP TABLE IF EXISTS comptypes;
+DROP TABLE IF EXISTS playbyplay;
 
 SET FOREIGN_KEY_CHECKS = 1;
 
@@ -316,8 +317,8 @@ CREATE TABLE boxscores (
     min             SMALLINT UNSIGNED   NOT NULL DEFAULT 0,  -- stored as total seconds
     fgm             TINYINT UNSIGNED    NOT NULL DEFAULT 0,
     fga             TINYINT UNSIGNED    NOT NULL DEFAULT 0,
-    tpm             TINYINT UNSIGNED    NOT NULL DEFAULT 0,   -- 3-pointers made
-    tpa             TINYINT UNSIGNED    NOT NULL DEFAULT 0,   -- 3-pointers attempted
+    fgm3            TINYINT UNSIGNED    NOT NULL DEFAULT 0,   -- 3-pointers made
+    fga3            TINYINT UNSIGNED    NOT NULL DEFAULT 0,   -- 3-pointers attempted
     ftm             TINYINT UNSIGNED    NOT NULL DEFAULT 0,
     fta             TINYINT UNSIGNED    NOT NULL DEFAULT 0,
     oreb            TINYINT UNSIGNED    NOT NULL DEFAULT 0,
@@ -328,7 +329,9 @@ CREATE TABLE boxscores (
     blk             TINYINT UNSIGNED    NOT NULL DEFAULT 0,
     `to`            TINYINT UNSIGNED    NOT NULL DEFAULT 0,   -- backtick: TO is reserved
     pf              TINYINT UNSIGNED    NOT NULL DEFAULT 0,
-    pts             TINYINT UNSIGNED    NOT NULL DEFAULT 0,
+    tf              TINYINT UNSIGNED    NOT NULL DEFAULT 0,
+    dq              TINYINT UNSIGNED    NOT NULL DEFAULT 0,   -- disqualified (fouled out)
+    tp              TINYINT UNSIGNED    NOT NULL DEFAULT 0,
     PRIMARY KEY (boxscore_id),
     UNIQUE KEY uq_boxscores_game_player (competition_id, player_id, period),
     KEY idx_boxscores_player      (player_id),
@@ -338,4 +341,35 @@ CREATE TABLE boxscores (
     CONSTRAINT fk_boxscores_player
         FOREIGN KEY (player_id) REFERENCES players (player_id)
         ON UPDATE CASCADE ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+
+CREATE TABLE playbyplay (
+    play_id         INT UNSIGNED        NOT NULL AUTO_INCREMENT,
+    competition_id  INT UNSIGNED        NOT NULL,
+    period          TINYINT UNSIGNED    NOT NULL,               -- 1–4; 5+ for OT
+    clock           VARCHAR(8)          NOT NULL,               -- "MM:SS" game-clock countdown
+    team_id         SMALLINT UNSIGNED   NULL,                   -- NULL = unknown / team event
+    player_id       INT UNSIGNED        NULL,                   -- NULL = TM/TEAM plays
+    action          VARCHAR(12)         NOT NULL,               -- GOOD | MISS | REBOUND | STEAL |
+                                                                -- TURNOVER | FOUL | FOULTAKEN |
+                                                                -- ASSIST | BLOCK | SUB | TIMEOUT
+    play_type       VARCHAR(10)         NULL,                   -- shot:    JUMPER | LAYUP | 2PTR | 3PTR | FT
+                                                                -- rebound: DEF | OFF | DEADB
+                                                                -- sub:     IN | OUT
+                                                                -- timeout: FULL | 30SEC
+    is_paint        TINYINT(1)          NOT NULL DEFAULT 0,     -- 1 = paint shot (PrestoSports only)
+    home_score      SMALLINT UNSIGNED   NULL,                   -- running score after play; scoring plays only
+    visitor_score   SMALLINT UNSIGNED   NULL,
+    wall_clock      DATETIME            NULL,                   -- HoopStats timeStamp; NULL for PrestoSports/dakstats
+    x               SMALLINT            NULL,                   -- shot X coordinate (dakstats)
+    y               SMALLINT            NULL,                   -- shot Y coordinate (dakstats)
+    seq             SMALLINT UNSIGNED   NOT NULL DEFAULT 0,     -- import order within the period
+    PRIMARY KEY (play_id),
+    KEY idx_playbyplay_comp_seq (competition_id, period, seq),
+    KEY idx_playbyplay_player   (player_id),
+    CONSTRAINT fk_playbyplay_comp   FOREIGN KEY (competition_id) REFERENCES competitions (competition_id)
+        ON DELETE CASCADE,
+    CONSTRAINT fk_playbyplay_team   FOREIGN KEY (team_id)   REFERENCES teams (team_id),
+    CONSTRAINT fk_playbyplay_player FOREIGN KEY (player_id) REFERENCES players (player_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

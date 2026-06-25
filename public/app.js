@@ -2807,10 +2807,10 @@ const pages = {
                 gamesTbody.innerHTML = `<tr><td colspan="14" class="list-empty">${escapeHtml(gd.error || 'No games found.')}</td></tr>`;
                 return;
               }
-              const totals = { min:0, pts:0, reb:0, ast:0, stl:0, blk:0, to:0, pf:0 };
+              const totals = { min:0, tp:0, reb:0, ast:0, stl:0, blk:0, to:0, pf:0 };
               const rows = gd.games.map(g => {
                 totals.min += Number(g.min) || 0;
-                totals.pts += Number(g.pts) || 0;
+                totals.tp  += Number(g.tp)  || 0;
                 totals.reb += Number(g.reb) || 0;
                 totals.ast += Number(g.ast) || 0;
                 totals.stl += Number(g.stl) || 0;
@@ -2829,7 +2829,7 @@ const pages = {
                   <td style="white-space:nowrap"><a href="#/boxscore?${bsQ}" class="tbl-link" style="color:var(--accent);display:inline-flex;align-items:center;gap:3px">${date}${chevron}</a></td>
                   <td>${opp}</td>
                   <td class="col-num">${fmtMin(g.min)}</td>
-                  <td class="col-num">${g.pts}</td>
+                  <td class="col-num">${g.tp}</td>
                   <td class="col-num">${g.reb}</td>
                   <td class="col-num">${g.ast}</td>
                   <td class="col-num">${g.stl}</td>
@@ -2837,7 +2837,7 @@ const pages = {
                   <td class="col-num">${g.to}</td>
                   <td class="col-num">${g.pf}</td>
                   <td>${g.fgm}/${g.fga}</td>
-                  <td>${g.tpm}/${g.tpa}</td>
+                  <td>${g.fgm3}/${g.fga3}</td>
                   <td>${g.ftm}/${g.fta}</td>
                 </tr>`;
               });
@@ -2846,7 +2846,7 @@ const pages = {
                   <td>Total</td>
                   <td></td>
                   <td class="col-num">${fmtMin(totals.min)}</td>
-                  <td class="col-num">${totals.pts}</td>
+                  <td class="col-num">${totals.tp}</td>
                   <td class="col-num">${totals.reb}</td>
                   <td class="col-num">${totals.ast}</td>
                   <td class="col-num">${totals.stl}</td>
@@ -2970,23 +2970,23 @@ const pages = {
         document.getElementById('bs-header').style.display = '';
 
         function bsTable(title, players) {
-          const tot = { min:0, fgm:0, fga:0, tpm:0, tpa:0, ftm:0, fta:0,
-                        oreb:0, dreb:0, reb:0, ast:0, stl:0, blk:0, to:0, pf:0, pts:0 };
+          const tot = { min:0, fgm:0, fga:0, fgm3:0, fga3:0, ftm:0, fta:0,
+                        oreb:0, dreb:0, reb:0, ast:0, stl:0, blk:0, to:0, pf:0, tp:0 };
           const playerRow = p => {
             tot.min  += Number(p.min)  || 0;
             tot.fgm  += Number(p.fgm)  || 0; tot.fga  += Number(p.fga)  || 0;
-            tot.tpm  += Number(p.tpm)  || 0; tot.tpa  += Number(p.tpa)  || 0;
+            tot.fgm3 += Number(p.fgm3) || 0; tot.fga3 += Number(p.fga3) || 0;
             tot.ftm  += Number(p.ftm)  || 0; tot.fta  += Number(p.fta)  || 0;
             tot.oreb += Number(p.oreb) || 0; tot.dreb += Number(p.dreb) || 0;
             tot.reb  += Number(p.reb)  || 0; tot.ast  += Number(p.ast)  || 0;
             tot.stl  += Number(p.stl)  || 0; tot.blk  += Number(p.blk)  || 0;
             tot.to   += Number(p.to)   || 0; tot.pf   += Number(p.pf)   || 0;
-            tot.pts  += Number(p.pts)  || 0;
+            tot.tp   += Number(p.tp)   || 0;
             return `<tr>
               <td class="bs-p1">${p.jersey_number} - ${escapeHtml(p.first_name)} ${escapeHtml(p.last_name)}</td>
               <td class="col-num">${fmtMin(p.min)}</td>
               <td class="col-num">${p.fgm}-${p.fga}</td>
-              <td class="col-num">${p.tpm}-${p.tpa}</td>
+              <td class="col-num">${p.fgm3}-${p.fga3}</td>
               <td class="col-num">${p.ftm}-${p.fta}</td>
               <td class="col-num">${p.oreb}</td>
               <td class="col-num">${p.dreb}</td>
@@ -2996,7 +2996,7 @@ const pages = {
               <td class="col-num">${p.blk}</td>
               <td class="col-num">${p.to}</td>
               <td class="col-num">${p.pf}</td>
-              <td class="col-num">${p.pts}</td>
+              <td class="col-num">${p.tp}</td>
             </tr>`;
           };
           const groupHead = label =>
@@ -3013,8 +3013,8 @@ const pages = {
             if (starters.length > 0) bodyRows += groupHead('STARTERS') + starters.map(playerRow).join('');
             if (reserves.length > 0) bodyRows += groupHead('RESERVES') + reserves.map(playerRow).join('');
           }
-          const fgPct = tot.fga > 0 ? (tot.fgm / tot.fga * 100).toFixed(1) + '%' : '—';
-          const tpPct = tot.tpa > 0 ? (tot.tpm / tot.tpa * 100).toFixed(1) + '%' : '—';
+          const fgPct = tot.fga  > 0 ? (tot.fgm  / tot.fga  * 100).toFixed(1) + '%' : '—';
+          const tpPct = tot.fga3 > 0 ? (tot.fgm3 / tot.fga3 * 100).toFixed(1) + '%' : '—';
           const ftPct = tot.fta > 0 ? (tot.ftm / tot.fta * 100).toFixed(1) + '%' : '—';
           return `
             <div class="bs-team-section">
@@ -3043,7 +3043,7 @@ const pages = {
                       <td class="bs-p1">Totals</td>
                       <td class="col-num">${fmtMin(tot.min)}</td>
                       <td class="col-num">${tot.fgm}-${tot.fga}</td>
-                      <td class="col-num">${tot.tpm}-${tot.tpa}</td>
+                      <td class="col-num">${tot.fgm3}-${tot.fga3}</td>
                       <td class="col-num">${tot.ftm}-${tot.fta}</td>
                       <td class="col-num">${tot.oreb}</td>
                       <td class="col-num">${tot.dreb}</td>
@@ -3053,7 +3053,7 @@ const pages = {
                       <td class="col-num">${tot.blk}</td>
                       <td class="col-num">${tot.to}</td>
                       <td class="col-num">${tot.pf}</td>
-                      <td class="col-num">${tot.pts}</td>
+                      <td class="col-num">${tot.tp}</td>
                     </tr>
                     <tr style="color:var(--text-muted);font-size:0.85em">
                       <td class="bs-p1"></td><td></td>
@@ -3107,12 +3107,94 @@ const pages = {
             });
           }
           const h = document.getElementById('bs-tab-boxscore').offsetHeight;
-          ['pbp', 'team-stats'].forEach(key => {
-            document.getElementById(`bs-tab-${key}`).innerHTML =
-              `<div class="card" style="min-height:${h}px"></div>`;
-          });
+          document.getElementById('bs-tab-team-stats').innerHTML =
+            `<div class="card" style="min-height:${h}px"></div>`;
+          document.getElementById('bs-tab-pbp').innerHTML =
+            `<div class="card" style="min-height:${h}px"></div>`;
         });
 
+        function pbpActionLabel(play) {
+          const name = play.first_name ? `${play.first_name[0]}. ${escapeHtml(play.last_name)}` : '';
+          let desc;
+          switch (play.action) {
+            case 'GOOD':
+              desc = play.play_type === '3PTR' ? 'Made 3-pointer'
+                   : play.play_type === 'FT'   ? 'Free throw made'
+                                               : 'Made 2-pointer'; break;
+            case 'MISS':
+              desc = play.play_type === '3PTR' ? 'Missed 3-pointer'
+                   : play.play_type === 'FT'   ? 'Missed free throw'
+                                               : 'Missed 2-pointer'; break;
+            case 'REBOUND':  desc = play.play_type === 'OFF' ? 'Off. rebound' : 'Def. rebound'; break;
+            case 'TURNOVER': desc = 'Turnover'; break;
+            case 'STEAL':    desc = 'Steal'; break;
+            case 'FOUL':     desc = 'Foul'; break;
+            case 'ASSIST':   desc = 'Assist'; break;
+            case 'BLOCK':    desc = 'Block'; break;
+            case 'SUB':      desc = play.play_type === 'OUT' ? 'Exits' : 'Enters'; break;
+            default:         desc = play.action;
+          }
+          return name ? `${name} — ${desc}` : desc;
+        }
+
+        function renderPbp(plays) {
+          const periods = [...new Set(plays.map(p => p.period))].sort((a, b) => a - b);
+          const pLabel  = n => n === 1 ? '1st Quarter' : n === 2 ? '2nd Quarter'
+                           : n === 3 ? '3rd Quarter'  : n === 4 ? '4th Quarter' : `OT ${n - 4}`;
+          const navLinks = periods.map(n =>
+            `<button onclick="document.getElementById('pbp-p${n}').scrollIntoView({behavior:'smooth'})"
+              style="background:var(--surface2);border:1px solid var(--border);border-radius:4px;
+                     color:var(--text-muted);cursor:pointer;font-family:inherit;font-size:0.8em;
+                     padding:4px 12px;white-space:nowrap"
+              onmouseover="this.style.color='var(--accent)'"
+              onmouseout="this.style.color='var(--text-muted)'">${pLabel(n)}</button>`
+          ).join('');
+          let html = `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">${navLinks}</div>`;
+          html += `<div style="overflow-x:auto">
+            <table class="data-table" style="width:100%;table-layout:fixed">
+              <colgroup>
+                <col style="width:44%">
+                <col style="width:12%;min-width:80px">
+                <col style="width:44%">
+              </colgroup>
+              <thead><tr>
+                <th style="text-align:right">${escapeHtml(c.team_name)}</th>
+                <th style="text-align:center">Clock</th>
+                <th style="text-align:left">${escapeHtml(c.opponent_name)}</th>
+              </tr></thead>
+              <tbody>`;
+          for (const period of periods) {
+            html += `<tr id="pbp-p${period}" style="background:var(--surface2)">
+              <td colspan="3" style="font-size:0.8em;font-weight:600;color:var(--text-muted);
+                  text-align:center;padding:5px 8px;letter-spacing:0.05em">${pLabel(period).toUpperCase()}</td>
+            </tr>`;
+            for (const play of plays.filter(p => p.period === period)) {
+              const isHome    = Number(play.team_id) === Number(c.team_id);
+              const isVisitor = play.team_id != null && !isHome;
+              const label     = pbpActionLabel(play);
+              const isMade    = play.action === 'GOOD';
+              const scoreHtml = (play.home_score != null && play.visitor_score != null)
+                ? `<span style="color:var(--text-muted);font-size:0.8em">${play.home_score}–${play.visitor_score}</span>`
+                : '';
+              const madeStyle = isMade ? 'font-weight:600;color:var(--accent)' : 'color:var(--text)';
+              html += `<tr>
+                <td style="text-align:right;${isHome ? madeStyle : 'color:var(--text-muted)'}">
+                  ${isHome ? label : ''}
+                </td>
+                <td style="text-align:center;white-space:nowrap;font-size:0.85em">
+                  ${play.clock}${scoreHtml ? '<br>' + scoreHtml : ''}
+                </td>
+                <td style="text-align:left;${isVisitor ? madeStyle : 'color:var(--text-muted)'}">
+                  ${isVisitor ? label : ''}
+                </td>
+              </tr>`;
+            }
+          }
+          html += `</tbody></table></div>`;
+          return html;
+        }
+
+        let pbpLoaded = false;
         const tabsEl = document.getElementById('bs-tabs');
         tabsEl.style.display = '';
         tabsEl.querySelector('.bs-tab-bar').addEventListener('click', e => {
@@ -3124,6 +3206,23 @@ const pages = {
           tabsEl.querySelectorAll('[id^="bs-tab-"]').forEach(p => {
             p.style.display = p.id === `bs-tab-${key}` ? '' : 'none';
           });
+          if (key === 'pbp' && !pbpLoaded) {
+            pbpLoaded = true;
+            const pbpEl = document.getElementById('bs-tab-pbp');
+            pbpEl.innerHTML = `<div class="card"><p style="color:var(--text-muted);padding:16px 0">Loading…</p></div>`;
+            fetch(`api/games/${params.id}/playbyplay`)
+              .then(r => r.json())
+              .then(plays => {
+                if (!Array.isArray(plays) || !plays.length) {
+                  pbpEl.innerHTML = `<div class="card"><p class="list-empty">No play-by-play data for this game.</p></div>`;
+                  return;
+                }
+                pbpEl.innerHTML = `<div class="card">${renderPbp(plays)}</div>`;
+              })
+              .catch(() => {
+                pbpEl.innerHTML = `<div class="card"><p style="color:var(--text-muted)">Could not load play-by-play.</p></div>`;
+              });
+          }
         });
       } catch {
         document.getElementById('bs-loading').textContent = 'Could not load boxscore.';
