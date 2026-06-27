@@ -7,6 +7,7 @@ services:
     ports:
       - "${APP_PORT:-3000}:3000"
     environment:
+      TZ: America/Moncton
       DB_HOST:     db
       DB_PORT:     3306
       DB_NAME:     ${DB_NAME}
@@ -22,7 +23,10 @@ services:
     image: mariadb:11
     container_name: statmanager-db
     restart: unless-stopped
+    ports:
+      - "3306:3306"
     environment:
+      TZ: America/Moncton
       MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
       MARIADB_DATABASE:      ${DB_NAME}
       MARIADB_USER:          ${DB_USER}
@@ -30,6 +34,30 @@ services:
     volumes:
       - statmanager_db:/var/lib/mysql
 
+  grafana:
+    image: grafana/grafana-oss:latest
+    container_name: statmanager-grafana
+    restart: unless-stopped
+    ports:
+      - "${GRAFANA_PORT:-3100}:3000"
+    environment:
+      TZ: America/Moncton
+      GF_SECURITY_ADMIN_USER:        ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD:    ${GRAFANA_ADMIN_PASSWORD}
+      GF_SERVER_ROOT_URL:            "https://grafana.hardfouls.com"
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_SMTP_ENABLED:               true
+      GF_SMTP_HOST:                  ${GRAFANA_SMTP_HOST}
+      GF_SMTP_USER:                  ${GRAFANA_SMTP_USER}
+      GF_SMTP_PASSWORD:              ${GRAFANA_SMTP_PASSWORD}
+      GF_SMTP_FROM_ADDRESS:          ${GRAFANA_SMTP_FROM_ADDRESS}
+      GF_SMTP_FROM_NAME:             ${GRAFANA_SMTP_FROM_NAME}
+    volumes:
+      - statmanager_grafana:/var/lib/grafana
+    depends_on:
+      - db
+
 volumes:
   statmanager_db:
   statmanager_archives:
+  statmanager_grafana:
