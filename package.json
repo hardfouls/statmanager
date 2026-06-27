@@ -1,6 +1,6 @@
 {
   "name": "statmanager",
-  "version": "0.8.0-alpha",
+  "version": "0.7.2-alpha",
   "description": "Basketball Stats Manager",
   "main": "server.js",
   "scripts": {
