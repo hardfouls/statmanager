@@ -5,31 +5,37 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-# On the Synology (SSH):
-npm install                  # no --no-bin-links needed on native Linux
-pm2 start ecosystem.config.js
-pm2 save
-
-# Local development (PowerShell):
+# Local development:
 npm start                    # http://localhost:3000
 PORT=8080 npm start
+
+# Deploy to Synology dev server (rsync + PM2 restart):
+npm run deploy
+
+# Watch mode — auto-deploy on file changes (run in a dedicated terminal):
+npm run watch
 ```
 
 No build step — the server serves static files directly from `public/`.
 
-## Synology deployment
+## Dev deployment (Synology NAS at 192.168.86.33)
 
-The app is deployed at `http://<synology>/statmanager/` via nginx reverse proxy.
-nginx strips the `/statmanager/` prefix before forwarding to Node.js on port 3000,
-so Node.js always sees paths starting at `/`. See `nginx-statmanager.conf` for the
-location block — place it at `/etc/nginx/conf.d/http.statmanager.conf` on the Synology
-and reload nginx. PM2 config is in `ecosystem.config.js`; update `cwd` if the
-web root volume differs from `/volume1/web/`.
+`npm run deploy` rsyncs changed files to `/volume1/web/statmanager/` on the Synology
+then restarts PM2. SSH key authentication is configured — no password prompt required.
+Always use `npm run deploy` after code changes rather than restarting PM2 directly,
+so files arrive on the server before the restart.
 
-## Deployment
-After making any code changes, restart the service on the Synology NAS by running:
-ssh vaughanp@192.168.86.33 -p 220 'PATH=/usr/local/bin:$PATH /usr/local/bin/pm2 restart statmanager'
-SSH key authentication is configured — no password prompt required.
+Files excluded from sync: `node_modules/`, `xml-archives/`, `statmanager.ini`,
+`.git/`, `db/testdata/`, `Design Notes/`, `samples/`.
+
+The app runs at `http://dev.hardfouls.com/statmanager/` via nginx reverse proxy.
+nginx strips the `/statmanager/` prefix before forwarding to Node.js on port 3000.
+PM2 config is in `ecosystem.config.js` (cwd: `/volume1/web/statmanager`).
+
+## Prod deployment (Docker on 192.168.86.38)
+
+Create a GitHub release → GitHub Actions builds the image → pushes to
+`ghcr.io/hardfouls/statmanager:latest` → redeploy the Portainer stack to pull it.
 
 ## Architecture
 

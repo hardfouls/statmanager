@@ -4,7 +4,9 @@
   "description": "Basketball Stats Manager",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "deploy": "rsync -avz --delete --exclude=node_modules --exclude=xml-archives --exclude=statmanager.ini --exclude=.git --exclude=db/testdata --exclude='Design Notes' --exclude=samples -e 'ssh -p 220' ./ vaughanp@192.168.86.33:/volume1/web/statmanager/ && ssh -p 220 vaughanp@192.168.86.33 'PATH=/usr/local/bin:$PATH pm2 restart statmanager'",
+    "watch": "chokidar '**/*' --ignore 'node_modules/**' --ignore 'xml-archives/**' --ignore '.git/**' --ignore 'db/testdata/**' --debounce 800 -c 'npm run deploy'"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -12,5 +14,8 @@
     "express-session": "^1.18.0",
     "ini": "^4.1.1",
     "mysql2": "^3.6.5"
+  },
+  "devDependencies": {
+    "chokidar-cli": "^3.0.0"
   }
 }
