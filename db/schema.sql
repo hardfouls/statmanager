@@ -20,6 +20,7 @@ DROP TABLE IF EXISTS members;
 DROP TABLE IF EXISTS addresses;
 DROP TABLE IF EXISTS organizations;
 DROP TABLE IF EXISTS comptypes;
+DROP TABLE IF EXISTS xml_uploads;
 DROP TABLE IF EXISTS playbyplay;
 
 SET FOREIGN_KEY_CHECKS = 1;
@@ -372,4 +373,26 @@ CREATE TABLE playbyplay (
         ON DELETE CASCADE,
     CONSTRAINT fk_playbyplay_team   FOREIGN KEY (team_id)   REFERENCES teams (team_id),
     CONSTRAINT fk_playbyplay_player FOREIGN KEY (player_id) REFERENCES players (player_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+
+CREATE TABLE xml_uploads (
+    upload_id         INT UNSIGNED         NOT NULL AUTO_INCREMENT,
+    competition_id    INT UNSIGNED         NULL,
+    uploaded_at       DATETIME             NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    source            VARCHAR(20)          NOT NULL,
+    original_filename VARCHAR(255)         NOT NULL,
+    archive_path      VARCHAR(500)         NOT NULL,
+    home_name         VARCHAR(100)         NOT NULL,
+    visitor_name      VARCHAR(100)         NOT NULL,
+    game_date         DATE                 NOT NULL,
+    vh                ENUM('H','V','both') NOT NULL DEFAULT 'both',
+    status            ENUM('pending','partial','complete','discrepancy') NOT NULL DEFAULT 'pending',
+    discrepancies     TEXT                 NULL,
+    PRIMARY KEY (upload_id),
+    KEY idx_uploads_competition (competition_id),
+    KEY idx_uploads_date (game_date),
+    CONSTRAINT fk_uploads_competition
+        FOREIGN KEY (competition_id) REFERENCES competitions (competition_id)
+        ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

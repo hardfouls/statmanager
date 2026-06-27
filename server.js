@@ -8,9 +8,10 @@ const session = require('express-session');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const CONFIG_PATH = path.join(__dirname, 'statmanager.ini');
+const CONFIG_PATH    = path.join(__dirname, 'statmanager.ini');
+const XML_ARCHIVE_DIR = path.join(__dirname, 'xml-archives');
 
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ── Session ───────────────────────────────────────────────────────────────────
@@ -43,6 +44,7 @@ app.use('/api', (req, res, next) => {
 (async () => {
   const iconsDir = path.join(__dirname, 'public', 'leagues', 'icons');
   if (!fs.existsSync(iconsDir)) fs.mkdirSync(iconsDir, { recursive: true });
+  if (!fs.existsSync(XML_ARCHIVE_DIR)) fs.mkdirSync(XML_ARCHIVE_DIR, { recursive: true });
   let conn;
   try {
     conn = await dbConnect();
@@ -159,6 +161,26 @@ app.use('/api', (req, res, next) => {
       CONSTRAINT fk_playbyplay_comp   FOREIGN KEY (competition_id) REFERENCES competitions (competition_id) ON DELETE CASCADE,
       CONSTRAINT fk_playbyplay_team   FOREIGN KEY (team_id)   REFERENCES teams (team_id),
       CONSTRAINT fk_playbyplay_player FOREIGN KEY (player_id) REFERENCES players (player_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+    await migrate(`CREATE TABLE IF NOT EXISTS xml_uploads (
+      upload_id         INT UNSIGNED         NOT NULL AUTO_INCREMENT,
+      competition_id    INT UNSIGNED         NULL,
+      uploaded_at       DATETIME             NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      source            VARCHAR(20)          NOT NULL,
+      original_filename VARCHAR(255)         NOT NULL,
+      archive_path      VARCHAR(500)         NOT NULL,
+      home_name         VARCHAR(100)         NOT NULL,
+      visitor_name      VARCHAR(100)         NOT NULL,
+      game_date         DATE                 NOT NULL,
+      vh                ENUM('H','V','both') NOT NULL DEFAULT 'both',
+      status            ENUM('pending','partial','complete','discrepancy') NOT NULL DEFAULT 'pending',
+      discrepancies     TEXT                 NULL,
+      PRIMARY KEY (upload_id),
+      KEY idx_uploads_competition (competition_id),
+      KEY idx_uploads_date (game_date),
+      CONSTRAINT fk_uploads_competition
+        FOREIGN KEY (competition_id) REFERENCES competitions (competition_id)
+        ON DELETE SET NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
   } finally {
     await conn.end().catch(() => {});
@@ -1798,6 +1820,238 @@ app.get('/api/games/:id/playbyplay', async (req, res) => {
     res.json(plays);
   } catch (err) { res.json({ error: err.message }); }
   finally { await conn?.end().catch(() => {}); }
+});
+
+// ── XML Import ────────────────────────────────────────────────────────────────
+
+app.get('/api/import/teams', async (req, res) => {
+  let conn;
+  try {
+    conn = await dbConnect();
+    const [rows] = await conn.execute('SELECT team_id, name, abbrev FROM teams ORDER BY name');
+    res.json({ teams: rows });
+  } catch (err) { res.json({ error: err.message }); }
+  finally { await conn?.end().catch(() => {}); }
+});
+
+app.get('/api/import/seasons', async (req, res) => {
+  const date = req.query.date;
+  let conn;
+  try {
+    conn = await dbConnect();
+    let rows;
+    if (date) {
+      [rows] = await conn.execute(`
+        SELECT s.season_id, s.name, s.start_date, s.end_date, l.name AS league_name
+        FROM seasons s JOIN leagues l ON l.league_id = s.league_id
+        WHERE s.start_date <= ? AND s.end_date >= ?
+        ORDER BY l.name, s.start_date DESC`, [date, date]);
+    }
+    if (!rows?.length) {
+      [rows] = await conn.execute(`
+        SELECT s.season_id, s.name, s.start_date, s.end_date, l.name AS league_name
+        FROM seasons s JOIN leagues l ON l.league_id = s.league_id
+        ORDER BY s.start_date DESC LIMIT 20`);
+    }
+    res.json({ seasons: rows });
+  } catch (err) { res.json({ error: err.message }); }
+  finally { await conn?.end().catch(() => {}); }
+});
+
+app.get('/api/import/players', async (req, res) => {
+  const teamId   = parseInt(req.query.team_id);
+  const seasonId = parseInt(req.query.season_id) || 0;
+  if (!teamId) return res.status(400).json({ error: 'team_id required' });
+  let conn;
+  try {
+    conn = await dbConnect();
+    const [rows] = await conn.execute(`
+      SELECT DISTINCT p.player_id, p.first_name, p.last_name,
+             COALESCE(ps2.jersey_number, ps.jersey_number) AS jersey_number
+      FROM players p
+      JOIN player_seasons ps ON ps.player_id = p.player_id AND ps.team_id = ?
+      LEFT JOIN player_seasons ps2 ON ps2.player_id = p.player_id AND ps2.team_id = ? AND ps2.season_id = ?
+      ORDER BY p.last_name, p.first_name`, [teamId, teamId, seasonId]);
+    res.json({ players: rows });
+  } catch (err) { res.json({ error: err.message }); }
+  finally { await conn?.end().catch(() => {}); }
+});
+
+app.get('/api/import/check', async (req, res) => {
+  const { team_id, opponent_id, date } = req.query;
+  let conn;
+  try {
+    conn = await dbConnect();
+    const [[row]] = await conn.execute(`
+      SELECT c.competition_id,
+             EXISTS (SELECT 1 FROM boxscores b WHERE b.competition_id = c.competition_id) AS has_boxscores
+      FROM competitions c
+      WHERE ((c.team_id = ? AND c.opponent_id = ?) OR (c.team_id = ? AND c.opponent_id = ?))
+        AND DATE(c.start_time) = ?
+      LIMIT 1`, [team_id, opponent_id, opponent_id, team_id, date]);
+    res.json({ existing: row || null });
+  } catch (err) { res.json({ error: err.message }); }
+  finally { await conn?.end().catch(() => {}); }
+});
+
+app.post('/api/import/archive', async (req, res) => {
+  const { filename, xml, homeName, visitorName, gameDate, source, vh } = req.body;
+  if (!xml || !filename) return res.status(400).json({ error: 'xml and filename required' });
+  const safe = s => (s || '').replace(/[^a-zA-Z0-9_\- ]/g, '').trim().substring(0, 40);
+  const archiveName = `${gameDate || 'unknown'}_${safe(homeName)}_vs_${safe(visitorName)}_${Date.now()}.xml`;
+  if (!fs.existsSync(XML_ARCHIVE_DIR)) fs.mkdirSync(XML_ARCHIVE_DIR, { recursive: true });
+  fs.writeFileSync(path.join(XML_ARCHIVE_DIR, archiveName), xml, 'utf-8');
+  let conn;
+  try {
+    conn = await dbConnect();
+    const [result] = await conn.execute(
+      `INSERT INTO xml_uploads (source, original_filename, archive_path, home_name, visitor_name, game_date, vh, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')`,
+      [source || 'Unknown', filename, `xml-archives/${archiveName}`,
+       homeName || '', visitorName || '', gameDate || '1970-01-01', vh || 'both']
+    );
+    res.json({ success: true, upload_id: result.insertId });
+  } catch (err) { res.json({ error: err.message }); }
+  finally { await conn?.end().catch(() => {}); }
+});
+
+app.get('/api/import/uploads', async (req, res) => {
+  let conn;
+  try {
+    conn = await dbConnect();
+    const [rows] = await conn.execute(`
+      SELECT upload_id, source, original_filename, home_name, visitor_name,
+             game_date, vh, status, uploaded_at, competition_id, discrepancies
+      FROM xml_uploads
+      ORDER BY uploaded_at DESC LIMIT 50`);
+    res.json({ uploads: rows });
+  } catch (err) { res.json({ error: err.message }); }
+  finally { await conn?.end().catch(() => {}); }
+});
+
+app.post('/api/import/commit', async (req, res) => {
+  const { uploadIds, existingCompetitionId, game, periods, boxscores, plays, discrepancies } = req.body;
+  let conn;
+  try {
+    conn = await dbConnect();
+    await conn.execute('START TRANSACTION');
+
+    let competitionId = existingCompetitionId || null;
+
+    if (!competitionId) {
+      const [r] = await conn.execute(
+        `INSERT INTO competitions (season_id, team_id, opponent_id, start_time, location, comptype_id)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [game.seasonId, game.homeTeamId, game.visitorTeamId,
+         game.startTime, game.location || null, game.comptypeId || null]
+      );
+      competitionId = r.insertId;
+
+      await conn.execute(
+        'INSERT IGNORE INTO team_schedules (team_id, season_id, competition_id) VALUES (?, ?, ?)',
+        [game.homeTeamId, game.seasonId, competitionId]
+      );
+      await conn.execute(
+        'INSERT IGNORE INTO team_schedules (team_id, season_id, competition_id) VALUES (?, ?, ?)',
+        [game.visitorTeamId, game.seasonId, competitionId]
+      );
+
+      if (periods?.home) {
+        for (let i = 0; i < periods.home.length; i++) {
+          await conn.execute(
+            'INSERT IGNORE INTO periods (competition_id, team_id, period_num, score) VALUES (?, ?, ?, ?)',
+            [competitionId, game.homeTeamId, i + 1, periods.home[i]]
+          );
+        }
+      }
+      if (periods?.visitor) {
+        for (let i = 0; i < periods.visitor.length; i++) {
+          await conn.execute(
+            'INSERT IGNORE INTO periods (competition_id, team_id, period_num, score) VALUES (?, ?, ?, ?)',
+            [competitionId, game.visitorTeamId, i + 1, periods.visitor[i]]
+          );
+        }
+      }
+    }
+
+    // Create new players where needed
+    for (const bs of (boxscores || [])) {
+      if (bs.playerId || !bs.newPlayer?.first_name?.trim() || !bs.newPlayer?.last_name?.trim()) continue;
+      const [r] = await conn.execute(
+        'INSERT INTO players (first_name, last_name) VALUES (?, ?)',
+        [bs.newPlayer.first_name.trim(), bs.newPlayer.last_name.trim()]
+      );
+      bs.playerId = r.insertId;
+    }
+
+    // Ensure player_seasons and insert boxscores
+    for (const bs of (boxscores || [])) {
+      if (!bs.playerId) continue;
+      const teamId = bs.side === 'home' ? game.homeTeamId : game.visitorTeamId;
+      await conn.execute(
+        'INSERT IGNORE INTO player_seasons (player_id, season_id, team_id, jersey_number) VALUES (?, ?, ?, ?)',
+        [bs.playerId, game.seasonId, teamId, bs.jersey_number || 0]
+      );
+      await conn.execute(`
+        INSERT INTO boxscores
+          (competition_id, player_id, period, started, jersey_number,
+           min, fgm, fga, fgm3, fga3, ftm, fta, oreb, dreb, reb, ast, stl, blk, \`to\`, pf, tf, dq, tp)
+        VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          started=VALUES(started), jersey_number=VALUES(jersey_number),
+          min=VALUES(min), fgm=VALUES(fgm), fga=VALUES(fga),
+          fgm3=VALUES(fgm3), fga3=VALUES(fga3),
+          ftm=VALUES(ftm), fta=VALUES(fta),
+          oreb=VALUES(oreb), dreb=VALUES(dreb), reb=VALUES(reb),
+          ast=VALUES(ast), stl=VALUES(stl), blk=VALUES(blk),
+          \`to\`=VALUES(\`to\`), pf=VALUES(pf), tf=VALUES(tf), dq=VALUES(dq), tp=VALUES(tp)`,
+        [competitionId, bs.playerId, bs.started || 0, bs.jersey_number || 0,
+         bs.min || 0, bs.fgm || 0, bs.fga || 0, bs.fgm3 || 0, bs.fga3 || 0,
+         bs.ftm || 0, bs.fta || 0, bs.oreb || 0, bs.dreb || 0, bs.reb || 0,
+         bs.ast || 0, bs.stl || 0, bs.blk || 0, bs.to || 0,
+         bs.pf || 0, bs.tf || 0, bs.dq || 0, bs.tp || 0]
+      );
+    }
+
+    // Insert plays only if none exist yet for this game
+    if (plays?.length) {
+      const [[{ cnt }]] = await conn.execute(
+        'SELECT COUNT(*) AS cnt FROM playbyplay WHERE competition_id = ?', [competitionId]);
+      if (!cnt) {
+        for (const play of plays) {
+          await conn.execute(`
+            INSERT INTO playbyplay
+              (competition_id, period, clock, team_id, player_id, action, play_type,
+               is_paint, home_score, visitor_score, wall_clock, seq)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [competitionId, play.period, play.clock || '00:00',
+             play.teamId || null, play.playerId || null,
+             play.action, play.play_type || null, play.is_paint || 0,
+             play.home_score ?? null, play.visitor_score ?? null,
+             play.wall_clock || null, play.seq || 0]
+          );
+        }
+      }
+    }
+
+    // Update upload records with final status
+    const finalStatus = discrepancies?.length ? 'discrepancy' : 'complete';
+    for (const uid of (uploadIds || [])) {
+      await conn.execute(
+        'UPDATE xml_uploads SET competition_id=?, status=?, discrepancies=? WHERE upload_id=?',
+        [competitionId, finalStatus,
+         discrepancies?.length ? JSON.stringify(discrepancies) : null, uid]
+      );
+    }
+
+    await conn.execute('COMMIT');
+    res.json({ success: true, competition_id: competitionId, discrepancies: discrepancies || [] });
+  } catch (err) {
+    await conn?.execute('ROLLBACK').catch(() => {});
+    res.json({ error: err.message });
+  } finally {
+    await conn?.end().catch(() => {});
+  }
 });
 
 app.use('/reports', require('./reports')(dbConnect, getServerConfig));

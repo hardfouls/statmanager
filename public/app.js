@@ -54,6 +54,15 @@ const MENU_ITEMS = [
     </svg>`
   },
   {
+    label: 'Import',
+    route: 'import',
+    icon: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+      <polyline points="17 8 12 3 7 8"/>
+      <line x1="12" y1="3" x2="12" y2="15"/>
+    </svg>`
+  },
+  {
     label: 'Settings',
     route: 'settings',
     icon: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -3825,8 +3834,787 @@ const pages = {
         }
       });
     }
+  },
+
+  import: {
+    menuRoute: 'import',
+    render: () => `
+      <div class="card">
+        <div class="card-header"><span class="card-title">Import XML Stats</span></div>
+        <div id="wiz-body" style="padding:20px"><p style="color:var(--text-muted)">Loading…</p></div>
+      </div>`,
+    async init() {
+      wizReset();
+      const data = await fetch('api/import/teams').then(r => r.json()).catch(() => ({}));
+      wiz.allTeams = data.teams || [];
+      wizRender();
+    }
   }
 };
+
+// ── Import Wizard ─────────────────────────────────────────────────────────────
+
+let wiz = null;
+
+function wizReset() {
+  wiz = {
+    step: 1,
+    parsed: [],         // [{rawXml, source, filename, gameDate, home:{...}, visitor:{...}, plays:[]}]
+    merged: null,       // Combined game view
+    allTeams: [],       // DB teams for matching
+    allSeasons: [],     // DB seasons for step 3
+    homeTeamId: null,
+    visitorTeamId: null,
+    gameDate: null,
+    gameTime: null,
+    gameLocation: null,
+    comptypeId: null,
+    seasonId: null,
+    homeDbPlayers: [],
+    visitorDbPlayers: [],
+    playerMap: {},      // "side:idx" → {playerId, newPlayer:{first_name,last_name}}
+    existingCompId: null,
+    uploadIds: []
+  };
+}
+
+// ── XML Parsing ───────────────────────────────────────────────────────────────
+
+function wizParseDate(s) {
+  if (!s) return null;
+  const [m, d, y] = s.split('/');
+  return (m && d && y) ? `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}` : null;
+}
+
+function wizParseTime(s) {
+  if (!s) return '00:00:00';
+  const m = s.match(/(\d+):(\d+)\s*(AM|PM)/i);
+  if (!m) return '00:00:00';
+  let h = parseInt(m[1]);
+  if (m[3].toUpperCase() === 'PM' && h !== 12) h += 12;
+  if (m[3].toUpperCase() === 'AM' && h === 12) h = 0;
+  return `${String(h).padStart(2,'0')}:${m[2]}:00`;
+}
+
+function wizParseXml(xmlString, filename) {
+  const doc = new DOMParser().parseFromString(xmlString, 'text/xml');
+  if (doc.querySelector('parsererror')) throw new Error('Invalid XML file');
+  const bbgame = doc.querySelector('bbgame');
+  if (!bbgame) throw new Error('Not a bbgame XML file');
+
+  const source   = bbgame.getAttribute('source') || 'Unknown';
+  const venue    = bbgame.querySelector(':scope > venue');
+  const status   = bbgame.querySelector(':scope > status');
+  const rules    = venue?.querySelector('rules');
+
+  const homeName    = venue?.getAttribute('homename') || '';
+  const visitorName = venue?.getAttribute('visname')  || '';
+  const dateStr     = venue?.getAttribute('date')     || '';
+
+  function parseTeam(el) {
+    const vh = el.getAttribute('vh');
+    const periodScores = [...el.querySelectorAll('linescore lineprd')]
+      .sort((a, b) => parseInt(a.getAttribute('prd')) - parseInt(b.getAttribute('prd')))
+      .map(lp => parseInt(lp.getAttribute('score')) || 0);
+
+    const players = [...el.querySelectorAll(':scope > player')]
+      .filter(p => p.getAttribute('gp') !== '0')
+      .map(p => {
+        const statsEl = p.querySelector(':scope > stats');
+        if (!statsEl || statsEl.getAttribute('sec') === '+') return null;
+        const g = a => parseInt(statsEl.getAttribute(a) || '0') || 0;
+        return {
+          checkname: p.getAttribute('checkname') || '',
+          uni:       p.getAttribute('uni') || '0',
+          gs:        p.getAttribute('gs') === '1' ? 1 : 0,
+          min:  g('min') * 60,
+          tp:   g('tp'),  fgm:  g('fgm'),  fga:  g('fga'),
+          fgm3: g('fgm3'), fga3: g('fga3'),
+          ftm:  g('ftm'),  fta:  g('fta'),
+          oreb: g('oreb'), dreb: g('dreb'), reb: g('treb'),
+          ast:  g('ast'),  stl:  g('stl'),  blk: g('blk'),
+          to:   g('to'),   pf:   g('pf'),   tf:  g('tf'),  dq: g('dq')
+        };
+      }).filter(Boolean);
+
+    return { vh, periodScores, players, hasPlayers: players.length > 0 };
+  }
+
+  const teams = {};
+  bbgame.querySelectorAll(':scope > team').forEach(el => {
+    const t = parseTeam(el);
+    teams[t.vh] = t;
+  });
+
+  // Parse plays
+  const plays = [];
+  doc.querySelectorAll('plays > period').forEach(pEl => {
+    const period = parseInt(pEl.getAttribute('number'));
+    let seq = 0;
+    pEl.querySelectorAll('play').forEach(p => {
+      const action = p.getAttribute('action');
+      if (!action) return;
+      const checkname = p.getAttribute('checkname');
+      const ts = p.getAttribute('timeStamp');
+      let wallClock = null;
+      if (ts) {
+        const parts = ts.split(' ');
+        const d = wizParseDate(parts[0]);
+        if (d && parts[1]) wallClock = `${d} ${parts[1]}`;
+      }
+      plays.push({
+        period, seq: seq++,
+        clock:         p.getAttribute('time') || '00:00',
+        action,
+        play_type:     p.getAttribute('type') || null,
+        vh:            p.getAttribute('vh')   || null,
+        checkname:     (['TEAM','TM'].includes(checkname)) ? null : (checkname || null),
+        home_score:    p.hasAttribute('hscore') ? parseInt(p.getAttribute('hscore')) : null,
+        visitor_score: p.hasAttribute('vscore') ? parseInt(p.getAttribute('vscore')) : null,
+        wall_clock:    wallClock,
+        is_paint:      p.getAttribute('paint') === 'Y' ? 1 : 0
+      });
+    });
+  });
+
+  return {
+    source, filename, rawXml: xmlString,
+    gameDate:     wizParseDate(dateStr),
+    dateStr,
+    homeName, visitorName,
+    time:       venue?.getAttribute('time')       || '',
+    location:   venue?.getAttribute('location')   || '',
+    postseason: venue?.getAttribute('postseason') || 'N',
+    leaguegame: venue?.getAttribute('leaguegame') || null,
+    complete:   status?.getAttribute('complete')  || 'N',
+    numPeriods: parseInt(rules?.getAttribute('prds') || '4'),
+    home:    teams['H'] || { periodScores: [], players: [], hasPlayers: false },
+    visitor: teams['V'] || { periodScores: [], players: [], hasPlayers: false },
+    plays
+  };
+}
+
+function wizMerge() {
+  if (!wiz.parsed.length) return null;
+  if (wiz.parsed.length === 1) {
+    const g = wiz.parsed[0];
+    const disc = g.complete === 'N' ? ['File is marked as incomplete (complete="N")'] : [];
+    return { ...g, discrepancies: disc };
+  }
+
+  const [g1, g2] = wiz.parsed;
+  const disc = [];
+
+  // Compare period scores between the two files
+  // Determine mapping: is g2 also from "home" perspective or "visitor" perspective?
+  const g2FromVis = g2.homeName === g1.visitorName;
+  const g2HomePrd = g2FromVis ? g2.visitor.periodScores : g2.home.periodScores;
+  const g2VisPrd  = g2FromVis ? g2.home.periodScores    : g2.visitor.periodScores;
+
+  g1.home.periodScores.forEach((s, i) => {
+    if (g2HomePrd[i] !== undefined && s !== g2HomePrd[i])
+      disc.push(`Q${i+1} home score: file 1 says ${s}, file 2 says ${g2HomePrd[i]}`);
+  });
+  g1.visitor.periodScores.forEach((s, i) => {
+    if (g2VisPrd[i] !== undefined && s !== g2VisPrd[i])
+      disc.push(`Q${i+1} visitor score: file 1 says ${s}, file 2 says ${g2VisPrd[i]}`);
+  });
+
+  // Merge: take players from whichever file has data for each side
+  const homePl    = g1.home.hasPlayers    ? g1.home.players
+                  : g2FromVis              ? g2.visitor.players
+                  :                         g2.home.players;
+  const visitorPl = g1.visitor.hasPlayers ? g1.visitor.players
+                  : g2FromVis              ? g2.home.players
+                  :                         g2.visitor.players;
+
+  return {
+    source: g1.source === g2.source ? g1.source : 'Mixed',
+    filename: `${g1.filename} + ${g2.filename}`,
+    rawXml: null,
+    gameDate: g1.gameDate, dateStr: g1.dateStr,
+    homeName: g1.homeName, visitorName: g1.visitorName,
+    time: g1.time, location: g1.location,
+    postseason: g1.postseason, leaguegame: g1.leaguegame,
+    complete: (g1.complete === 'Y' || g2.complete === 'Y') ? 'Y' : 'N',
+    numPeriods: g1.numPeriods,
+    home:    { periodScores: g1.home.periodScores,    players: homePl,    hasPlayers: homePl.length > 0 },
+    visitor: { periodScores: g1.visitor.periodScores, players: visitorPl, hasPlayers: visitorPl.length > 0 },
+    plays: g1.plays.length >= g2.plays.length ? g1.plays : g2.plays,
+    discrepancies: disc
+  };
+}
+
+// ── Team matching ─────────────────────────────────────────────────────────────
+
+function wizTeamSim(xmlName, dbName) {
+  const tok = s => new Set((s || '').toLowerCase().replace(/[^a-z0-9 ]/g,'').split(' ').filter(Boolean));
+  const a = tok(xmlName), b = tok(dbName);
+  if (!a.size || !b.size) return 0;
+  let hits = 0; for (const t of a) if (b.has(t)) hits++;
+  return hits / Math.max(a.size, b.size);
+}
+
+function wizBestTeam(xmlName) {
+  let best = null, bestScore = -1;
+  for (const t of wiz.allTeams) {
+    let s = wizTeamSim(xmlName, t.name);
+    if (t.abbrev) s = Math.max(s, wizTeamSim(xmlName, t.abbrev) * 0.85);
+    if (s > bestScore) { bestScore = s; best = t; }
+  }
+  return best && bestScore > 0.25 ? best : null;
+}
+
+// ── Player matching ───────────────────────────────────────────────────────────
+
+function wizLev(a, b) {
+  const m = a.length, n = b.length;
+  if (!m) return n; if (!n) return m;
+  let prev = Array.from({length: n+1}, (_, i) => i), cur = [];
+  for (let i = 1; i <= m; i++) {
+    cur[0] = i;
+    for (let j = 1; j <= n; j++)
+      cur[j] = a[i-1] === b[j-1] ? prev[j-1] : 1 + Math.min(prev[j], cur[j-1], prev[j-1]);
+    [prev, cur] = [cur, prev];
+  }
+  return prev[n];
+}
+
+function wizPlayerSim(xmlCheck, dbFirst, dbLast) {
+  const dbCheck = `${dbLast.toUpperCase()},${dbFirst.toUpperCase()}`;
+  if (xmlCheck === dbCheck) return 1;
+  if (xmlCheck.split(',')[0] === dbLast.toUpperCase()) return 0.8;
+  const maxLen = Math.max(xmlCheck.length, dbCheck.length);
+  return maxLen ? Math.max(0, 1 - wizLev(xmlCheck, dbCheck) / maxLen) : 0;
+}
+
+function wizCandidates(xmlCheck, dbPlayers) {
+  return dbPlayers
+    .map(p => ({ ...p, score: wizPlayerSim(xmlCheck, p.first_name, p.last_name) }))
+    .filter(p => p.score > 0.3)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5);
+}
+
+// ── Wizard render ─────────────────────────────────────────────────────────────
+
+function wizRender() {
+  const body = document.getElementById('wiz-body');
+  if (!body || !wiz) return;
+
+  const labels = ['Upload','Teams','Season','Players','Confirm'];
+  const progress = labels.map((lbl, i) => {
+    const n = i + 1;
+    const done = n < wiz.step, active = n === wiz.step;
+    const color = active ? 'var(--accent)' : done ? 'var(--text-muted)' : 'var(--border)';
+    return `<span style="display:flex;align-items:center;gap:5px;color:${color}">
+      <span style="width:20px;height:20px;border-radius:50%;border:2px solid currentColor;display:inline-flex;align-items:center;justify-content:center;font-size:10px;flex-shrink:0">${done?'✓':n}</span>
+      <span style="font-size:12px">${lbl}</span>
+      ${i < labels.length-1 ? '<span style="color:var(--border);margin:0 2px">›</span>' : ''}
+    </span>`;
+  }).join('');
+
+  const stepHtml = wiz.step===1 ? wizStep1Html() :
+                   wiz.step===2 ? wizStep2Html() :
+                   wiz.step===3 ? wizStep3Html() :
+                   wiz.step===4 ? wizStep4Html() : wizStep5Html();
+
+  body.innerHTML = `
+    <div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid var(--border)">${progress}</div>
+    ${stepHtml}`;
+
+  if (wiz.step === 1) {
+    const inp = document.getElementById('wiz-file-in');
+    if (inp) inp.addEventListener('change', async e => {
+      for (const file of [...e.target.files]) {
+        if (wiz.parsed.length >= 2) break;
+        try { wiz.parsed.push(wizParseXml(await file.text(), file.name)); }
+        catch (err) { alert(`Cannot parse ${file.name}: ${err.message}`); }
+      }
+      inp.value = '';
+      wizRender();
+    });
+  }
+}
+
+// ── Step 1: Upload ────────────────────────────────────────────────────────────
+
+function wizStep1Html() {
+  const cards = wiz.parsed.map((g, i) => `
+    <div style="border:1px solid var(--border);border-radius:6px;padding:12px 16px;margin-top:12px;display:flex;justify-content:space-between;align-items:start;gap:12px">
+      <div>
+        <div style="font-weight:600;color:var(--accent);word-break:break-all">${escapeHtml(g.filename)}</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:4px">${escapeHtml(g.source)} · ${escapeHtml(g.dateStr)}</div>
+        <div style="margin-top:6px">${escapeHtml(g.visitorName)} @ ${escapeHtml(g.homeName)}</div>
+        <div style="font-size:12px;margin-top:4px;color:${g.complete==='Y'?'#4caf50':'var(--text-muted)'}">
+          ${g.complete==='Y'?'✓ Complete':'⚠ Incomplete'}
+          · Home: ${g.home.players.length} players
+          · Visitor: ${g.visitor.players.length} players
+          · ${g.plays.length} plays
+        </div>
+      </div>
+      <button class="btn btn-secondary btn-sm" onclick="wizRemoveFile(${i})">✕</button>
+    </div>`).join('');
+
+  return `
+    ${wiz.parsed.length < 2 ? `
+    <div id="wiz-drop" style="border:2px dashed var(--border);border-radius:8px;padding:36px;text-align:center;cursor:pointer"
+         onclick="document.getElementById('wiz-file-in').click()">
+      <div style="font-size:28px;margin-bottom:8px">⬆</div>
+      <div style="color:var(--text)">Click to select StatCrew XML file${wiz.parsed.length===1?' (2nd file, optional)':'(s)'}</div>
+      <div style="color:var(--text-muted);font-size:13px;margin-top:6px">HoopStats or PrestoSports · Upload 2 files from the same game for dual-sided HoopStats import</div>
+    </div>
+    <input type="file" id="wiz-file-in" accept=".xml" multiple style="display:none">` : ''}
+    ${cards}
+    <div style="margin-top:24px;display:flex;justify-content:flex-end">
+      <button class="btn btn-primary" ${wiz.parsed.length?'':'disabled'} onclick="wizGo(2)">Next: Map Teams →</button>
+    </div>`;
+}
+
+function wizRemoveFile(i) { wiz.parsed.splice(i, 1); wizRender(); }
+
+// ── Step 2: Teams ─────────────────────────────────────────────────────────────
+
+function wizStep2Html() {
+  const g = wiz.merged;
+  if (!g) return '<p>No game data.</p>';
+
+  if (wiz.homeTeamId === null) {
+    const h = wizBestTeam(g.homeName), v = wizBestTeam(g.visitorName);
+    wiz.homeTeamId    = h?.team_id    ?? '';
+    wiz.visitorTeamId = v?.team_id    ?? '';
+  }
+  if (wiz.comptypeId === null)
+    wiz.comptypeId = g.postseason==='Y' ? 4 : g.leaguegame==='Y' ? 3 : g.leaguegame==='N' ? 2 : '';
+  if (!wiz.gameDate)     wiz.gameDate     = g.gameDate  || '';
+  if (!wiz.gameTime)     wiz.gameTime     = g.time      || '';
+  if (!wiz.gameLocation) wiz.gameLocation = g.location  || '';
+
+  const mkOpts = selId => wiz.allTeams.map(t =>
+    `<option value="${t.team_id}" ${t.team_id==selId?'selected':''}>${escapeHtml(t.name)}</option>`
+  ).join('');
+
+  return `
+    ${g.complete==='N'?`<div style="background:#3a2000;border:1px solid #8b5000;border-radius:6px;padding:10px 14px;margin-bottom:16px;color:#ffb74d">
+      ⚠ This file is marked incomplete — stats may be partial.</div>`:''}
+    <div class="form-grid" style="grid-template-columns:1fr 1fr;gap:16px">
+      <div>
+        <label class="form-label">Home Team <span style="color:var(--text-muted);font-weight:400">(XML: "${escapeHtml(g.homeName)}")</span></label>
+        <select class="form-control" onchange="wiz.homeTeamId=parseInt(this.value)||null">
+          <option value="">— Select Team —</option>${mkOpts(wiz.homeTeamId)}
+        </select>
+      </div>
+      <div>
+        <label class="form-label">Visitor Team <span style="color:var(--text-muted);font-weight:400">(XML: "${escapeHtml(g.visitorName)}")</span></label>
+        <select class="form-control" onchange="wiz.visitorTeamId=parseInt(this.value)||null">
+          <option value="">— Select Team —</option>${mkOpts(wiz.visitorTeamId)}
+        </select>
+      </div>
+    </div>
+    <div class="form-grid" style="grid-template-columns:160px 1fr 1fr;gap:16px;margin-top:16px">
+      <div>
+        <label class="form-label">Game Date</label>
+        <input class="form-control" type="date" value="${escapeHtml(wiz.gameDate||'')}" oninput="wiz.gameDate=this.value">
+      </div>
+      <div>
+        <label class="form-label">Time <span style="font-weight:400;color:var(--text-muted)">(optional)</span></label>
+        <input class="form-control" type="text" value="${escapeHtml(wiz.gameTime||'')}" placeholder="7:00 PM" oninput="wiz.gameTime=this.value">
+      </div>
+      <div>
+        <label class="form-label">Location</label>
+        <input class="form-control" type="text" value="${escapeHtml(wiz.gameLocation||'')}" placeholder="Gym name" oninput="wiz.gameLocation=this.value">
+      </div>
+    </div>
+    <div style="margin-top:16px;max-width:220px">
+      <label class="form-label">Game Type</label>
+      <select class="form-control" onchange="wiz.comptypeId=parseInt(this.value)||null">
+        <option value="">— Unknown —</option>
+        <option value="1" ${wiz.comptypeId==1?'selected':''}>Pre-Season</option>
+        <option value="2" ${wiz.comptypeId==2?'selected':''}>Non-Conference</option>
+        <option value="3" ${wiz.comptypeId==3?'selected':''}>Conference</option>
+        <option value="4" ${wiz.comptypeId==4?'selected':''}>Post-Season</option>
+      </select>
+    </div>
+    <div id="wiz-dup-msg" style="margin-top:12px"></div>
+    <div style="margin-top:24px;display:flex;justify-content:space-between">
+      <button class="btn btn-secondary" onclick="wizGo(1)">← Back</button>
+      <button class="btn btn-primary" onclick="wizStep2Adv()">Next: Season →</button>
+    </div>`;
+}
+
+async function wizStep2Adv() {
+  if (!wiz.homeTeamId || !wiz.visitorTeamId) return alert('Please select both teams.');
+  if (wiz.homeTeamId === wiz.visitorTeamId) return alert('Home and visitor must be different teams.');
+  if (!wiz.gameDate) return alert('Please enter the game date.');
+
+  try {
+    const data = await fetch(`api/import/check?team_id=${wiz.homeTeamId}&opponent_id=${wiz.visitorTeamId}&date=${wiz.gameDate}`)
+      .then(r => r.json());
+    if (data.existing) {
+      wiz.existingCompId = data.existing.competition_id;
+      const msg = document.getElementById('wiz-dup-msg');
+      if (msg && data.existing.has_boxscores) {
+        msg.innerHTML = `<div style="background:#1a3a00;border:1px solid #2e6000;border-radius:6px;padding:10px 14px;color:#a5d6a7">
+          ℹ A game already exists (ID #${data.existing.competition_id}) for these teams on this date. Proceeding will add or update stats.
+        </div>`;
+      }
+    } else {
+      wiz.existingCompId = null;
+    }
+  } catch {}
+
+  wizGo(3);
+}
+
+// ── Step 3: Season ────────────────────────────────────────────────────────────
+
+function wizStep3Html() {
+  const opts = wiz.allSeasons.map(s =>
+    `<option value="${s.season_id}" ${s.season_id==wiz.seasonId?'selected':''}>
+      ${escapeHtml(s.league_name)} — ${escapeHtml(s.name)} (${s.start_date} to ${s.end_date})
+    </option>`
+  ).join('');
+
+  return `
+    <p style="color:var(--text-muted);margin-bottom:16px">
+      Select the season this game belongs to.
+      ${wiz.gameDate ? `Showing seasons covering <strong>${escapeHtml(wiz.gameDate)}</strong>.` : ''}
+      ${!wiz.allSeasons.length ? 'No matching seasons found — showing recent seasons.' : ''}
+    </p>
+    <div style="max-width:520px">
+      <label class="form-label">Season</label>
+      <select class="form-control" onchange="wiz.seasonId=parseInt(this.value)||null">
+        <option value="">— Select Season —</option>${opts}
+      </select>
+      <p style="margin-top:10px;font-size:13px;color:var(--text-muted)">
+        Don't see the right season? <a href="#/seasons" style="color:var(--accent)">Create one</a> first, then come back.
+      </p>
+    </div>
+    <div style="margin-top:24px;display:flex;justify-content:space-between">
+      <button class="btn btn-secondary" onclick="wizGo(2)">← Back</button>
+      <button class="btn btn-primary" onclick="wiz.seasonId ? wizGo(4) : alert('Please select a season.')">Next: Match Players →</button>
+    </div>`;
+}
+
+// ── Step 4: Players ───────────────────────────────────────────────────────────
+
+function wizStep4Html() {
+  const g = wiz.merged;
+
+  const sections = ['home','visitor'].map(side => {
+    const teamName   = side === 'home' ? g.homeName : g.visitorName;
+    const xmlPlayers = g[side].players;
+    const dbPlayers  = side === 'home' ? wiz.homeDbPlayers : wiz.visitorDbPlayers;
+
+    if (!xmlPlayers.length) return `
+      <div style="margin-bottom:24px">
+        <h3 style="font-size:15px;margin:0 0 8px">${escapeHtml(teamName)}</h3>
+        <p style="color:var(--text-muted);font-style:italic">No individual player stats in this file for this team.</p>
+      </div>`;
+
+    const rows = xmlPlayers.map((p, idx) => {
+      const key     = `${side}:${idx}`;
+      const mapping = wiz.playerMap[key] || {};
+      const status  = mapping.newPlayer
+        ? `<span style="color:#4caf50">+ New</span>`
+        : mapping.playerId
+          ? `<span style="color:#4caf50">✓</span>`
+          : `<span style="color:#f44336">⚠</span>`;
+
+      const dbOpts = `<option value="">— Select —</option>` +
+        dbPlayers.map(d =>
+          `<option value="${d.player_id}" ${d.player_id==mapping.playerId?'selected':''}>` +
+          `${escapeHtml(d.last_name)}, ${escapeHtml(d.first_name)}${d.jersey_number?` #${d.jersey_number}`:''}` +
+          `</option>`
+        ).join('');
+
+      const parts = p.checkname.split(',');
+      const sugLast  = parts[0] ? parts[0][0].toUpperCase() + parts[0].slice(1).toLowerCase() : '';
+      const sugFirst = parts[1]?.trim() ? parts[1].trim()[0].toUpperCase() + parts[1].trim().slice(1).toLowerCase() : '';
+
+      const inputRow = mapping.newPlayer ? `
+        <div style="display:flex;gap:6px;margin-top:6px">
+          <input class="form-control" style="flex:1;font-size:12px" placeholder="First" value="${escapeHtml(mapping.newPlayer.first_name||sugFirst)}"
+            oninput="wizUpdNew('${side}',${idx},'first_name',this.value)">
+          <input class="form-control" style="flex:1;font-size:12px" placeholder="Last" value="${escapeHtml(mapping.newPlayer.last_name||sugLast)}"
+            oninput="wizUpdNew('${side}',${idx},'last_name',this.value)">
+          <button class="btn btn-secondary btn-sm" onclick="wizCancelNew('${side}',${idx})">✕</button>
+        </div>` : '';
+
+      return `<tr>
+        <td style="color:var(--text-muted);white-space:nowrap">#${escapeHtml(p.uni)}</td>
+        <td style="white-space:nowrap;font-size:13px">${escapeHtml(p.checkname)}</td>
+        <td>
+          ${mapping.newPlayer ? '' : `<select class="form-control" style="font-size:12px" onchange="wizMapP('${side}',${idx},this.value)">${dbOpts}</select>`}
+          ${inputRow}
+          ${mapping.newPlayer ? '' : `<button class="btn btn-secondary btn-sm" style="margin-top:4px;font-size:11px;padding:2px 8px"
+            onclick="wizSetNew('${side}',${idx},'${escapeHtml(sugFirst)}','${escapeHtml(sugLast)}')">+ Create new player</button>`}
+        </td>
+        <td>${status}</td>
+      </tr>`;
+    });
+
+    const unmapped = xmlPlayers.filter((_, idx) => {
+      const m = wiz.playerMap[`${side}:${idx}`] || {};
+      return !m.playerId && !m.newPlayer;
+    }).length;
+
+    return `<div style="margin-bottom:28px">
+      <h3 style="font-size:15px;margin:0 0 8px">${escapeHtml(teamName)}</h3>
+      ${unmapped ? `<p style="color:#f44336;font-size:13px;margin:0 0 8px">${unmapped} player(s) still need to be matched.</p>` : ''}
+      <div class="table-wrap" style="max-height:380px;overflow-y:auto">
+        <table class="stats-table">
+          <thead><tr><th>#</th><th>XML Name</th><th style="min-width:220px">Database Match</th><th>Status</th></tr></thead>
+          <tbody>${rows.join('')}</tbody>
+        </table>
+      </div>
+    </div>`;
+  }).join('');
+
+  const allMapped = ['home','visitor'].every(side =>
+    wiz.merged[side].players.every((_, idx) => {
+      const m = wiz.playerMap[`${side}:${idx}`] || {};
+      return m.playerId || m.newPlayer;
+    })
+  );
+
+  return `
+    ${sections}
+    <div style="display:flex;justify-content:space-between">
+      <button class="btn btn-secondary" onclick="wizGo(3)">← Back</button>
+      <button class="btn btn-primary" ${allMapped?'':'disabled'} onclick="wizGo(5)">Next: Preview →</button>
+    </div>`;
+}
+
+function wizMapP(side, idx, val) {
+  wiz.playerMap[`${side}:${idx}`] = { playerId: parseInt(val)||null, newPlayer: null };
+  wizRender();
+}
+function wizSetNew(side, idx, first, last) {
+  wiz.playerMap[`${side}:${idx}`] = { playerId: null, newPlayer: { first_name: first, last_name: last } };
+  wizRender();
+}
+function wizCancelNew(side, idx) {
+  wiz.playerMap[`${side}:${idx}`] = { playerId: null, newPlayer: null };
+  wizRender();
+}
+function wizUpdNew(side, idx, field, val) {
+  const m = wiz.playerMap[`${side}:${idx}`];
+  if (m?.newPlayer) m.newPlayer[field] = val;
+}
+
+// ── Step 5: Preview & Confirm ─────────────────────────────────────────────────
+
+function wizStep5Html() {
+  const g = wiz.merged;
+  const homeTotal = g.home.periodScores.reduce((a,b)=>a+b,0);
+  const visTotal  = g.visitor.periodScores.reduce((a,b)=>a+b,0);
+  const qHdrs = g.home.periodScores.map((_,i)=>`<th>Q${i+1}</th>`).join('');
+
+  function bsRows(side) {
+    const db = side==='home' ? wiz.homeDbPlayers : wiz.visitorDbPlayers;
+    const rows = g[side].players.map((p, idx) => {
+      const m = wiz.playerMap[`${side}:${idx}`] || {};
+      let name = m.newPlayer ? `${m.newPlayer.first_name} ${m.newPlayer.last_name} (new)`
+               : m.playerId  ? (() => { const d=db.find(x=>x.player_id==m.playerId); return d?`${d.first_name} ${d.last_name}`:`Player #${m.playerId}`; })()
+               : '???';
+      return `<tr>
+        <td style="color:var(--text-muted)">#${escapeHtml(p.uni)}</td>
+        <td>${escapeHtml(name)}</td>
+        <td>${Math.round(p.min/60)}</td>
+        <td>${p.tp}</td><td>${p.fgm}/${p.fga}</td><td>${p.fgm3}/${p.fga3}</td>
+        <td>${p.ftm}/${p.fta}</td><td>${p.reb}</td><td>${p.ast}</td><td>${p.pf}</td>
+      </tr>`;
+    });
+    return rows.join('') || `<tr><td colspan="10" style="color:var(--text-muted)">No player stats</td></tr>`;
+  }
+
+  const discHtml = g.discrepancies?.length ? `
+    <div style="background:#3a0000;border:1px solid #7c0000;border-radius:6px;padding:12px;margin-bottom:20px;color:#ff6b6b">
+      <strong>⚠ Discrepancies — review before confirming:</strong>
+      <ul style="margin:8px 0 0;padding-left:20px">${g.discrepancies.map(d=>`<li>${escapeHtml(d)}</li>`).join('')}</ul>
+    </div>` : '';
+
+  const seasonLabel = wiz.allSeasons.find(s=>s.season_id==wiz.seasonId)?.name || '';
+
+  return `
+    <div style="margin-bottom:20px">
+      <div style="font-size:18px;font-weight:600;color:var(--accent)">${escapeHtml(g.visitorName)} @ ${escapeHtml(g.homeName)}</div>
+      <div style="color:var(--text-muted);margin-top:4px">${escapeHtml(wiz.gameDate||'')} · ${escapeHtml(wiz.gameLocation||g.location||'')} · ${escapeHtml(seasonLabel)}</div>
+      <table style="border-collapse:collapse;margin-top:12px;font-size:14px">
+        <thead><tr><th style="text-align:left;padding:3px 16px 3px 0;color:var(--text-muted)">Team</th>${qHdrs}<th style="padding:3px 8px;color:var(--text-muted)">Final</th></tr></thead>
+        <tbody>
+          <tr>
+            <td style="padding:3px 16px 3px 0">${escapeHtml(g.homeName)}</td>
+            ${g.home.periodScores.map(s=>`<td style="padding:3px 8px">${s}</td>`).join('')}
+            <td style="padding:3px 8px;font-weight:600">${homeTotal}</td>
+          </tr>
+          <tr>
+            <td style="padding:3px 16px 3px 0">${escapeHtml(g.visitorName)}</td>
+            ${g.visitor.periodScores.map(s=>`<td style="padding:3px 8px">${s}</td>`).join('')}
+            <td style="padding:3px 8px;font-weight:600">${visTotal}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    ${discHtml}
+    ${['home','visitor'].map(side=>`
+      <div style="margin-bottom:20px">
+        <div style="font-weight:600;margin-bottom:8px">${escapeHtml(side==='home'?g.homeName:g.visitorName)}</div>
+        <div class="table-wrap"><table class="stats-table" style="font-size:12px">
+          <thead><tr><th>#</th><th>Player</th><th>Min</th><th>PTS</th><th>FG</th><th>3PT</th><th>FT</th><th>Reb</th><th>Ast</th><th>PF</th></tr></thead>
+          <tbody>${bsRows(side)}</tbody>
+        </table></div>
+      </div>`).join('')}
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:24px">
+      <button class="btn btn-secondary" onclick="wizGo(4)">← Back</button>
+      <div style="display:flex;align-items:center;gap:12px">
+        <span id="wiz-status" style="color:var(--text-muted);font-size:13px"></span>
+        <button class="btn btn-primary" id="wiz-confirm-btn" onclick="wizCommit()">Confirm Import</button>
+      </div>
+    </div>`;
+}
+
+// ── Navigation ────────────────────────────────────────────────────────────────
+
+async function wizGo(n) {
+  if (n === 2 && wiz.step < 2) {
+    wiz.merged = wizMerge();
+  }
+  if (n === 3) {
+    const date = wiz.gameDate || wiz.merged?.gameDate;
+    const data = await fetch(`api/import/seasons${date?'?date='+date:''}`).then(r=>r.json()).catch(()=>({}));
+    wiz.allSeasons = data.seasons || [];
+    if (!wiz.seasonId && wiz.allSeasons.length === 1) wiz.seasonId = wiz.allSeasons[0].season_id;
+  }
+  if (n === 4) {
+    const [hr, vr] = await Promise.all([
+      fetch(`api/import/players?team_id=${wiz.homeTeamId}&season_id=${wiz.seasonId}`).then(r=>r.json()).catch(()=>({})),
+      fetch(`api/import/players?team_id=${wiz.visitorTeamId}&season_id=${wiz.seasonId}`).then(r=>r.json()).catch(()=>({}))
+    ]);
+    wiz.homeDbPlayers    = hr.players || [];
+    wiz.visitorDbPlayers = vr.players || [];
+    // Auto-map exact matches on first entry
+    for (const side of ['home','visitor']) {
+      const db = side==='home' ? wiz.homeDbPlayers : wiz.visitorDbPlayers;
+      wiz.merged[side].players.forEach((p, idx) => {
+        const key = `${side}:${idx}`;
+        if (!wiz.playerMap[key]) {
+          const cands = wizCandidates(p.checkname, db);
+          wiz.playerMap[key] = { playerId: cands[0]?.score===1 ? cands[0].player_id : null, newPlayer: null };
+        }
+      });
+    }
+  }
+  wiz.step = n;
+  wizRender();
+}
+
+// ── Commit ────────────────────────────────────────────────────────────────────
+
+async function wizCommit() {
+  const btn    = document.getElementById('wiz-confirm-btn');
+  const status = document.getElementById('wiz-status');
+  if (btn) btn.disabled = true;
+
+  try {
+    // Archive XML files
+    if (status) status.textContent = 'Archiving…';
+    const uploadIds = [];
+    for (const parsed of wiz.parsed) {
+      const vh = wiz.parsed.length===1 ? 'both' : parsed.home.hasPlayers ? 'H' : 'V';
+      try {
+        const r = await fetch('api/import/archive', {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({
+            filename: parsed.filename, xml: parsed.rawXml,
+            homeName: wiz.merged.homeName, visitorName: wiz.merged.visitorName,
+            gameDate: wiz.gameDate || wiz.merged.gameDate,
+            source: parsed.source, vh
+          })
+        }).then(r=>r.json());
+        if (r.upload_id) uploadIds.push(r.upload_id);
+      } catch {}
+    }
+
+    // Build boxscores
+    const g = wiz.merged;
+    const boxscores = [];
+    for (const side of ['home','visitor']) {
+      g[side].players.forEach((p, idx) => {
+        const m = wiz.playerMap[`${side}:${idx}`] || {};
+        boxscores.push({
+          side, playerId: m.playerId||null, newPlayer: m.newPlayer||null,
+          jersey_number: parseInt(p.uni)||0, started: p.gs||0,
+          min: p.min, tp: p.tp, fgm: p.fgm, fga: p.fga,
+          fgm3: p.fgm3, fga3: p.fga3, ftm: p.ftm, fta: p.fta,
+          oreb: p.oreb, dreb: p.dreb, reb: p.reb,
+          ast: p.ast, stl: p.stl, blk: p.blk,
+          to: p.to, pf: p.pf, tf: p.tf, dq: p.dq||0
+        });
+      });
+    }
+
+    // Build plays with resolved IDs
+    const checkLookup = {};
+    for (const side of ['home','visitor'])
+      g[side].players.forEach((p, idx) => { checkLookup[p.checkname] = { side, idx }; });
+
+    const plays = g.plays.map(play => {
+      const teamId = play.vh==='H' ? wiz.homeTeamId : play.vh==='V' ? wiz.visitorTeamId : null;
+      let playerId = null;
+      if (play.checkname) {
+        const lu = checkLookup[play.checkname];
+        if (lu) playerId = wiz.playerMap[`${lu.side}:${lu.idx}`]?.playerId || null;
+      }
+      return { ...play, teamId, playerId };
+    });
+
+    // Commit
+    if (status) status.textContent = 'Importing…';
+    const startTime = `${wiz.gameDate||g.gameDate} ${wizParseTime(wiz.gameTime||g.time)}`;
+    const resp = await fetch('api/import/commit', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        uploadIds, existingCompetitionId: wiz.existingCompId||null,
+        game: {
+          homeTeamId:    parseInt(wiz.homeTeamId),
+          visitorTeamId: parseInt(wiz.visitorTeamId),
+          seasonId:      parseInt(wiz.seasonId),
+          startTime, location: wiz.gameLocation||g.location||null,
+          comptypeId: wiz.comptypeId||null
+        },
+        periods: { home: g.home.periodScores, visitor: g.visitor.periodScores },
+        boxscores, plays, discrepancies: g.discrepancies||[]
+      })
+    }).then(r=>r.json());
+
+    if (resp.error) throw new Error(resp.error);
+
+    // Show success
+    const body = document.getElementById('wiz-body');
+    if (body) {
+      const discHtml = resp.discrepancies?.length ? `
+        <div style="margin-top:16px;color:#ffc107"><strong>⚠ Discrepancies on record:</strong>
+          <ul>${resp.discrepancies.map(d=>`<li>${escapeHtml(d)}</li>`).join('')}</ul></div>` : '';
+      body.innerHTML = `
+        <div style="text-align:center;padding:48px 0">
+          <div style="font-size:48px;margin-bottom:16px">✅</div>
+          <div style="font-size:20px;font-weight:600;color:var(--accent)">Import complete</div>
+          <div style="color:var(--text-muted);margin-top:8px">Game #${resp.competition_id} added to the database.</div>
+          ${discHtml}
+          <div style="margin-top:28px;display:flex;gap:12px;justify-content:center">
+            <a href="#/boxscore?id=${resp.competition_id}" class="btn btn-primary">View Boxscore</a>
+            <button class="btn btn-secondary" onclick="pages.import.init()">Import Another</button>
+          </div>
+        </div>`;
+    }
+  } catch (err) {
+    if (btn) btn.disabled = false;
+    if (status) status.textContent = '';
+    alert('Import failed: ' + err.message);
+  }
+}
 
 // ── Shared icons ─────────────────────────────────────────────────────────────
 const EDIT_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
