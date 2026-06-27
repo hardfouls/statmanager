@@ -3979,6 +3979,13 @@ function wizParseXml(xmlString, filename) {
     });
   });
 
+  const home    = teams['H'] || { periodScores: [], players: [], hasPlayers: false };
+  const visitor = teams['V'] || { periodScores: [], players: [], hasPlayers: false };
+
+  // Detect starters from PBP when no explicit gs="1" attributes were present (HoopStats)
+  const hasExplicitStarters = [...home.players, ...visitor.players].some(p => p.gs === 1);
+  if (!hasExplicitStarters) wizDetectStarters(home, visitor, plays);
+
   return {
     source, filename, rawXml: xmlString,
     gameDate:     wizParseDate(dateStr),
@@ -3990,10 +3997,36 @@ function wizParseXml(xmlString, filename) {
     leaguegame: venue?.getAttribute('leaguegame') || null,
     complete:   status?.getAttribute('complete')  || 'N',
     numPeriods: parseInt(rules?.getAttribute('prds') || '4'),
-    home:    teams['H'] || { periodScores: [], players: [], hasPlayers: false },
-    visitor: teams['V'] || { periodScores: [], players: [], hasPlayers: false },
-    plays
+    home, visitor, plays
   };
+}
+
+function wizDetectStarters(home, visitor, plays) {
+  const subOut            = { H: new Set(), V: new Set() };
+  const subIn             = { H: new Set(), V: new Set() };
+  const seenBeforeFirstSub = { H: new Set(), V: new Set() };
+  const firstSubSeen      = { H: false, V: false };
+
+  for (const play of plays) {
+    if (play.period !== 1 || !play.vh || !play.checkname) continue;
+    const vh = play.vh;
+    if (play.action === 'SUB') {
+      if (play.play_type === 'OUT') subOut[vh]?.add(play.checkname);
+      if (play.play_type === 'IN')  subIn[vh]?.add(play.checkname);
+      firstSubSeen[vh] = true;
+    } else if (!firstSubSeen[vh]) {
+      seenBeforeFirstSub[vh]?.add(play.checkname);
+    }
+  }
+
+  // Starter = subbed OUT without ever subbing IN, OR appeared before first SUB
+  const starters = {
+    H: new Set([...[...subOut.H].filter(c => !subIn.H.has(c)), ...seenBeforeFirstSub.H]),
+    V: new Set([...[...subOut.V].filter(c => !subIn.V.has(c)), ...seenBeforeFirstSub.V])
+  };
+
+  for (const p of home.players)    if (starters.H.has(p.checkname)) p.gs = 1;
+  for (const p of visitor.players) if (starters.V.has(p.checkname)) p.gs = 1;
 }
 
 function wizMerge() {
