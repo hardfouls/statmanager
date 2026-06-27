@@ -3874,7 +3874,9 @@ function wizReset() {
     visitorDbPlayers: [],
     playerMap: {},      // "side:idx" → {playerId, newPlayer:{first_name,last_name}}
     existingCompId: null,
-    uploadIds: []
+    uploadIds: [],
+    tab: 'wizard',
+    uploads: []
   };
 }
 
@@ -4098,9 +4100,22 @@ function wizCandidates(xmlCheck, dbPlayers) {
 
 // ── Wizard render ─────────────────────────────────────────────────────────────
 
+function wizTabBar() {
+  return `<div style="display:flex;gap:0;margin-bottom:20px;border-bottom:1px solid var(--border)">
+    ${[['wizard','New Import'],['history','Upload History']].map(([t, lbl]) =>
+      `<button onclick="wizTab('${t}')" style="padding:8px 20px;background:none;border:none;border-bottom:2px solid ${wiz.tab===t?'var(--accent)':'transparent'};color:${wiz.tab===t?'var(--accent)':'var(--text-muted)'};cursor:pointer;font-size:14px;font-weight:${wiz.tab===t?'600':'400'}">${lbl}</button>`
+    ).join('')}
+  </div>`;
+}
+
 function wizRender() {
   const body = document.getElementById('wiz-body');
   if (!body || !wiz) return;
+
+  if (wiz.tab === 'history') {
+    body.innerHTML = wizTabBar() + wizHistoryHtml();
+    return;
+  }
 
   const labels = ['Upload','Teams','Season','Players','Confirm'];
   const progress = labels.map((lbl, i) => {
@@ -4120,6 +4135,7 @@ function wizRender() {
                    wiz.step===4 ? wizStep4Html() : wizStep5Html();
 
   body.innerHTML = `
+    ${wizTabBar()}
     <div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid var(--border)">${progress}</div>
     ${stepHtml}`;
 
@@ -4135,6 +4151,93 @@ function wizRender() {
       wizRender();
     });
   }
+}
+
+async function wizTab(tab) {
+  wiz.tab = tab;
+  if (tab === 'history') {
+    const body = document.getElementById('wiz-body');
+    if (body) body.innerHTML = wizTabBar() + '<p style="color:var(--text-muted)">Loading…</p>';
+    const data = await fetch('api/import/uploads').then(r => r.json()).catch(() => ({}));
+    wiz.uploads = data.uploads || [];
+  }
+  wizRender();
+}
+
+function wizHistoryHtml() {
+  if (!wiz.uploads.length) {
+    return `<p style="color:var(--text-muted);padding:20px 0">No uploads yet.</p>`;
+  }
+
+  const statusBadge = s => {
+    const map = {
+      complete:    ['#1b3a1b','#4caf50'],
+      discrepancy: ['#3a1a00','#ff9800'],
+      partial:     ['#1a2a3a','#64b5f6'],
+      pending:     ['#2a2a2a','#888']
+    };
+    const [bg, color] = map[s] || map.pending;
+    return `<span style="background:${bg};color:${color};border:1px solid ${color};border-radius:4px;padding:2px 8px;font-size:11px;white-space:nowrap">${s}</span>`;
+  };
+
+  const vhLabel = v => ({ H: 'Home', V: 'Visitor', both: 'Both' }[v] || v);
+
+  const rows = wiz.uploads.map(u => {
+    const discHtml = u.discrepancies
+      ? (() => {
+          try {
+            const items = JSON.parse(u.discrepancies);
+            return Array.isArray(items)
+              ? `<ul style="margin:6px 0 0;padding-left:16px;font-size:11px;color:#ff9800">${items.map(d=>`<li>${escapeHtml(d)}</li>`).join('')}</ul>`
+              : `<div style="font-size:11px;color:#ff9800;margin-top:4px">${escapeHtml(u.discrepancies)}</div>`;
+          } catch { return `<div style="font-size:11px;color:#ff9800;margin-top:4px">${escapeHtml(u.discrepancies)}</div>`; }
+        })()
+      : '';
+
+    const gameLink = u.competition_id
+      ? `<a href="#/boxscore?id=${u.competition_id}" style="color:var(--accent)">#${u.competition_id}</a>`
+      : '<span style="color:var(--text-muted)">—</span>';
+
+    const when = u.uploaded_at ? u.uploaded_at.replace('T',' ').substring(0,16) : '';
+
+    return `<tr>
+      <td style="white-space:nowrap;color:var(--text-muted);font-size:12px">${escapeHtml(when)}</td>
+      <td style="white-space:nowrap;font-size:12px">
+        ${u.uploaded_by_name ? `<div>${escapeHtml(u.uploaded_by_name)}</div>` : ''}
+        <div style="color:var(--text-muted);font-size:11px">${escapeHtml(u.uploaded_by_username||'—')}</div>
+      </td>
+      <td style="font-size:12px;color:var(--text-muted)">${escapeHtml(u.source)}</td>
+      <td style="word-break:break-all;font-size:12px">${escapeHtml(u.original_filename)}</td>
+      <td style="white-space:nowrap">${escapeHtml(u.visitor_name)} @ ${escapeHtml(u.home_name)}</td>
+      <td style="white-space:nowrap">${escapeHtml(u.game_date||'')}</td>
+      <td style="white-space:nowrap;font-size:12px;color:var(--text-muted)">${vhLabel(u.vh)}</td>
+      <td>${statusBadge(u.status)}${discHtml}</td>
+      <td>${gameLink}</td>
+    </tr>`;
+  }).join('');
+
+  return `
+    <div style="display:flex;justify-content:flex-end;margin-bottom:12px">
+      <button class="btn btn-secondary btn-sm" onclick="wizTab('history')">↻ Refresh</button>
+    </div>
+    <div class="table-wrap">
+      <table class="stats-table">
+        <thead>
+          <tr>
+            <th>Uploaded</th>
+            <th>By</th>
+            <th>Source</th>
+            <th>File</th>
+            <th>Game</th>
+            <th>Date</th>
+            <th>Side</th>
+            <th>Status</th>
+            <th>Game ID</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
 }
 
 // ── Step 1: Upload ────────────────────────────────────────────────────────────

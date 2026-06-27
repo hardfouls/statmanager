@@ -162,6 +162,9 @@ app.use('/api', (req, res, next) => {
       CONSTRAINT fk_playbyplay_team   FOREIGN KEY (team_id)   REFERENCES teams (team_id),
       CONSTRAINT fk_playbyplay_player FOREIGN KEY (player_id) REFERENCES players (player_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+    await migrate(`ALTER TABLE xml_uploads
+      ADD COLUMN IF NOT EXISTS uploaded_by_username VARCHAR(64)  NULL,
+      ADD COLUMN IF NOT EXISTS uploaded_by_name     VARCHAR(130) NULL`);
     await migrate(`CREATE TABLE IF NOT EXISTS xml_uploads (
       upload_id         INT UNSIGNED         NOT NULL AUTO_INCREMENT,
       competition_id    INT UNSIGNED         NULL,
@@ -237,13 +240,14 @@ app.post('/api/auth/login', async (req, res) => {
   try {
     conn = await dbConnect();
     const [[user]] = await conn.execute(
-      'SELECT user_id, username, password_hash FROM app_users WHERE username = ?',
+      'SELECT user_id, username, password_hash, first_name, last_name FROM app_users WHERE username = ?',
       [username.trim().toLowerCase()]
     );
     if (!user || !(await bcrypt.compare(password, user.password_hash)))
       return res.status(401).json({ error: 'Invalid username or password' });
-    req.session.userId   = user.user_id;
-    req.session.username = user.username;
+    req.session.userId      = user.user_id;
+    req.session.username    = user.username;
+    req.session.displayName = [user.first_name, user.last_name].filter(Boolean).join(' ') || user.username;
     res.json({ user_id: user.user_id, username: user.username });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1905,10 +1909,12 @@ app.post('/api/import/archive', async (req, res) => {
   try {
     conn = await dbConnect();
     const [result] = await conn.execute(
-      `INSERT INTO xml_uploads (source, original_filename, archive_path, home_name, visitor_name, game_date, vh, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')`,
+      `INSERT INTO xml_uploads (source, original_filename, archive_path, home_name, visitor_name, game_date, vh, status, uploaded_by_username, uploaded_by_name)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
       [source || 'Unknown', filename, `xml-archives/${archiveName}`,
-       homeName || '', visitorName || '', gameDate || '1970-01-01', vh || 'both']
+       homeName || '', visitorName || '', gameDate || '1970-01-01', vh || 'both',
+       req.session.username || null,
+       req.session.displayName || req.session.username || null]
     );
     res.json({ success: true, upload_id: result.insertId });
   } catch (err) { res.json({ error: err.message }); }
