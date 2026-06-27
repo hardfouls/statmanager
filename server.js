@@ -1839,12 +1839,32 @@ app.get('/api/import/teams', async (req, res) => {
 });
 
 app.get('/api/import/seasons', async (req, res) => {
-  const date = req.query.date;
+  const { date, home_team_id, visitor_team_id } = req.query;
+  const teamIds = [parseInt(home_team_id), parseInt(visitor_team_id)].filter(Boolean);
   let conn;
   try {
     conn = await dbConnect();
     let rows;
-    if (date) {
+    if (teamIds.length && date) {
+      [rows] = await conn.execute(`
+        SELECT DISTINCT s.season_id, s.name, s.start_date, s.end_date, l.name AS league_name
+        FROM seasons s
+        JOIN leagues l ON l.league_id = s.league_id
+        JOIN team_seasons ts ON ts.season_id = s.season_id
+        WHERE ts.team_id IN (${teamIds.map(() => '?').join(',')})
+          AND s.start_date <= ? AND s.end_date >= ?
+        ORDER BY l.name, s.start_date DESC`,
+        [...teamIds, date, date]);
+    } else if (teamIds.length) {
+      [rows] = await conn.execute(`
+        SELECT DISTINCT s.season_id, s.name, s.start_date, s.end_date, l.name AS league_name
+        FROM seasons s
+        JOIN leagues l ON l.league_id = s.league_id
+        JOIN team_seasons ts ON ts.season_id = s.season_id
+        WHERE ts.team_id IN (${teamIds.map(() => '?').join(',')})
+        ORDER BY s.start_date DESC LIMIT 20`,
+        teamIds);
+    } else if (date) {
       [rows] = await conn.execute(`
         SELECT s.season_id, s.name, s.start_date, s.end_date, l.name AS league_name
         FROM seasons s JOIN leagues l ON l.league_id = s.league_id

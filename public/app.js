@@ -4414,8 +4414,8 @@ function wizStep3Html() {
   return `
     <p style="color:var(--text-muted);margin-bottom:16px">
       Select the season this game belongs to.
-      ${wiz.gameDate ? `Showing seasons covering <strong>${escapeHtml(wiz.gameDate)}</strong>.` : ''}
-      ${!wiz.allSeasons.length ? 'No matching seasons found — showing recent seasons.' : ''}
+      ${wiz.gameDate ? `Showing seasons for these teams covering <strong>${escapeHtml(wiz.gameDate)}</strong>.` : 'Showing seasons for these teams.'}
+      ${!wiz.allSeasons.length ? ' No matching seasons found — showing all recent seasons.' : ''}
     </p>
     <div style="max-width:520px">
       <label class="form-label">Season</label>
@@ -4619,7 +4619,11 @@ async function wizGo(n) {
   }
   if (n === 3) {
     const date = wiz.gameDate || wiz.merged?.gameDate;
-    const data = await fetch(`api/import/seasons${date?'?date='+date:''}`).then(r=>r.json()).catch(()=>({}));
+    const params = new URLSearchParams();
+    if (date)              params.set('date', date);
+    if (wiz.homeTeamId)    params.set('home_team_id', wiz.homeTeamId);
+    if (wiz.visitorTeamId) params.set('visitor_team_id', wiz.visitorTeamId);
+    const data = await fetch(`api/import/seasons?${params}`).then(r=>r.json()).catch(()=>({}));
     wiz.allSeasons = data.seasons || [];
     if (!wiz.seasonId && wiz.allSeasons.length === 1) wiz.seasonId = wiz.allSeasons[0].season_id;
   }
