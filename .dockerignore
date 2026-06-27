@@ -1,3 +1,11 @@
-node_modules
+node_modules/
+xml-archives/
+db/testdata/
+db/dakstatsHistory/
+db/xml-imports/
+samples/
+.git/
+.github/
+Design Notes/
+*.log
 statmanager.ini
-.git
