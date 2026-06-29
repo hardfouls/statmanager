@@ -564,6 +564,27 @@ const pages = {
     render() {
       return `
         <h2 class="page-title" id="tf-page-title">New Team</h2>
+        <div id="tf-photo-section" class="card" style="margin-bottom:12px;display:none">
+          <h3 class="section-title">Team Photo</h3>
+          <div style="display:flex;align-items:center;gap:14px">
+            <div id="tf-photo-preview" style="width:80px;height:80px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0">
+              <svg id="tf-photo-placeholder" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-muted)"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+              <img id="tf-photo-img" style="display:none;width:100%;height:100%;object-fit:cover" alt="Team photo">
+            </div>
+            <div>
+              <input type="file" id="tf-photo-file" accept="image/png,image/jpeg,image/gif,image/webp" style="display:none">
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button type="button" class="btn btn-secondary btn-sm" id="tf-photo-pick-btn">Upload Photo</button>
+                <button type="button" class="btn btn-secondary btn-sm" id="tf-photo-remove-btn" style="display:none">Remove</button>
+              </div>
+              <div class="status-msg" id="tf-photo-status" style="margin-top:6px"></div>
+            </div>
+          </div>
+        </div>
+        <div id="tf-season-photos-section" class="card" style="margin-bottom:12px;display:none">
+          <h3 class="section-title">Season Photos</h3>
+          <div id="tf-season-photos-list"></div>
+        </div>
         <div class="card">
           <form id="tf-form" novalidate style="padding:4px 0">
             <div class="form-group">
@@ -587,6 +608,10 @@ const pages = {
                 <option value="0">Male</option>
                 <option value="1">Female</option>
               </select>
+            </div>
+            <div class="form-group">
+              <label for="tf-external-code">External Code</label>
+              <input type="text" id="tf-external-code" maxlength="20" autocomplete="off" spellcheck="false" placeholder="e.g. KVHS02">
             </div>
             <div class="form-actions">
               <button type="submit" class="btn btn-primary" id="tf-save">Save</button>
@@ -612,11 +637,197 @@ const pages = {
           const data = await fetch('api/teams').then(r => r.json());
           team = (data.teams || []).find(t => String(t.team_id) === String(params.id)) ?? null;
           if (team) {
-            setValue('tf-name',     team.name);
-            setValue('tf-abbrev',   team.abbrev);
-            setValue('tf-nickname', team.nickname);
+            setValue('tf-name',          team.name);
+            setValue('tf-abbrev',        team.abbrev);
+            setValue('tf-nickname',      team.nickname);
+            setValue('tf-external-code', team.external_code);
             document.getElementById('tf-gender').value =
               team.gender != null ? String(Number(team.gender)) : '';
+
+            // Photo section (only available when editing)
+            document.getElementById('tf-photo-section').style.display = '';
+            const photoImg    = document.getElementById('tf-photo-img');
+            const photoPH     = document.getElementById('tf-photo-placeholder');
+            const photoFile   = document.getElementById('tf-photo-file');
+            const photoPickBtn  = document.getElementById('tf-photo-pick-btn');
+            const photoRemoveBtn = document.getElementById('tf-photo-remove-btn');
+
+            function setPhotoPreview(src) {
+              if (src) {
+                photoImg.src = src; photoImg.style.display = ''; photoPH.style.display = 'none';
+                photoRemoveBtn.style.display = '';
+              } else {
+                photoImg.src = ''; photoImg.style.display = 'none'; photoPH.style.display = '';
+                photoRemoveBtn.style.display = 'none';
+              }
+            }
+
+            setPhotoPreview(team.photo_path ? team.photo_path + '?t=' + Date.now() : null);
+
+            document.getElementById('tf-photo-pick-btn').addEventListener('click', () => photoFile.click());
+
+            photoFile.addEventListener('change', async () => {
+              const file = photoFile.files[0];
+              if (!file) return;
+              if (file.size > 1_048_576) {
+                showStatus('tf-photo-status', 'error', 'File too large (max 1 MB)');
+                photoFile.value = '';
+                return;
+              }
+              photoPickBtn.disabled = true; photoPickBtn.textContent = 'Uploading…';
+              try {
+                const dataUrl = await new Promise((resolve, reject) => {
+                  const reader = new FileReader();
+                  reader.onload  = e => resolve(e.target.result);
+                  reader.onerror = reject;
+                  reader.readAsDataURL(file);
+                });
+                const res    = await fetch(`api/teams/${team.team_id}/photo`, {
+                  method:  'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body:    JSON.stringify({ data: dataUrl }),
+                });
+                const result = await res.json();
+                if (result.success) {
+                  setPhotoPreview(result.photo_path + '?t=' + Date.now());
+                  showStatus('tf-photo-status', 'success', 'Photo saved.');
+                } else {
+                  showStatus('tf-photo-status', 'error', result.error || 'Upload failed');
+                }
+              } catch {
+                showStatus('tf-photo-status', 'error', 'Upload failed — is the server running?');
+              } finally {
+                photoPickBtn.disabled = false; photoPickBtn.textContent = 'Upload Photo';
+                photoFile.value = '';
+              }
+            });
+
+            photoRemoveBtn.addEventListener('click', async () => {
+              if (!confirm('Remove the team photo?')) return;
+              photoRemoveBtn.disabled = true;
+              try {
+                const res    = await fetch(`api/teams/${team.team_id}/photo`, { method: 'DELETE' });
+                const result = await res.json();
+                if (result.success) {
+                  setPhotoPreview(null);
+                  showStatus('tf-photo-status', 'success', 'Photo removed.');
+                } else {
+                  showStatus('tf-photo-status', 'error', result.error || 'Remove failed');
+                }
+              } catch {
+                showStatus('tf-photo-status', 'error', 'Request failed');
+              } finally {
+                photoRemoveBtn.disabled = false;
+              }
+            });
+
+            // Season photos
+            const spSection = document.getElementById('tf-season-photos-section');
+            const spList    = document.getElementById('tf-season-photos-list');
+            try {
+              const spRes  = await fetch(`api/teams/${team.team_id}/seasons`);
+              const spData = await spRes.json();
+              if (!spData.error && spData.seasons?.length) {
+                spSection.style.display = '';
+                function renderSeasonPhotoRows(seasons) {
+                  spList.innerHTML = seasons.map(s => {
+                    const thumbSrc = s.photo_path ? `${s.photo_path}?t=${Date.now()}` : null;
+                    const thumbHtml = thumbSrc
+                      ? `<img src="${thumbSrc}" style="width:56px;height:56px;object-fit:cover;border-radius:6px;border:1px solid var(--border);flex-shrink:0" alt="">`
+                      : `<div style="width:56px;height:56px;border-radius:6px;background:var(--surface2);border:1px solid var(--border);flex-shrink:0;display:flex;align-items:center;justify-content:center"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color:var(--text-muted)"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>`;
+                    return `<div class="sp-row" data-season-id="${s.season_id}" style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)">
+                      ${thumbHtml}
+                      <div style="flex:1;min-width:0">
+                        <div style="font-size:0.85em;font-weight:600">${escapeHtml(s.season_name)} <span style="color:var(--text-muted);font-weight:400">${escapeHtml(s.label)}</span></div>
+                        ${s.coach ? `<div style="font-size:0.8em;color:var(--text-muted)">Coach: ${escapeHtml(s.coach)}</div>` : ''}
+                      </div>
+                      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+                        <input type="file" class="sp-file" data-season-id="${s.season_id}" accept="image/png,image/jpeg,image/gif,image/webp" style="display:none">
+                        <button type="button" class="btn btn-secondary btn-sm sp-upload-btn" data-season-id="${s.season_id}">Upload</button>
+                        ${s.photo_path ? `<button type="button" class="btn btn-secondary btn-sm sp-remove-btn" data-season-id="${s.season_id}">Remove</button>` : ''}
+                        <span class="status-msg sp-status" data-season-id="${s.season_id}" style="font-size:0.8em"></span>
+                      </div>
+                    </div>`;
+                  }).join('');
+                  // Remove bottom border on last row
+                  const rows = spList.querySelectorAll('.sp-row');
+                  if (rows.length) rows[rows.length - 1].style.borderBottom = 'none';
+
+                  spList.querySelectorAll('.sp-upload-btn').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                      spList.querySelector(`.sp-file[data-season-id="${btn.dataset.seasonId}"]`).click();
+                    });
+                  });
+
+                  spList.querySelectorAll('.sp-file').forEach(input => {
+                    input.addEventListener('change', async () => {
+                      const file = input.files[0];
+                      if (!file) return;
+                      const sid  = input.dataset.seasonId;
+                      const statusEl = spList.querySelector(`.sp-status[data-season-id="${sid}"]`);
+                      const uploadBtn = spList.querySelector(`.sp-upload-btn[data-season-id="${sid}"]`);
+                      if (file.size > 1_048_576) {
+                        statusEl.textContent = 'Too large (max 1 MB)'; statusEl.style.color = '#e53935';
+                        input.value = ''; return;
+                      }
+                      uploadBtn.disabled = true; uploadBtn.textContent = 'Uploading…';
+                      try {
+                        const dataUrl = await new Promise((resolve, reject) => {
+                          const reader = new FileReader();
+                          reader.onload = e => resolve(e.target.result);
+                          reader.onerror = reject;
+                          reader.readAsDataURL(file);
+                        });
+                        const res = await fetch(`api/teams/${team.team_id}/seasons/${sid}/photo`, {
+                          method:  'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body:    JSON.stringify({ data: dataUrl }),
+                        });
+                        const result = await res.json();
+                        if (result.success) {
+                          const s = spData.seasons.find(x => String(x.season_id) === sid);
+                          if (s) s.photo_path = result.photo_path;
+                          renderSeasonPhotoRows(spData.seasons);
+                        } else {
+                          statusEl.textContent = result.error || 'Upload failed';
+                          statusEl.style.color = '#e53935';
+                          uploadBtn.disabled = false; uploadBtn.textContent = 'Upload';
+                        }
+                      } catch {
+                        statusEl.textContent = 'Upload failed'; statusEl.style.color = '#e53935';
+                        uploadBtn.disabled = false; uploadBtn.textContent = 'Upload';
+                      } finally {
+                        input.value = '';
+                      }
+                    });
+                  });
+
+                  spList.querySelectorAll('.sp-remove-btn').forEach(btn => {
+                    btn.addEventListener('click', async () => {
+                      const sid = btn.dataset.seasonId;
+                      if (!confirm('Remove photo for this season?')) return;
+                      btn.disabled = true;
+                      try {
+                        const res    = await fetch(`api/teams/${team.team_id}/seasons/${sid}/photo`, { method: 'DELETE' });
+                        const result = await res.json();
+                        if (result.success) {
+                          const s = spData.seasons.find(x => String(x.season_id) === sid);
+                          if (s) s.photo_path = null;
+                          renderSeasonPhotoRows(spData.seasons);
+                        } else {
+                          const statusEl = spList.querySelector(`.sp-status[data-season-id="${sid}"]`);
+                          statusEl.textContent = result.error || 'Remove failed'; statusEl.style.color = '#e53935';
+                          btn.disabled = false;
+                        }
+                      } catch {
+                        btn.disabled = false;
+                      }
+                    });
+                  });
+                }
+                renderSeasonPhotoRows(spData.seasons);
+              }
+            } catch {}
           }
         } catch {}
       }
@@ -629,10 +840,11 @@ const pages = {
         e.preventDefault();
         const btn  = document.getElementById('tf-save');
         const body = {
-          name:     document.getElementById('tf-name').value.trim(),
-          abbrev:   document.getElementById('tf-abbrev').value.trim(),
-          nickname: document.getElementById('tf-nickname').value.trim(),
-          gender:   document.getElementById('tf-gender').value,
+          name:          document.getElementById('tf-name').value.trim(),
+          abbrev:        document.getElementById('tf-abbrev').value.trim(),
+          nickname:      document.getElementById('tf-nickname').value.trim(),
+          gender:        document.getElementById('tf-gender').value,
+          external_code: document.getElementById('tf-external-code').value.trim(),
         };
         if (!body.name) { showStatus('tf-status', 'error', 'Team name is required.'); return; }
         btn.disabled = true; btn.textContent = 'Saving…';
@@ -3509,6 +3721,47 @@ const pages = {
           </div>
           <div class="status-msg" id="init-db-status"></div>
         </div>
+        <div class="card">
+          <h3 class="section-title">API Tokens</h3>
+          <p style="font-size:0.85em;color:var(--text-muted);margin:0 0 12px">
+            Read-scoped tokens allow external services (e.g. TeamManager) to access public endpoints via <code>X-Api-Key</code>.
+          </p>
+          <div id="tok-list"></div>
+          <div class="form-actions" style="margin-top:10px">
+            <button type="button" class="btn btn-secondary" id="tok-new-btn">New Token</button>
+          </div>
+          <div id="tok-form" style="display:none;margin-top:14px">
+            <div class="two-col">
+              <div class="form-group">
+                <label for="tok-label">Label</label>
+                <input type="text" id="tok-label" maxlength="100" autocomplete="off" placeholder="e.g. TeamManager plugin">
+              </div>
+              <div class="form-group">
+                <label for="tok-scope">Scope</label>
+                <select id="tok-scope">
+                  <option value="read">read</option>
+                  <option value="admin">admin</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-actions">
+              <button type="button" class="btn btn-primary" id="tok-create-btn">Generate Token</button>
+              <button type="button" class="btn btn-secondary" id="tok-cancel-btn">Cancel</button>
+            </div>
+          </div>
+          <div id="tok-reveal" style="display:none;margin-top:14px">
+            <p style="font-size:0.85em;color:var(--text-muted);margin:0 0 6px">
+              Copy this token now — it will not be shown again.
+            </p>
+            <div style="display:flex;gap:8px;align-items:center">
+              <input type="text" id="tok-value" readonly
+                     style="font-family:monospace;font-size:0.8em;flex:1;background:var(--surface2);color:var(--text)">
+              <button type="button" class="btn btn-secondary" id="tok-copy-btn">Copy</button>
+            </div>
+            <div class="status-msg" id="tok-copy-status"></div>
+          </div>
+          <div class="status-msg" id="tok-status"></div>
+        </div>
       `;
     },
 
@@ -3650,6 +3903,107 @@ const pages = {
         } finally {
           btn.disabled = false;
           btn.textContent = 'Save Settings';
+        }
+      });
+
+      // ── API Tokens ────────────────────────────────────────────────────────────
+      const tokList    = document.getElementById('tok-list');
+      const tokForm    = document.getElementById('tok-form');
+      const tokReveal  = document.getElementById('tok-reveal');
+
+      async function loadTokens() {
+        try {
+          const data = await fetch('api/tokens').then(r => r.json());
+          const tokens = data.tokens || [];
+          if (!tokens.length) {
+            tokList.innerHTML = '<p style="font-size:0.85em;color:var(--text-muted);margin:0">No tokens yet.</p>';
+            return;
+          }
+          tokList.innerHTML = `
+            <table class="data-table" style="font-size:0.85em">
+              <thead><tr>
+                <th>Label</th><th>Scope</th><th>Created</th><th>Last Used</th><th></th>
+              </tr></thead>
+              <tbody>
+                ${tokens.map(t => `
+                  <tr>
+                    <td>${escapeHtml(t.label)}</td>
+                    <td><code>${escapeHtml(t.scope)}</code></td>
+                    <td>${t.created_at ? t.created_at.slice(0, 10) : ''}</td>
+                    <td>${t.last_used_at ? t.last_used_at.slice(0, 10) : '<span style="color:var(--text-muted)">never</span>'}</td>
+                    <td><button class="btn btn-danger btn-sm tok-revoke" data-id="${t.token_id}" style="padding:2px 8px;font-size:0.8em">Revoke</button></td>
+                  </tr>`).join('')}
+              </tbody>
+            </table>`;
+        } catch {
+          tokList.innerHTML = '<p style="font-size:0.85em;color:var(--text-muted);margin:0">Could not load tokens.</p>';
+        }
+      }
+      await loadTokens();
+
+      document.getElementById('tok-new-btn').addEventListener('click', () => {
+        tokForm.style.display = 'block';
+        tokReveal.style.display = 'none';
+        document.getElementById('tok-label').value = '';
+        document.getElementById('tok-scope').value = 'read';
+        document.getElementById('tok-new-btn').style.display = 'none';
+      });
+
+      document.getElementById('tok-cancel-btn').addEventListener('click', () => {
+        tokForm.style.display = 'none';
+        document.getElementById('tok-new-btn').style.display = '';
+      });
+
+      document.getElementById('tok-create-btn').addEventListener('click', async () => {
+        const label = document.getElementById('tok-label').value.trim();
+        const scope = document.getElementById('tok-scope').value;
+        if (!label) { showStatus('tok-status', 'error', 'Label is required.'); return; }
+        const btn = document.getElementById('tok-create-btn');
+        btn.disabled = true; btn.textContent = 'Generating…';
+        try {
+          const res  = await fetch('api/tokens', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ label, scope }),
+          });
+          const data = await res.json();
+          if (data.token) {
+            tokForm.style.display = 'none';
+            tokReveal.style.display = 'block';
+            document.getElementById('tok-value').value = data.token;
+            document.getElementById('tok-new-btn').style.display = '';
+            await loadTokens();
+          } else {
+            showStatus('tok-status', 'error', data.error || 'Failed to create token.');
+          }
+        } catch {
+          showStatus('tok-status', 'error', 'Request failed.');
+        } finally {
+          btn.disabled = false; btn.textContent = 'Generate Token';
+        }
+      });
+
+      document.getElementById('tok-copy-btn').addEventListener('click', () => {
+        const val = document.getElementById('tok-value').value;
+        navigator.clipboard.writeText(val).then(() => {
+          showStatus('tok-copy-status', 'success', 'Copied!');
+        }).catch(() => {
+          showStatus('tok-copy-status', 'error', 'Copy failed — select and copy manually.');
+        });
+      });
+
+      tokList.addEventListener('click', async e => {
+        const btn = e.target.closest('.tok-revoke');
+        if (!btn) return;
+        if (!confirm('Revoke this token? Any service using it will lose access immediately.')) return;
+        const id = parseInt(btn.dataset.id);
+        btn.disabled = true;
+        try {
+          await fetch(`api/tokens/${id}`, { method: 'DELETE' });
+          await loadTokens();
+        } catch {
+          showStatus('tok-status', 'error', 'Revoke failed.');
+          btn.disabled = false;
         }
       });
     }

@@ -484,17 +484,20 @@ if ($tm_atts['recordtype'] === 'career_totals') {
 
 ## Suggested Implementation Order
 
-1. **StatManager:** Add `external_code` to `teams` table; expose in `GET /api/teams`.
-2. **StatManager:** Add `label` field to all season responses.
-3. **StatManager:** Implement `api_tokens` table, `requireReadToken` middleware,
+1. ✅ **StatManager:** Add `external_code` to `teams` table; expose in `GET /api/teams`.
+2. ✅ **StatManager:** Add `label` field to all season responses.
+3. ✅ **StatManager:** Implement `api_tokens` table, `requireReadToken` middleware,
    and Tokens tab in Settings UI.
-4. **StatManager:** Implement `/api/public/teams/:id/roster`,
+4. ✅ **StatManager:** Implement `/api/public/teams/:id/roster`,
    `/api/public/teams/:id/schedule`, and `/api/public/games/:id/boxscore`.
-5. **TeamManager:** Implement `StatManagerApiClient`, update `createTeamRoster()`
+   Also added: `/api/public/teams?code=` and `/api/public/seasons?team_id=&label=`
+   (needed by `StatManagerApiClient::resolveTeamId()` / `resolveSeasonId()`).
+5. ✅ **TeamManager:** Implement `StatManagerApiClient`, update `createTeamRoster()`
    and `createTeamSchedule()`, add `[TM_Boxscore]` shortcode, update Settings UI.
-6. **StatManager:** Implement `/api/public/stats/season` and
+   Removed `class-stats-manager.php` and `class-team.php` dependencies.
+6. ✅ **StatManager:** Implement `/api/public/stats/season` and
    `/api/public/stats/career`.
-7. **TeamManager:** Update `createStatsTable()` to use new stats endpoints.
+7. ✅ **TeamManager:** Update `createStatsTable()` to use new stats endpoints.
    Remove `mysqli` dependency and old WordPress options.
 8. **Data:** Run DakStats XML imports for all seasons via the StatManager Import
    wizard (creates KVHS team and 2013+ data).
@@ -503,3 +506,241 @@ if ($tm_atts['recordtype'] === 'career_totals') {
    exists from step 8; script only creates players and season records as needed.
 10. **Cleanup:** Decommission direct DB access from the plugin. Confirm
     `kvhs_basketball` / `dakstats_history` are no longer needed by TeamManager.
+
+---
+
+## StatManager Fixes Required for Stats Endpoints (Step 6 follow-up)
+
+Discovered during TeamManager Step 7 implementation. The `/api/public/stats/season`
+and `/api/public/stats/career` endpoints need the following changes before
+`createStatsTable()` will work correctly.
+
+### 1. Add `class` field to both endpoints
+
+`createStatsTable()` uses a `class` field (player graduation year) to apply the
+`ActivePlayer` CSS class to current players. Neither endpoint currently returns it.
+
+**Career endpoint** — add to SELECT and GROUP BY:
+```js
+MAX(ps.year) AS class,
+```
+
+**Season endpoint** — add to SELECT and GROUP BY:
+```js
+ps.year AS class,
+```
+
+`player_seasons.year` stores the 4-digit graduation year (e.g. `2026`), populated
+during DakStats XML import from `RIGHT(MISCLINE1, 4)`.
+
+### 2. Rename `seasons_played` → `seasons` in career endpoint
+
+The PHP `extracols` allowlist uses `'seasons'` (matching the old `career_totals`
+view column name). The career endpoint currently returns `seasons_played`.
+
+Change the SELECT alias:
+```js
+// before
+COUNT(DISTINCT ps.season_id) AS seasons_played,
+// after
+COUNT(DISTINCT ps.season_id) AS seasons,
+```
+
+Also add `'seasons'` to `STAT_ALLOWLIST` so it can be used as a `keystat` or
+`constraint` value:
+```js
+const STAT_ALLOWLIST = new Set([
+  'pts','rebs','assists','steals','blocks','Played','ppg','eff','FGP','3PP',
+  'fouls','rpg','bpg','seasons','m3p'
+]);
+```
+
+### 3. Add `m3p` field to both endpoints
+
+`m3p` (3-pointers made) is used in existing shortcodes on the site. Add to both
+endpoints' SELECT and to `STAT_ALLOWLIST`:
+
+```js
+COALESCE(SUM(b.fgm3), 0) AS m3p,
+```
+
+The `statRef()` function does not need updating — `m3p` doesn't start with a digit.
+
+---
+
+## StatManager Fixes Required for Schedule Endpoint (Step 4 follow-up)
+
+### 1. Return actual game location alongside Home/Away indicator
+
+`GET /api/public/teams/:id/schedule` currently returns `location` as a computed
+`'Home'`/`'Away'` string. The actual venue name stored in `competitions.location`
+is never returned, so `[TM_TeamSchedule]` displays "Home" or "Away" instead of
+the real location.
+
+**Fix** — split into two fields in the SELECT:
+
+```js
+CASE WHEN c.team_id = ? THEN 'Home' ELSE 'Away' END  AS vh,
+c.location                                             AS location,
+```
+
+The response shape becomes:
+```json
+{
+  "vh": "Home",
+  "location": "KVHS Gymnasium",
+  ...
+}
+```
+
+**TeamManager PHP change** (after StatManager is updated) — `createTeamSchedule()`
+currently outputs `$g['location']`. Update to display the venue and use `vh` for
+any Home/Away badge if desired:
+
+```php
+$output .= "<td>" . esc_html($g['location']) . "</td>";
+// optionally: "<span class='tm-vh'>" . esc_html($g['vh']) . "</span>"
+```
+
+No change is needed to the column headers — the "Location" header already matches.
+
+### 3. Add `nickname` to public teams endpoint
+
+`[TM_TeamName format="nickname"]` returns `$team['nickname']` from
+`GET /api/public/teams?code=`. The field is not currently in the SELECT.
+
+**Fix** — add `nickname` to the SELECT in the public teams handler:
+
+```js
+'SELECT team_id, name, abbrev, nickname, external_code FROM teams WHERE external_code = ?'
+```
+
+Until this lands, `format="nickname"` returns an empty string.
+
+### 2. Add `tournament_name` field to schedule endpoint
+
+`[TM_TeamSchedule]` displays a Tournament column. The column is always present but
+shows empty until the public schedule endpoint returns `tournament_name`.
+
+**Fix** — add a LEFT JOIN to `tournaments` in `GET /api/public/teams/:id/schedule`:
+
+```js
+LEFT JOIN tournaments trn ON trn.tournament_id = c.tournament_id
+```
+
+Add to SELECT:
+```js
+trn.name AS tournament_name,
+```
+
+Regular season games return `null` for `tournament_name`; tournament games return
+the tournament name string. The PHP side already handles the null case with
+`$g['tournament_name'] ?? ''`.
+
+---
+
+## StatManager Changes Required for Team Photo (TM_TeamPhoto)
+
+The `[TM_TeamPhoto]` shortcode displays the team photo for a given season. Photos
+are per-season (not per-team) because the team photo changes each year.
+
+### 1. Add `photo_path` to `team_seasons` table
+
+```sql
+ALTER TABLE team_seasons ADD COLUMN IF NOT EXISTS photo_path VARCHAR(255) NULL;
+```
+
+Photo upload should be wired into the StatManager team-season edit UI alongside the
+existing coach field.
+
+Store the path relative to StatManager's `public/` directory (e.g.
+`teams/photos/team-1-season-5.jpg`). StatManager already has the
+`POST /api/teams/:id/photo` endpoint that saves to `teams.photo_path` and the
+`public/teams/photos/` directory — replicate the same upload logic but write to
+`team_seasons.photo_path` instead.
+
+### 2. Expose `photo_path` in `GET /api/public/seasons`
+
+The plugin calls `GET /api/public/seasons?team_id=&label=` to resolve a season ID.
+Add `photo_path` to the SELECT so the same call returns the photo:
+
+```js
+SELECT ts.season_id, ts.coach, ts.active, ts.photo_path,
+       CONCAT(YEAR(s.start_date), '-', YEAR(s.end_date)) AS label
+FROM   team_seasons ts
+JOIN   seasons s ON s.season_id = ts.season_id
+WHERE  ts.team_id = ? AND CONCAT(YEAR(s.start_date), '-', YEAR(s.end_date)) = ?
+```
+
+### 3. How TeamManager PHP consumes it
+
+`StatManagerApiClient::getSeasonByLabel()` already caches the full season row as a
+WordPress transient. Once `photo_path` appears in the response, `createTeamPhoto()`
+will pick it up immediately via `$seasonData['photo_path']`.
+
+The photo URL is constructed by prepending the StatManager base URL:
+```php
+$client->getAssetUrl($seasonData['photo_path'])
+// → http://192.168.86.38:3000/teams/photos/team-1-season-5.jpg
+```
+
+**Note:** If the transient for an existing season is already cached without
+`photo_path`, clear it by incrementing the transient key version (e.g., rename
+`tm_season_` → `tm_season_v2_`) or flush WordPress transients manually after the
+StatManager update. The same pattern was used for the team transient (`tm_team_v2_`).
+
+---
+
+## StatManager Changes Required for Season List (TM_SeasonList)
+
+The `[TM_SeasonList]` shortcode displays a table of all seasons for a team with
+head coach and final W-L record.
+
+### 1. ✅ Season list endpoint
+
+`GET /api/public/seasons?team_id=<id>` (no `label` param) returns all seasons for
+the team. Response uses `label` (not `name`) for the season string. Coach and
+`season_id` are also included. No new endpoint needed.
+
+### ~~1. New endpoint: `GET /api/public/teams/:id/seasons`~~
+
+```
+GET /api/public/teams/:id/seasons
+X-Api-Key: <read-token>
+```
+
+Response — array of season objects, newest first:
+
+```json
+[
+  {
+    "season_id": 58,
+    "name": "2025-2026",
+    "coach": "Ryan Vaughan"
+  },
+  {
+    "season_id": 57,
+    "name": "2024-2025",
+    "coach": "Ryan Vaughan"
+  }
+]
+```
+
+Query (source tables: `team_seasons` JOIN `seasons`):
+
+```sql
+SELECT   ts.season_id,
+         s.name,
+         ts.coach
+FROM     team_seasons ts
+JOIN     seasons s ON s.season_id = ts.season_id
+WHERE    ts.team_id = ?
+ORDER BY s.start_date DESC
+```
+
+### 2. Season W-L record
+
+The W-L record column is derived from the **existing**
+`GET /api/public/teams/:id/schedule` endpoint — the plugin reads the `record` field
+from the last played game of each season. No new field is needed on the seasons
+endpoint unless the schedule endpoint is found not to return `record`.

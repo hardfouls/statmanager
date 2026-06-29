@@ -4,6 +4,7 @@ const path = require('path');
 const ini = require('ini');
 const mysql   = require('mysql2/promise');
 const bcrypt  = require('bcryptjs');
+const crypto  = require('crypto');
 const session = require('express-session');
 
 const app = express();
@@ -18,7 +19,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 function getOrCreateSessionSecret() {
   const cfg = readConfig();
   if (cfg.server?.session_secret) return cfg.server.session_secret;
-  const secret = require('crypto').randomBytes(32).toString('hex');
+  const secret = crypto.randomBytes(32).toString('hex');
   cfg.server = Object.assign({}, cfg.server, { session_secret: secret });
   try { writeConfig(cfg); } catch {}
   return secret;
@@ -35,15 +36,18 @@ app.use(session({
 app.use('/api', (req, res, next) => {
   const p = req.path;
   if (p === '/version' || p.startsWith('/auth/') ||
-      p.startsWith('/settings') || p === '/db/create') return next();
+      p.startsWith('/settings') || p === '/db/create' ||
+      p.startsWith('/public/')) return next();
   if (!req.session?.userId) return res.status(401).json({ error: 'Unauthorized' });
   next();
 });
 
 // ── Startup migration ─────────────────────────────────────────────────────────
 (async () => {
-  const iconsDir = path.join(__dirname, 'public', 'leagues', 'icons');
-  if (!fs.existsSync(iconsDir)) fs.mkdirSync(iconsDir, { recursive: true });
+  const iconsDir  = path.join(__dirname, 'public', 'leagues', 'icons');
+  const photosDir = path.join(__dirname, 'public', 'teams', 'photos');
+  if (!fs.existsSync(iconsDir))  fs.mkdirSync(iconsDir,  { recursive: true });
+  if (!fs.existsSync(photosDir)) fs.mkdirSync(photosDir, { recursive: true });
   if (!fs.existsSync(XML_ARCHIVE_DIR)) fs.mkdirSync(XML_ARCHIVE_DIR, { recursive: true });
   let conn;
   try {
@@ -162,6 +166,9 @@ app.use('/api', (req, res, next) => {
       CONSTRAINT fk_playbyplay_team   FOREIGN KEY (team_id)   REFERENCES teams (team_id),
       CONSTRAINT fk_playbyplay_player FOREIGN KEY (player_id) REFERENCES players (player_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+    await migrate(`ALTER TABLE teams ADD COLUMN IF NOT EXISTS external_code VARCHAR(20) NULL`);
+    await migrate(`ALTER TABLE teams ADD COLUMN IF NOT EXISTS photo_path    VARCHAR(255) NULL`);
+    await migrate(`ALTER TABLE team_seasons ADD COLUMN IF NOT EXISTS photo_path VARCHAR(255) NULL`);
     await migrate(`ALTER TABLE xml_uploads
       ADD COLUMN IF NOT EXISTS uploaded_by_username VARCHAR(64)  NULL,
       ADD COLUMN IF NOT EXISTS uploaded_by_name     VARCHAR(130) NULL`);
@@ -184,6 +191,16 @@ app.use('/api', (req, res, next) => {
       CONSTRAINT fk_uploads_competition
         FOREIGN KEY (competition_id) REFERENCES competitions (competition_id)
         ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+    await migrate(`CREATE TABLE IF NOT EXISTS api_tokens (
+      token_id     INT UNSIGNED         NOT NULL AUTO_INCREMENT,
+      token_hash   VARCHAR(64)          NOT NULL,
+      label        VARCHAR(100)         NOT NULL,
+      scope        ENUM('read','admin') NOT NULL DEFAULT 'read',
+      created_at   DATETIME             NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      last_used_at DATETIME             NULL,
+      PRIMARY KEY (token_id),
+      UNIQUE KEY ux_token_hash (token_hash)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
   } finally {
     await conn.end().catch(() => {});
@@ -553,6 +570,84 @@ async function dbConnect() {
   return mysql.createConnection(connConfig);
 }
 
+// ── API token middleware ───────────────────────────────────────────────────────
+async function requireReadToken(req, res, next) {
+  const raw = req.headers['x-api-key'];
+  if (!raw) return res.status(401).json({ error: 'missing token' });
+  const hash = crypto.createHash('sha256').update(raw).digest('hex');
+  let conn;
+  try {
+    conn = await dbConnect();
+    const [rows] = await conn.execute(
+      'SELECT token_id, scope FROM api_tokens WHERE token_hash = ?', [hash]
+    );
+    if (!rows.length) return res.status(401).json({ error: 'invalid token' });
+    if (rows[0].scope !== 'read' && rows[0].scope !== 'admin')
+      return res.status(403).json({ error: 'insufficient scope' });
+    // fire-and-forget last_used_at update
+    conn.execute('UPDATE api_tokens SET last_used_at = NOW() WHERE token_id = ?', [rows[0].token_id])
+      .catch(() => {});
+    next();
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  } finally {
+    await conn?.end().catch(() => {});
+  }
+}
+
+// ── Token management routes ────────────────────────────────────────────────────
+app.get('/api/tokens', async (req, res) => {
+  let conn;
+  try {
+    conn = await dbConnect();
+    const [rows] = await conn.execute(
+      'SELECT token_id, label, scope, created_at, last_used_at FROM api_tokens ORDER BY created_at DESC'
+    );
+    res.json({ tokens: rows });
+  } catch (err) {
+    res.json({ error: err.message });
+  } finally {
+    await conn?.end().catch(() => {});
+  }
+});
+
+app.post('/api/tokens', async (req, res) => {
+  const { label, scope } = req.body;
+  if (!label?.trim()) return res.status(400).json({ error: 'Label is required' });
+  const validScopes = ['read', 'admin'];
+  if (!validScopes.includes(scope)) return res.status(400).json({ error: 'Invalid scope' });
+  const raw  = crypto.randomBytes(32).toString('hex');
+  const hash = crypto.createHash('sha256').update(raw).digest('hex');
+  let conn;
+  try {
+    conn = await dbConnect();
+    const [result] = await conn.execute(
+      'INSERT INTO api_tokens (token_hash, label, scope) VALUES (?, ?, ?)',
+      [hash, label.trim(), scope]
+    );
+    res.json({ token_id: result.insertId, token: raw });
+  } catch (err) {
+    res.json({ error: err.message });
+  } finally {
+    await conn?.end().catch(() => {});
+  }
+});
+
+app.delete('/api/tokens/:id', async (req, res) => {
+  const id = parseInt(req.params.id);
+  if (!id) return res.status(400).json({ error: 'Invalid id' });
+  let conn;
+  try {
+    conn = await dbConnect();
+    await conn.execute('DELETE FROM api_tokens WHERE token_id = ?', [id]);
+    res.json({ success: true });
+  } catch (err) {
+    res.json({ error: err.message });
+  } finally {
+    await conn?.end().catch(() => {});
+  }
+});
+
 // ── Leagues CRUD ──────────────────────────────────────────────────────────────
 app.get('/api/leagues', async (req, res) => {
   let conn;
@@ -674,6 +769,7 @@ app.get('/api/leagues/:id', async (req, res) => {
 
     const [seasons] = await conn.execute(`
       SELECT s.season_id, s.name,
+        CONCAT(YEAR(s.start_date), '-', YEAR(s.end_date)) AS label,
         (SELECT COUNT(DISTINCT ts.team_id) FROM team_seasons ts WHERE ts.season_id = s.season_id)                             AS team_count,
         (SELECT COUNT(DISTINCT tsch.competition_id) FROM team_schedules tsch WHERE tsch.season_id = s.season_id)              AS game_count,
         (SELECT COUNT(DISTINCT ps.player_id) FROM player_seasons ps WHERE ps.season_id = s.season_id)                        AS player_count,
@@ -824,6 +920,7 @@ app.get('/api/seasons', async (req, res) => {
     conn = await dbConnect();
     const [rows] = await conn.execute(`
       SELECT s.*, l.name AS league_name,
+        CONCAT(YEAR(s.start_date), '-', YEAR(s.end_date)) AS label,
         (SELECT COUNT(*)
            FROM team_seasons ts WHERE ts.season_id = s.season_id)                       AS team_count,
         (SELECT COUNT(*)
@@ -852,6 +949,7 @@ app.get('/api/seasons/:id', async (req, res) => {
     conn = await dbConnect();
     const [[season]] = await conn.execute(`
       SELECT s.*, l.name AS league_name,
+        CONCAT(YEAR(s.start_date), '-', YEAR(s.end_date)) AS label,
         (SELECT COUNT(DISTINCT tsch.competition_id) FROM team_schedules tsch WHERE tsch.season_id = s.season_id)              AS game_count,
         (SELECT COUNT(DISTINCT b.competition_id)
            FROM boxscores b JOIN team_schedules tsch ON tsch.competition_id = b.competition_id WHERE tsch.season_id = s.season_id)  AS boxscore_count,
@@ -1052,7 +1150,7 @@ app.get('/api/teams', async (req, res) => {
     conn = await dbConnect();
     const [rows] = await conn.execute(`
       SELECT t.team_id, t.name, t.abbrev, t.nickname,
-             t.gender + 0 AS gender,
+             t.gender + 0 AS gender, t.external_code, t.photo_path,
              l.league_id  AS league_id,
              l.name AS league_name,
              (SELECT ts_r.coach
@@ -1074,7 +1172,7 @@ app.get('/api/teams', async (req, res) => {
       GROUP BY t.team_id, l.league_id
       UNION ALL
       SELECT t.team_id, t.name, t.abbrev, t.nickname,
-             t.gender + 0 AS gender,
+             t.gender + 0 AS gender, t.external_code, t.photo_path,
              NULL, NULL, NULL, 0, 0, NULL
       FROM teams t
       WHERE NOT EXISTS (SELECT 1 FROM team_seasons ts WHERE ts.team_id = t.team_id)
@@ -1174,6 +1272,33 @@ app.post('/api/teams/merge', async (req, res) => {
       // ── Migrate periods ────────────────────────────────────────────────
       await conn.execute('UPDATE periods SET team_id = ? WHERE team_id = ?', [masterId, id]);
 
+      // ── Migrate play-by-play ───────────────────────────────────────────
+      await conn.execute('UPDATE playbyplay SET team_id = ? WHERE team_id = ?', [masterId, id]);
+
+      // ── Migrate team_game_stats ────────────────────────────────────────
+      await conn.execute(
+        `DELETE tgs FROM team_game_stats tgs
+         INNER JOIN team_game_stats tgs2
+                 ON tgs2.team_id        = ?
+                AND tgs2.competition_id = tgs.competition_id
+                AND tgs2.period         = tgs.period
+         WHERE tgs.team_id = ?`,
+        [masterId, id]
+      );
+      await conn.execute('UPDATE team_game_stats SET team_id = ? WHERE team_id = ?', [masterId, id]);
+
+      // ── Migrate team_schedules ─────────────────────────────────────────
+      await conn.execute(
+        `DELETE tsch FROM team_schedules tsch
+         INNER JOIN team_schedules tsch2
+                 ON tsch2.team_id        = ?
+                AND tsch2.season_id      = tsch.season_id
+                AND tsch2.competition_id = tsch.competition_id
+         WHERE tsch.team_id = ?`,
+        [masterId, id]
+      );
+      await conn.execute('UPDATE team_schedules SET team_id = ? WHERE team_id = ?', [masterId, id]);
+
       // ── Migrate any remaining team_seasons not yet handled ────────────
       const [srcSeasons] = await conn.execute(
         'SELECT season_id, coach, active FROM team_seasons WHERE team_id = ?', [id]
@@ -1241,7 +1366,7 @@ app.post('/api/teams/merge', async (req, res) => {
 });
 
 app.put('/api/teams/:id', async (req, res) => {
-  const { name, abbrev, nickname, gender } = req.body;
+  const { name, abbrev, nickname, gender, external_code } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'Name is required' });
   const teamId = parseInt(req.params.id);
   const toBit  = v => (v === '' || v == null) ? null : parseInt(v);
@@ -1249,10 +1374,35 @@ app.put('/api/teams/:id', async (req, res) => {
   try {
     conn = await dbConnect();
     await conn.execute(
-      'UPDATE teams SET name=?, abbrev=?, nickname=?, gender=? WHERE team_id=?',
-      [name.trim(), abbrev || null, nickname || null, toBit(gender), teamId]
+      'UPDATE teams SET name=?, abbrev=?, nickname=?, gender=?, external_code=? WHERE team_id=?',
+      [name.trim(), abbrev || null, nickname || null, toBit(gender), external_code?.trim() || null, teamId]
     );
     res.json({ success: true });
+  } catch (err) {
+    res.json({ error: err.message });
+  } finally {
+    await conn?.end().catch(() => {});
+  }
+});
+
+app.get('/api/teams/:id/seasons', async (req, res) => {
+  const teamId = parseInt(req.params.id);
+  if (!teamId) return res.status(400).json({ error: 'Invalid id' });
+  let conn;
+  try {
+    conn = await dbConnect();
+    const [rows] = await conn.execute(`
+      SELECT ts.season_id, ts.coach, ts.active, ts.photo_path,
+             s.name AS season_name,
+             CONCAT(YEAR(s.start_date), '-', YEAR(s.end_date)) AS label,
+             l.name AS league_name
+      FROM team_seasons ts
+      JOIN seasons s ON s.season_id = ts.season_id
+      JOIN leagues  l ON l.league_id = s.league_id
+      WHERE ts.team_id = ?
+      ORDER BY s.start_date DESC
+    `, [teamId]);
+    res.json({ seasons: rows });
   } catch (err) {
     res.json({ error: err.message });
   } finally {
@@ -1362,6 +1512,128 @@ app.delete('/api/teams/:teamId/seasons/:seasonId', async (req, res) => {
       );
       if (!anyGames) await conn.execute('DELETE FROM teams WHERE team_id=?', [teamId]);
     }
+    res.json({ success: true });
+  } catch (err) {
+    res.json({ error: err.message });
+  } finally {
+    await conn?.end().catch(() => {});
+  }
+});
+
+app.post('/api/teams/:teamId/seasons/:seasonId/photo', async (req, res) => {
+  const teamId   = parseInt(req.params.teamId);
+  const seasonId = parseInt(req.params.seasonId);
+  if (!teamId || !seasonId) return res.status(400).json({ error: 'Invalid id' });
+  const { data } = req.body;
+  if (!data) return res.status(400).json({ error: 'No image data provided' });
+
+  const match = data.match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/s);
+  if (!match) return res.status(400).json({ error: 'Invalid image data format' });
+  const [, mime, b64] = match;
+  const ext = ICON_EXTS[mime];
+  if (!ext) return res.status(400).json({ error: 'Unsupported type. Use PNG, JPG, GIF, WebP, or SVG.' });
+  if (b64.length > 1_400_000) return res.status(400).json({ error: 'Image too large (max ~1 MB)' });
+
+  const photosDir = path.join(__dirname, 'public', 'teams', 'photos');
+  if (!fs.existsSync(photosDir)) fs.mkdirSync(photosDir, { recursive: true });
+  const prefix = `team-${teamId}-season-${seasonId}.`;
+  for (const f of fs.readdirSync(photosDir)) {
+    if (f.startsWith(prefix)) fs.unlinkSync(path.join(photosDir, f));
+  }
+
+  const filename  = `team-${teamId}-season-${seasonId}.${ext}`;
+  fs.writeFileSync(path.join(photosDir, filename), Buffer.from(b64, 'base64'));
+  const photoPath = `teams/photos/${filename}`;
+
+  let conn;
+  try {
+    conn = await dbConnect();
+    await conn.execute(
+      'UPDATE team_seasons SET photo_path = ? WHERE team_id = ? AND season_id = ?',
+      [photoPath, teamId, seasonId]
+    );
+    res.json({ success: true, photo_path: photoPath });
+  } catch (err) {
+    res.json({ error: err.message });
+  } finally {
+    await conn?.end().catch(() => {});
+  }
+});
+
+app.delete('/api/teams/:teamId/seasons/:seasonId/photo', async (req, res) => {
+  const teamId   = parseInt(req.params.teamId);
+  const seasonId = parseInt(req.params.seasonId);
+  if (!teamId || !seasonId) return res.status(400).json({ error: 'Invalid id' });
+  let conn;
+  try {
+    conn = await dbConnect();
+    const [[row]] = await conn.execute(
+      'SELECT photo_path FROM team_seasons WHERE team_id = ? AND season_id = ?',
+      [teamId, seasonId]
+    );
+    if (row?.photo_path) {
+      const fp = path.join(__dirname, 'public', row.photo_path);
+      if (fs.existsSync(fp)) fs.unlinkSync(fp);
+    }
+    await conn.execute(
+      'UPDATE team_seasons SET photo_path = NULL WHERE team_id = ? AND season_id = ?',
+      [teamId, seasonId]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    res.json({ error: err.message });
+  } finally {
+    await conn?.end().catch(() => {});
+  }
+});
+
+app.post('/api/teams/:id/photo', async (req, res) => {
+  const id = parseInt(req.params.id);
+  if (!id) return res.status(400).json({ error: 'Invalid id' });
+  const { data } = req.body;
+  if (!data) return res.status(400).json({ error: 'No image data provided' });
+
+  const match = data.match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/s);
+  if (!match) return res.status(400).json({ error: 'Invalid image data format' });
+  const [, mime, b64] = match;
+  const ext = ICON_EXTS[mime];
+  if (!ext) return res.status(400).json({ error: 'Unsupported type. Use PNG, JPG, GIF, WebP, or SVG.' });
+  if (b64.length > 1_400_000) return res.status(400).json({ error: 'Image too large (max ~1 MB)' });
+
+  const photosDir = path.join(__dirname, 'public', 'teams', 'photos');
+  if (!fs.existsSync(photosDir)) fs.mkdirSync(photosDir, { recursive: true });
+  for (const f of fs.readdirSync(photosDir)) {
+    if (f.startsWith(`team-${id}.`)) fs.unlinkSync(path.join(photosDir, f));
+  }
+
+  const filename  = `team-${id}.${ext}`;
+  fs.writeFileSync(path.join(photosDir, filename), Buffer.from(b64, 'base64'));
+  const photoPath = `teams/photos/${filename}`;
+
+  let conn;
+  try {
+    conn = await dbConnect();
+    await conn.execute('UPDATE teams SET photo_path = ? WHERE team_id = ?', [photoPath, id]);
+    res.json({ success: true, photo_path: photoPath });
+  } catch (err) {
+    res.json({ error: err.message });
+  } finally {
+    await conn?.end().catch(() => {});
+  }
+});
+
+app.delete('/api/teams/:id/photo', async (req, res) => {
+  const id = parseInt(req.params.id);
+  if (!id) return res.status(400).json({ error: 'Invalid id' });
+  let conn;
+  try {
+    conn = await dbConnect();
+    const [[row]] = await conn.execute('SELECT photo_path FROM teams WHERE team_id = ?', [id]);
+    if (row?.photo_path) {
+      const fp = path.join(__dirname, 'public', row.photo_path);
+      if (fs.existsSync(fp)) fs.unlinkSync(fp);
+    }
+    await conn.execute('UPDATE teams SET photo_path = NULL WHERE team_id = ?', [id]);
     res.json({ success: true });
   } catch (err) {
     res.json({ error: err.message });
@@ -1720,7 +1992,7 @@ app.delete('/api/players/:id', async (req, res) => {
   }
 });
 
-app.get('/api/games/:id/boxscore', async (req, res) => {
+async function handleBoxscore(req, res) {
   const compId = parseInt(req.params.id);
   let conn;
   try {
@@ -1803,7 +2075,9 @@ app.get('/api/games/:id/boxscore', async (req, res) => {
     res.json({ competition: comp, team, opponent, periodRows });
   } catch (err) { res.json({ error: err.message }); }
   finally { await conn?.end().catch(() => {}); }
-});
+}
+
+app.get('/api/games/:id/boxscore', handleBoxscore);
 
 app.get('/api/games/:id/playbyplay', async (req, res) => {
   const compId = parseInt(req.params.id);
@@ -1824,6 +2098,267 @@ app.get('/api/games/:id/playbyplay', async (req, res) => {
     res.json(plays);
   } catch (err) { res.json({ error: err.message }); }
   finally { await conn?.end().catch(() => {}); }
+});
+
+// ── Public API (token-authenticated, no session required) ─────────────────────
+
+app.get('/api/public/teams/:id/roster', requireReadToken, async (req, res) => {
+  const teamId   = parseInt(req.params.id);
+  const seasonId = parseInt(req.query.season_id);
+  if (!teamId || !seasonId) return res.status(400).json({ error: 'team_id and season_id are required' });
+  let conn;
+  try {
+    conn = await dbConnect();
+    const [rows] = await conn.execute(`
+      SELECT p.player_id, p.first_name, p.last_name,
+             CAST(ps.jersey_number AS CHAR) AS jersey_number,
+             p.position, ps.height, ps.year AS grad_year
+      FROM players p
+      JOIN player_seasons ps ON ps.player_id = p.player_id
+      WHERE ps.team_id = ? AND ps.season_id = ?
+      ORDER BY ps.jersey_number, p.last_name
+    `, [teamId, seasonId]);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  } finally {
+    await conn?.end().catch(() => {});
+  }
+});
+
+app.get('/api/public/teams/:id/schedule', requireReadToken, async (req, res) => {
+  const teamId   = parseInt(req.params.id);
+  const seasonId = parseInt(req.query.season_id);
+  if (!teamId || !seasonId) return res.status(400).json({ error: 'team_id and season_id are required' });
+  let conn;
+  try {
+    conn = await dbConnect();
+    const [rows] = await conn.execute(`
+      SELECT c.competition_id,
+             DATE(c.start_time)                                                    AS game_date,
+             TIME_FORMAT(TIME(c.start_time), '%H:%i')                             AS game_time,
+             CASE WHEN c.team_id = ? THEN 'Home' ELSE 'Away' END                  AS vh,
+             c.location                                                             AS location,
+             CASE WHEN c.team_id = ? THEN opp.name ELSE ht.name END               AS opponent,
+             team_pts.score                                                        AS pts_for,
+             opp_pts.score                                                         AS pts_against,
+             trn.name                                                               AS tournament_name
+      FROM competitions c
+      JOIN team_schedules tsch ON tsch.competition_id = c.competition_id
+                               AND tsch.season_id = ? AND tsch.team_id = ?
+      JOIN teams ht  ON ht.team_id  = c.team_id
+      JOIN teams opp ON opp.team_id = c.opponent_id
+      LEFT JOIN tournaments trn ON trn.tournament_id = c.tournament_id
+      LEFT JOIN (SELECT competition_id, team_id, SUM(score) AS score
+                 FROM periods GROUP BY competition_id, team_id) team_pts
+             ON team_pts.competition_id = c.competition_id AND team_pts.team_id = ?
+      LEFT JOIN (SELECT competition_id, team_id, SUM(score) AS score
+                 FROM periods GROUP BY competition_id, team_id) opp_pts
+             ON opp_pts.competition_id = c.competition_id
+            AND opp_pts.team_id = CASE WHEN c.team_id = ? THEN c.opponent_id ELSE c.team_id END
+      ORDER BY c.start_time
+    `, [teamId, teamId, seasonId, teamId, teamId, teamId]);
+
+    let wins = 0, losses = 0;
+    const games = rows.map(g => {
+      let result = null, record = null;
+      if (g.pts_for != null && g.pts_against != null) {
+        if (Number(g.pts_for) > Number(g.pts_against)) { result = 'W'; wins++; }
+        else { result = 'L'; losses++; }
+        record = `${wins}-${losses}`;
+      }
+      return { ...g, result, record };
+    });
+    res.json(games);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  } finally {
+    await conn?.end().catch(() => {});
+  }
+});
+
+app.get('/api/public/games/:id/boxscore', requireReadToken, handleBoxscore);
+
+app.get('/api/public/teams', requireReadToken, async (req, res) => {
+  const { code } = req.query;
+  if (!code) return res.status(400).json({ error: 'code is required' });
+  let conn;
+  try {
+    conn = await dbConnect();
+    const [rows] = await conn.execute(
+      'SELECT team_id, name, abbrev, nickname, external_code FROM teams WHERE external_code = ?',
+      [code]
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  } finally {
+    await conn?.end().catch(() => {});
+  }
+});
+
+app.get('/api/public/seasons', requireReadToken, async (req, res) => {
+  const teamId = parseInt(req.query.team_id);
+  const { label } = req.query;
+  if (!teamId) return res.status(400).json({ error: 'team_id is required' });
+  let conn;
+  try {
+    conn = await dbConnect();
+    const baseQuery = `
+      SELECT ts.season_id, ts.coach, ts.active, ts.photo_path,
+             CONCAT(YEAR(s.start_date), '-', YEAR(s.end_date)) AS label
+      FROM team_seasons ts
+      JOIN seasons s ON s.season_id = ts.season_id
+      WHERE ts.team_id = ?`;
+
+    const [rows] = label
+      ? await conn.execute(baseQuery + ` AND CONCAT(YEAR(s.start_date), '-', YEAR(s.end_date)) = ?`, [teamId, label])
+      : await conn.execute(baseQuery + ` ORDER BY s.start_date DESC`, [teamId]);
+
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  } finally {
+    await conn?.end().catch(() => {});
+  }
+});
+
+const STAT_ALLOWLIST = new Set([
+  'pts','rebs','assists','steals','blocks','Played','ppg','eff','FGP','3PP','fouls','rpg','bpg','seasons','m3p'
+]);
+
+// Wrap names starting with a digit so they're safe in ORDER BY / HAVING
+function statRef(name) {
+  return /^\d/.test(name) ? `\`${name}\`` : name;
+}
+
+app.get('/api/public/stats/season', requireReadToken, async (req, res) => {
+  const teamId   = parseInt(req.query.team_id);
+  const seasonId = parseInt(req.query.season_id);
+  const keystat  = req.query.keystat  || 'pts';
+  const mintotal = parseFloat(req.query.mintotal) || 0;
+  const mingames = parseInt(req.query.mingames)   || 0;
+  const maxrows  = parseInt(req.query.maxrows)    || 0;
+
+  if (!teamId || !seasonId) return res.status(400).json({ error: 'team_id and season_id are required' });
+  if (!STAT_ALLOWLIST.has(keystat)) return res.status(400).json({ error: 'invalid keystat' });
+
+  const having = [];
+  const havingParams = [];
+  if (mingames > 0) { having.push('Played >= ?');              havingParams.push(mingames); }
+  if (mintotal > 0) { having.push(`${statRef(keystat)} >= ?`); havingParams.push(mintotal); }
+  const havingClause = having.length ? `HAVING ${having.join(' AND ')}` : '';
+  const limitClause  = maxrows > 0 ? `LIMIT ${maxrows}` : '';
+
+  let conn;
+  try {
+    conn = await dbConnect();
+    const [rows] = await conn.execute(`
+      SELECT
+        p.player_id, p.first_name, p.last_name,
+        CAST(ps.jersey_number AS CHAR)                                              AS jersey_number,
+        ps.year                                                                     AS class,
+        COUNT(DISTINCT b.competition_id)                                            AS Played,
+        COALESCE(SUM(b.tp),   0)                                                    AS pts,
+        COALESCE(SUM(b.reb),  0)                                                    AS rebs,
+        COALESCE(SUM(b.ast),  0)                                                    AS assists,
+        COALESCE(SUM(b.stl),  0)                                                    AS steals,
+        COALESCE(SUM(b.blk),  0)                                                    AS blocks,
+        COALESCE(SUM(b.pf),   0)                                                    AS fouls,
+        COALESCE(SUM(b.fgm3), 0)                                                    AS m3p,
+        ROUND(SUM(b.tp)   / NULLIF(COUNT(DISTINCT b.competition_id), 0), 1)         AS ppg,
+        ROUND(SUM(b.reb)  / NULLIF(COUNT(DISTINCT b.competition_id), 0), 1)         AS rpg,
+        ROUND(SUM(b.blk)  / NULLIF(COUNT(DISTINCT b.competition_id), 0), 1)         AS bpg,
+        ROUND(SUM(b.fgm)  / NULLIF(SUM(b.fga),  0) * 100, 1)                       AS FGP,
+        ROUND(SUM(b.fgm3) / NULLIF(SUM(b.fga3), 0) * 100, 1)                       AS \`3PP\`,
+        (COALESCE(SUM(b.tp),  0) + COALESCE(SUM(b.reb), 0) + COALESCE(SUM(b.ast), 0)
+          + COALESCE(SUM(b.stl), 0) + COALESCE(SUM(b.blk), 0)
+          - (COALESCE(SUM(b.fga), 0) - COALESCE(SUM(b.fgm), 0))
+          - (COALESCE(SUM(b.fta), 0) - COALESCE(SUM(b.ftm), 0))
+          - COALESCE(SUM(b.\`to\`), 0))                                              AS eff
+      FROM player_seasons ps
+      JOIN players p ON p.player_id = ps.player_id
+      LEFT JOIN team_schedules tsch ON tsch.team_id = ps.team_id AND tsch.season_id = ps.season_id
+      LEFT JOIN boxscores b ON b.competition_id = tsch.competition_id AND b.player_id = ps.player_id
+      WHERE ps.team_id = ? AND ps.season_id = ?
+      GROUP BY p.player_id, p.first_name, p.last_name, ps.jersey_number, ps.year
+      ${havingClause}
+      ORDER BY ${statRef(keystat)} DESC
+      ${limitClause}
+    `, [teamId, seasonId, ...havingParams]);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  } finally {
+    await conn?.end().catch(() => {});
+  }
+});
+
+app.get('/api/public/stats/career', requireReadToken, async (req, res) => {
+  const keystat       = req.query.keystat       || 'pts';
+  const mintotal      = parseFloat(req.query.mintotal)      || 0;
+  const mingames      = parseInt(req.query.mingames)         || 0;
+  const minseasons    = parseInt(req.query.minseasons)       || 0;
+  const maxrows       = parseInt(req.query.maxrows)          || 0;
+  const constraint    = req.query.constraint    || '';
+  const constraintmin = parseFloat(req.query.constraintmin)  || 0;
+
+  if (!STAT_ALLOWLIST.has(keystat)) return res.status(400).json({ error: 'invalid keystat' });
+  if (constraint && !STAT_ALLOWLIST.has(constraint)) return res.status(400).json({ error: 'invalid constraint' });
+
+  const having = [];
+  const havingParams = [];
+  if (mingames   > 0) { having.push('Played >= ?');              havingParams.push(mingames);   }
+  if (mintotal   > 0) { having.push(`${statRef(keystat)} >= ?`); havingParams.push(mintotal);   }
+  if (minseasons > 0) { having.push('seasons >= ?');             havingParams.push(minseasons); }
+  if (constraint && constraintmin > 0) {
+    having.push(`${statRef(constraint)} >= ?`);
+    havingParams.push(constraintmin);
+  }
+  const havingClause = having.length ? `HAVING ${having.join(' AND ')}` : '';
+  const limitClause  = maxrows > 0 ? `LIMIT ${maxrows}` : '';
+
+  let conn;
+  try {
+    conn = await dbConnect();
+    const [rows] = await conn.execute(`
+      SELECT
+        p.player_id, p.first_name, p.last_name,
+        MAX(ps.year)                                                                AS class,
+        COUNT(DISTINCT ps.season_id)                                                AS seasons,
+        COUNT(DISTINCT b.competition_id)                                            AS Played,
+        COALESCE(SUM(b.tp),   0)                                                    AS pts,
+        COALESCE(SUM(b.reb),  0)                                                    AS rebs,
+        COALESCE(SUM(b.ast),  0)                                                    AS assists,
+        COALESCE(SUM(b.stl),  0)                                                    AS steals,
+        COALESCE(SUM(b.blk),  0)                                                    AS blocks,
+        COALESCE(SUM(b.pf),   0)                                                    AS fouls,
+        COALESCE(SUM(b.fgm3), 0)                                                    AS m3p,
+        ROUND(SUM(b.tp)   / NULLIF(COUNT(DISTINCT b.competition_id), 0), 1)         AS ppg,
+        ROUND(SUM(b.reb)  / NULLIF(COUNT(DISTINCT b.competition_id), 0), 1)         AS rpg,
+        ROUND(SUM(b.blk)  / NULLIF(COUNT(DISTINCT b.competition_id), 0), 1)         AS bpg,
+        ROUND(SUM(b.fgm)  / NULLIF(SUM(b.fga),  0) * 100, 1)                       AS FGP,
+        ROUND(SUM(b.fgm3) / NULLIF(SUM(b.fga3), 0) * 100, 1)                       AS \`3PP\`,
+        (COALESCE(SUM(b.tp),  0) + COALESCE(SUM(b.reb), 0) + COALESCE(SUM(b.ast), 0)
+          + COALESCE(SUM(b.stl), 0) + COALESCE(SUM(b.blk), 0)
+          - (COALESCE(SUM(b.fga), 0) - COALESCE(SUM(b.fgm), 0))
+          - (COALESCE(SUM(b.fta), 0) - COALESCE(SUM(b.ftm), 0))
+          - COALESCE(SUM(b.\`to\`), 0))                                              AS eff
+      FROM players p
+      JOIN player_seasons ps ON ps.player_id = p.player_id
+      LEFT JOIN team_schedules tsch ON tsch.team_id = ps.team_id AND tsch.season_id = ps.season_id
+      LEFT JOIN boxscores b ON b.competition_id = tsch.competition_id AND b.player_id = p.player_id
+      GROUP BY p.player_id, p.first_name, p.last_name
+      ${havingClause}
+      ORDER BY ${statRef(keystat)} DESC
+      ${limitClause}
+    `, havingParams);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  } finally {
+    await conn?.end().catch(() => {});
+  }
 });
 
 // ── XML Import ────────────────────────────────────────────────────────────────

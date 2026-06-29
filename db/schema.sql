@@ -22,6 +22,7 @@ DROP TABLE IF EXISTS organizations;
 DROP TABLE IF EXISTS comptypes;
 DROP TABLE IF EXISTS xml_uploads;
 DROP TABLE IF EXISTS playbyplay;
+DROP TABLE IF EXISTS api_tokens;
 
 SET FOREIGN_KEY_CHECKS = 1;
 
@@ -157,8 +158,10 @@ CREATE TABLE teams (
     name        VARCHAR(100)        NOT NULL,
     abbrev      VARCHAR(5)          DEFAULT NULL,
     nickname    VARCHAR(25)         DEFAULT NULL,
-    gender      BIT(1)              DEFAULT NULL,    -- 0 = male, 1 = female
-    member_id   SMALLINT UNSIGNED   NULL,
+    gender        BIT(1)              DEFAULT NULL,    -- 0 = male, 1 = female
+    member_id     SMALLINT UNSIGNED   NULL,
+    external_code VARCHAR(20)         NULL,
+    photo_path    VARCHAR(255)        NULL,
     PRIMARY KEY (team_id),
     UNIQUE KEY uq_teams_name_gender (name, gender),
     CONSTRAINT fk_teams_member
@@ -397,4 +400,16 @@ CREATE TABLE xml_uploads (
     CONSTRAINT fk_uploads_competition
         FOREIGN KEY (competition_id) REFERENCES competitions (competition_id)
         ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+
+CREATE TABLE api_tokens (
+    token_id     INT UNSIGNED         NOT NULL AUTO_INCREMENT,
+    token_hash   VARCHAR(64)          NOT NULL,
+    label        VARCHAR(100)         NOT NULL,
+    scope        ENUM('read','admin') NOT NULL DEFAULT 'read',
+    created_at   DATETIME             NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_used_at DATETIME             NULL,
+    PRIMARY KEY (token_id),
+    UNIQUE KEY ux_token_hash (token_hash)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
