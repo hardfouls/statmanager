@@ -2257,7 +2257,7 @@ app.get('/api/public/stats/season', requireReadToken, async (req, res) => {
       SELECT
         p.player_id, p.first_name, p.last_name,
         CAST(ps.jersey_number AS CHAR)                                              AS jersey_number,
-        ps.year                                                                     AS class,
+        YEAR(s.end_date) + (12 - ps.year)                                          AS class,
         COUNT(DISTINCT b.competition_id)                                            AS Played,
         COALESCE(SUM(b.tp),   0)                                                    AS pts,
         COALESCE(SUM(b.reb),  0)                                                    AS rebs,
@@ -2266,22 +2266,24 @@ app.get('/api/public/stats/season', requireReadToken, async (req, res) => {
         COALESCE(SUM(b.blk),  0)                                                    AS blocks,
         COALESCE(SUM(b.pf),   0)                                                    AS fouls,
         COALESCE(SUM(b.fgm3), 0)                                                    AS m3p,
-        ROUND(SUM(b.tp)   / NULLIF(COUNT(DISTINCT b.competition_id), 0), 1)         AS ppg,
-        ROUND(SUM(b.reb)  / NULLIF(COUNT(DISTINCT b.competition_id), 0), 1)         AS rpg,
-        ROUND(SUM(b.blk)  / NULLIF(COUNT(DISTINCT b.competition_id), 0), 1)         AS bpg,
-        ROUND(SUM(b.fgm)  / NULLIF(SUM(b.fga),  0) * 100, 1)                       AS FGP,
-        ROUND(SUM(b.fgm3) / NULLIF(SUM(b.fga3), 0) * 100, 1)                       AS \`3PP\`,
-        (COALESCE(SUM(b.tp),  0) + COALESCE(SUM(b.reb), 0) + COALESCE(SUM(b.ast), 0)
+        ROUND(SUM(b.tp)   / NULLIF(COUNT(DISTINCT b.competition_id), 0), 2)         AS ppg,
+        ROUND(SUM(b.reb)  / NULLIF(COUNT(DISTINCT b.competition_id), 0), 2)         AS rpg,
+        ROUND(SUM(b.blk)  / NULLIF(COUNT(DISTINCT b.competition_id), 0), 2)         AS bpg,
+        ROUND(SUM(b.fgm)  / NULLIF(SUM(b.fga),  0) * 100, 2)                       AS FGP,
+        ROUND(SUM(b.fgm3) / NULLIF(SUM(b.fga3), 0) * 100, 2)                       AS \`3PP\`,
+        ROUND((COALESCE(SUM(b.tp),  0) + COALESCE(SUM(b.reb), 0) + COALESCE(SUM(b.ast), 0)
           + COALESCE(SUM(b.stl), 0) + COALESCE(SUM(b.blk), 0)
           - (COALESCE(SUM(b.fga), 0) - COALESCE(SUM(b.fgm), 0))
           - (COALESCE(SUM(b.fta), 0) - COALESCE(SUM(b.ftm), 0))
-          - COALESCE(SUM(b.\`to\`), 0))                                              AS eff
+          - COALESCE(SUM(b.\`to\`), 0))
+          / NULLIF(COUNT(DISTINCT b.competition_id), 0), 2)                        AS eff
       FROM player_seasons ps
       JOIN players p ON p.player_id = ps.player_id
+      JOIN seasons s ON s.season_id = ps.season_id
       LEFT JOIN team_schedules tsch ON tsch.team_id = ps.team_id AND tsch.season_id = ps.season_id
       LEFT JOIN boxscores b ON b.competition_id = tsch.competition_id AND b.player_id = ps.player_id
       WHERE ps.team_id = ? AND ps.season_id = ?
-      GROUP BY p.player_id, p.first_name, p.last_name, ps.jersey_number, ps.year
+      GROUP BY p.player_id, p.first_name, p.last_name, ps.jersey_number, ps.year, s.end_date
       ${havingClause}
       ORDER BY ${statRef(keystat)} DESC
       ${limitClause}
@@ -2295,6 +2297,7 @@ app.get('/api/public/stats/season', requireReadToken, async (req, res) => {
 });
 
 app.get('/api/public/stats/career', requireReadToken, async (req, res) => {
+  const teamId        = parseInt(req.query.team_id);
   const keystat       = req.query.keystat       || 'pts';
   const mintotal      = parseFloat(req.query.mintotal)      || 0;
   const mingames      = parseInt(req.query.mingames)         || 0;
@@ -2303,6 +2306,7 @@ app.get('/api/public/stats/career', requireReadToken, async (req, res) => {
   const constraint    = req.query.constraint    || '';
   const constraintmin = parseFloat(req.query.constraintmin)  || 0;
 
+  if (!teamId) return res.status(400).json({ error: 'team_id is required' });
   if (!STAT_ALLOWLIST.has(keystat)) return res.status(400).json({ error: 'invalid keystat' });
   if (constraint && !STAT_ALLOWLIST.has(constraint)) return res.status(400).json({ error: 'invalid constraint' });
 
@@ -2324,7 +2328,7 @@ app.get('/api/public/stats/career', requireReadToken, async (req, res) => {
     const [rows] = await conn.execute(`
       SELECT
         p.player_id, p.first_name, p.last_name,
-        MAX(ps.year)                                                                AS class,
+        MAX(YEAR(s.end_date) + (12 - ps.year))                                     AS class,
         COUNT(DISTINCT ps.season_id)                                                AS seasons,
         COUNT(DISTINCT b.competition_id)                                            AS Played,
         COALESCE(SUM(b.tp),   0)                                                    AS pts,
@@ -2334,25 +2338,147 @@ app.get('/api/public/stats/career', requireReadToken, async (req, res) => {
         COALESCE(SUM(b.blk),  0)                                                    AS blocks,
         COALESCE(SUM(b.pf),   0)                                                    AS fouls,
         COALESCE(SUM(b.fgm3), 0)                                                    AS m3p,
-        ROUND(SUM(b.tp)   / NULLIF(COUNT(DISTINCT b.competition_id), 0), 1)         AS ppg,
-        ROUND(SUM(b.reb)  / NULLIF(COUNT(DISTINCT b.competition_id), 0), 1)         AS rpg,
-        ROUND(SUM(b.blk)  / NULLIF(COUNT(DISTINCT b.competition_id), 0), 1)         AS bpg,
-        ROUND(SUM(b.fgm)  / NULLIF(SUM(b.fga),  0) * 100, 1)                       AS FGP,
-        ROUND(SUM(b.fgm3) / NULLIF(SUM(b.fga3), 0) * 100, 1)                       AS \`3PP\`,
-        (COALESCE(SUM(b.tp),  0) + COALESCE(SUM(b.reb), 0) + COALESCE(SUM(b.ast), 0)
+        ROUND(SUM(b.tp)   / NULLIF(COUNT(DISTINCT b.competition_id), 0), 2)         AS ppg,
+        ROUND(SUM(b.reb)  / NULLIF(COUNT(DISTINCT b.competition_id), 0), 2)         AS rpg,
+        ROUND(SUM(b.blk)  / NULLIF(COUNT(DISTINCT b.competition_id), 0), 2)         AS bpg,
+        ROUND(SUM(b.fgm)  / NULLIF(SUM(b.fga),  0) * 100, 2)                       AS FGP,
+        ROUND(SUM(b.fgm3) / NULLIF(SUM(b.fga3), 0) * 100, 2)                       AS \`3PP\`,
+        ROUND((COALESCE(SUM(b.tp),  0) + COALESCE(SUM(b.reb), 0) + COALESCE(SUM(b.ast), 0)
           + COALESCE(SUM(b.stl), 0) + COALESCE(SUM(b.blk), 0)
           - (COALESCE(SUM(b.fga), 0) - COALESCE(SUM(b.fgm), 0))
           - (COALESCE(SUM(b.fta), 0) - COALESCE(SUM(b.ftm), 0))
-          - COALESCE(SUM(b.\`to\`), 0))                                              AS eff
+          - COALESCE(SUM(b.\`to\`), 0))
+          / NULLIF(COUNT(DISTINCT b.competition_id), 0), 2)                        AS eff
       FROM players p
-      JOIN player_seasons ps ON ps.player_id = p.player_id
+      JOIN player_seasons ps ON ps.player_id = p.player_id AND ps.team_id = ?
+      JOIN seasons s ON s.season_id = ps.season_id
       LEFT JOIN team_schedules tsch ON tsch.team_id = ps.team_id AND tsch.season_id = ps.season_id
       LEFT JOIN boxscores b ON b.competition_id = tsch.competition_id AND b.player_id = p.player_id
       GROUP BY p.player_id, p.first_name, p.last_name
       ${havingClause}
       ORDER BY ${statRef(keystat)} DESC
       ${limitClause}
-    `, havingParams);
+    `, [teamId, ...havingParams]);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  } finally {
+    await conn?.end().catch(() => {});
+  }
+});
+
+app.get('/api/public/stats/single-season', requireReadToken, async (req, res) => {
+  const SINGLE_SEASON_STAT_MAP = {
+    pts:     'COALESCE(SUM(b.tp),   0)',
+    rebs:    'COALESCE(SUM(b.reb),  0)',
+    assists: 'COALESCE(SUM(b.ast),  0)',
+    steals:  'COALESCE(SUM(b.stl),  0)',
+    blocks:  'COALESCE(SUM(b.blk),  0)',
+    m3p:     'COALESCE(SUM(b.fgm3), 0)',
+    Played:  'COUNT(DISTINCT b.competition_id)',
+    ppg:     'ROUND(SUM(b.tp)   / NULLIF(COUNT(DISTINCT b.competition_id), 0), 2)',
+    rpg:     'ROUND(SUM(b.reb)  / NULLIF(COUNT(DISTINCT b.competition_id), 0), 2)',
+    bpg:     'ROUND(SUM(b.blk)  / NULLIF(COUNT(DISTINCT b.competition_id), 0), 2)',
+    apg:     'ROUND(SUM(b.ast)  / NULLIF(COUNT(DISTINCT b.competition_id), 0), 2)',
+    spg:     'ROUND(SUM(b.stl)  / NULLIF(COUNT(DISTINCT b.competition_id), 0), 2)',
+    FGP:     'ROUND(SUM(b.fgm)  / NULLIF(SUM(b.fga),  0) * 100, 2)',
+    '3PP':   'ROUND(SUM(b.fgm3) / NULLIF(SUM(b.fga3), 0) * 100, 2)',
+  };
+
+  const teamId   = parseInt(req.query.team_id);
+  const stat     = req.query.stat || 'pts';
+  const limit    = Math.min(parseInt(req.query.limit) || 10, 100);
+  const mingames = parseInt(req.query.mingames) || 0;
+
+  if (!teamId) return res.status(400).json({ error: 'team_id is required' });
+  if (!SINGLE_SEASON_STAT_MAP[stat]) return res.status(400).json({ error: 'invalid stat' });
+
+  const expr = SINGLE_SEASON_STAT_MAP[stat];
+  const havingClause = mingames > 0 ? 'HAVING COUNT(DISTINCT b.competition_id) >= ?' : '';
+  const params = mingames > 0 ? [teamId, mingames, limit] : [teamId, limit];
+
+  let conn;
+  try {
+    conn = await dbConnect();
+    const [rows] = await conn.execute(`
+      SELECT
+        p.player_id, p.first_name, p.last_name,
+        CAST(ps.jersey_number AS CHAR)                      AS jersey_number,
+        YEAR(s.end_date) + (12 - ps.year)                  AS class,
+        s.season_id,
+        CONCAT(YEAR(s.start_date), '-', YEAR(s.end_date))  AS season_label,
+        COUNT(DISTINCT b.competition_id)                    AS played,
+        ${expr}                                             AS value
+      FROM player_seasons ps
+      JOIN players p  ON p.player_id  = ps.player_id
+      JOIN seasons s  ON s.season_id  = ps.season_id
+      LEFT JOIN team_schedules tsch ON tsch.team_id   = ps.team_id
+                                   AND tsch.season_id = ps.season_id
+      LEFT JOIN boxscores b ON b.competition_id = tsch.competition_id
+                            AND b.player_id     = ps.player_id
+      WHERE ps.team_id = ?
+      GROUP BY p.player_id, p.first_name, p.last_name, ps.jersey_number, ps.year,
+               s.season_id, s.start_date, s.end_date
+      ${havingClause}
+      ORDER BY value DESC
+      LIMIT ?
+    `, params);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  } finally {
+    await conn?.end().catch(() => {});
+  }
+});
+
+app.get('/api/public/stats/single-game', requireReadToken, async (req, res) => {
+  const SINGLE_GAME_STAT_MAP = {
+    pts: 'b.tp', rebs: 'b.reb', assists: 'b.ast', steals: 'b.stl',
+    blocks: 'b.blk', m3p: 'b.fgm3', fgm: 'b.fgm', ftm: 'b.ftm',
+  };
+
+  const teamId   = parseInt(req.query.team_id);
+  const seasonId = parseInt(req.query.season_id) || null;
+  const stat     = req.query.stat || 'pts';
+  const limit    = Math.min(parseInt(req.query.limit) || 10, 100);
+
+  if (!teamId) return res.status(400).json({ error: 'team_id is required' });
+  if (!SINGLE_GAME_STAT_MAP[stat]) return res.status(400).json({ error: 'invalid stat' });
+
+  const col = SINGLE_GAME_STAT_MAP[stat];
+  const seasonFilter = seasonId ? 'AND tsch.season_id = ?' : '';
+  const params = [teamId, teamId];
+  if (seasonId) params.push(seasonId);
+  params.push(teamId, limit);
+
+  let conn;
+  try {
+    conn = await dbConnect();
+    const [rows] = await conn.execute(`
+      SELECT
+        p.player_id, p.first_name, p.last_name,
+        CAST(ps.jersey_number AS CHAR)                             AS jersey_number,
+        YEAR(s.end_date) + (12 - ps.year)                         AS class,
+        c.competition_id,
+        DATE(c.start_time)                                         AS game_date,
+        CONCAT(YEAR(s.start_date), '-', YEAR(s.end_date))         AS season_label,
+        CASE WHEN c.team_id = ? THEN opp.name ELSE ht.name END    AS opponent,
+        ${col}                                                     AS value
+      FROM boxscores b
+      JOIN team_schedules tsch ON tsch.competition_id = b.competition_id
+                               AND tsch.team_id = ?
+                               ${seasonFilter}
+      JOIN competitions c  ON c.competition_id  = b.competition_id
+      JOIN seasons s       ON s.season_id       = tsch.season_id
+      JOIN teams ht        ON ht.team_id        = c.team_id
+      JOIN teams opp       ON opp.team_id       = c.opponent_id
+      JOIN player_seasons ps ON ps.player_id  = b.player_id
+                             AND ps.season_id = tsch.season_id
+                             AND ps.team_id   = ?
+      JOIN players p ON p.player_id = b.player_id
+      ORDER BY ${col} DESC
+      LIMIT ?
+    `, params);
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });

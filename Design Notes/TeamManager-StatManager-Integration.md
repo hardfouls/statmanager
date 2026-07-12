@@ -515,23 +515,36 @@ Discovered during TeamManager Step 7 implementation. The `/api/public/stats/seas
 and `/api/public/stats/career` endpoints need the following changes before
 `createStatsTable()` will work correctly.
 
-### 1. Add `class` field to both endpoints
+### 1. Fix `class` field to return graduation year, not grade level
 
-`createStatsTable()` uses a `class` field (player graduation year) to apply the
-`ActivePlayer` CSS class to current players. Neither endpoint currently returns it.
+`createStatsTable()` uses a `class` field to apply the `ActivePlayer` CSS class to
+current players. The field is currently being returned but contains the **grade level**
+(e.g. `"12"`) instead of the **4-digit graduation year** (e.g. `"2026"`), so the
+active player comparison always fails and no players are highlighted.
 
-**Career endpoint** — add to SELECT and GROUP BY:
+TeamManager compares: `(int) class >= (int) endYearOfCurrentSeason`
+
+For this to work, `class` must be the 4-digit graduation year.
+
+**Career endpoint** — fix SELECT alias:
 ```js
+// Wrong — returns grade level e.g. "12"
 MAX(ps.year) AS class,
+
+// Correct — must be the graduation calendar year e.g. 2026
+MAX(ps.grad_year) AS class,   // if stored as a separate column
+// or if year is stored as grade level, derive it:
+MAX(YEAR(s.end_date) + (12 - ps.year)) AS class,
 ```
 
-**Season endpoint** — add to SELECT and GROUP BY:
+**Season endpoint** — same fix:
 ```js
-ps.year AS class,
+ps.grad_year AS class,
 ```
 
-`player_seasons.year` stores the 4-digit graduation year (e.g. `2026`), populated
-during DakStats XML import from `RIGHT(MISCLINE1, 4)`.
+`player_seasons.year` currently stores grade level (9–12). The graduation year can
+be derived as `YEAR(season.end_date) + (12 - grade)`, or stored directly as a
+`grad_year` column populated during DakStats XML import from `RIGHT(MISCLINE1, 4)`.
 
 ### 2. Rename `seasons_played` → `seasons` in career endpoint
 
@@ -565,6 +578,67 @@ COALESCE(SUM(b.fgm3), 0) AS m3p,
 ```
 
 The `statRef()` function does not need updating — `m3p` doesn't start with a digit.
+
+### 4. Compute averages and percentages to 2 decimal places
+
+Both endpoints currently return average and percentage stats rounded to 1 decimal
+place (e.g. `"11.3"`, `"50.0"`). TeamManager formats these to 2 decimal places, so
+the second decimal is always a trailing zero.
+
+Update the SQL/JS rounding for all computed float fields to 2 decimal places:
+
+| Field | Example now | Should be |
+|-------|-------------|-----------|
+| `ppg` | `"11.3"` | `"11.34"` |
+| `rpg` | `"7.1"` | `"7.14"` |
+| `bpg` | `"0.4"` | `"0.41"` |
+| `FGP` | `"50.0"` | `"50.00"` |
+| `3PP` | `"21.6"` | `"21.62"` |
+
+In the StatManager query, change `ROUND(..., 1)` to `ROUND(..., 2)` for all average
+and percentage calculations. Return these values as numeric (not pre-rounded strings)
+so the client controls display precision.
+
+### 5. Filter both endpoints by `team_id` ⚠️ REQUIRED
+
+Both `/api/public/stats/season` and `/api/public/stats/career` are returning players
+from **all teams** — including opponents who appeared in boxscores against the
+configured team. Only players who belong to the requested team should be returned.
+
+The plugin already passes `team_id` in both calls. The endpoints must enforce it.
+
+**Season endpoint** — already has `team_id` and `season_id` params; verify the WHERE
+clause filters on the team that *owns* the player, not just any team that appeared in
+a game:
+
+```js
+// Wrong — matches any boxscore row for that team's games (includes opponents)
+WHERE c.team_id = :team_id
+
+// Correct — matches players who are on the roster for that team/season
+WHERE ps.team_id = :team_id AND ps.season_id = :season_id
+```
+
+**Career endpoint** — must add a `team_id` filter so only players who played at
+least one season for the requested team are included:
+
+```js
+// Add to WHERE / HAVING:
+HAVING SUM(CASE WHEN ps.team_id = :team_id THEN 1 ELSE 0 END) > 0
+```
+
+Or filter via a JOIN on `player_seasons`:
+
+```js
+JOIN player_seasons ps_filter
+  ON ps_filter.player_id = p.player_id
+ AND ps_filter.team_id = :team_id
+```
+
+The simplest correct approach for career stats: filter the `player_seasons` rows to
+only those belonging to the requested `team_id` before aggregating, so career totals
+reflect only that team's history (e.g. a player who played for two teams shows only
+the stats from games while on the requested team).
 
 ---
 
@@ -744,3 +818,239 @@ The W-L record column is derived from the **existing**
 `GET /api/public/teams/:id/schedule` endpoint — the plugin reads the `record` field
 from the last played game of each season. No new field is needed on the seasons
 endpoint unless the schedule endpoint is found not to return `record`.
+
+---
+
+## StatManager: Single-Season Records Endpoint (TM_SingleSeasonRecords)
+
+### New endpoint: `GET /api/public/stats/single-season`
+
+```
+GET /api/public/stats/single-season?team_id=<id>&stat=pts&limit=10&mingames=10
+X-Api-Key: <read-token>
+```
+
+Returns the top N single-season totals for a given stat across all players and all
+seasons for the specified team. Use this to find records like "most points in a single
+season" across program history.
+
+**Supported `stat` values:**
+
+| `stat` | Description |
+|--------|-------------|
+| `pts` | Total points |
+| `rebs` | Total rebounds |
+| `assists` | Total assists |
+| `steals` | Total steals |
+| `blocks` | Total blocks |
+| `m3p` | Total 3-pointers made |
+| `Played` | Games played |
+| `ppg` | Points per game average |
+| `rpg` | Rebounds per game average |
+| `bpg` | Blocks per game average |
+| `apg` | Assists per game average |
+| `spg` | Steals per game average |
+| `FGP` | Field goal percentage |
+| `3PP` | 3-point percentage |
+
+**Response** — array ordered by `value` descending:
+
+```json
+[
+  {
+    "player_id": 42,
+    "first_name": "John",
+    "last_name": "Smith",
+    "jersey_number": "23",
+    "class": "2026",
+    "season_id": 5,
+    "season_label": "2025-2026",
+    "played": 28,
+    "value": 487
+  }
+]
+```
+
+`value` always holds the requested stat. `played` is always included so callers can
+display games played alongside any stat (e.g. points + games played). `class` is the
+player's 4-digit graduation year (e.g. `"2026"`), used to display and highlight active
+players. `limit` defaults to 10, max 100. `mingames` filters out seasons where the
+player appeared in fewer than that many games; defaults to 0 (no filter) but the
+plugin sends 10 by default.
+
+### TeamManager PHP — add `getSingleSeasonRecords()` to `StatManagerApiClient`
+
+```php
+public function getSingleSeasonRecords(array $params): array|false {
+    return $this->get('/api/public/stats/single-season', $params);
+}
+```
+
+### TeamManager PHP — new `[TM_SingleSeasonRecords]` shortcode
+
+```php
+function createSingleSeasonRecords(array $atts = []): string {
+    $tm_atts = shortcode_atts([
+        'teamcode' => 'KVHS02',
+        'stat'     => 'pts',
+        'limit'    => '10',
+    ], $atts);
+
+    $client = new StatManagerApiClient();
+    $teamId = $client->resolveTeamId($tm_atts['teamcode']);
+    if (!$teamId) return '<p>Team not found.</p>';
+
+    $records = $client->getSingleSeasonRecords([
+        'team_id' => $teamId,
+        'stat'    => $tm_atts['stat'],
+        'limit'   => $tm_atts['limit'],
+    ]);
+    if (!$records) return '<p>No records found.</p>';
+
+    $statLabels = [
+        'pts' => 'Points', 'rebs' => 'Rebounds', 'assists' => 'Assists',
+        'steals' => 'Steals', 'blocks' => 'Blocks', 'm3p' => '3-Pointers Made',
+        'Played' => 'Games Played',
+    ];
+    $label = $statLabels[$tm_atts['stat']] ?? $tm_atts['stat'];
+
+    $output  = "<table class='tm-records'>";
+    $output .= "<thead><tr><th>#</th><th>Player</th><th>{$label}</th><th>Season</th></tr></thead>";
+    $output .= "<tbody>";
+    foreach ($records as $i => $r) {
+        $output .= "<tr>";
+        $output .= "<td>" . ($i + 1) . "</td>";
+        $output .= "<td>" . esc_html($r['first_name'] . ' ' . $r['last_name']) . "</td>";
+        $output .= "<td>" . esc_html($r['value']) . "</td>";
+        $output .= "<td>" . esc_html($r['season_label']) . "</td>";
+        $output .= "</tr>";
+    }
+    $output .= "</tbody></table>";
+    return $output;
+}
+add_shortcode('TM_SingleSeasonRecords', 'createSingleSeasonRecords');
+```
+
+**Usage examples:**
+```
+[TM_SingleSeasonRecords stat="pts" limit="10"]
+[TM_SingleSeasonRecords stat="rebs" limit="5"]
+[TM_SingleSeasonRecords stat="assists" limit="10" teamcode="KVHS02"]
+```
+
+---
+
+## StatManager: Single-Game Records Endpoint (TM_SingleGameRecords)
+
+### New endpoint: `GET /api/public/stats/single-game`
+
+```
+GET /api/public/stats/single-game?team_id=<id>&stat=pts&limit=10&season_id=<id>
+X-Api-Key: <read-token>
+```
+
+Returns the top N individual single-game performances for a given stat across all
+players on the specified team. `season_id` is optional — omit it to search all seasons.
+
+**Supported `stat` values:**
+
+| `stat` | Description |
+|--------|-------------|
+| `pts` | Points scored |
+| `rebs` | Rebounds |
+| `assists` | Assists |
+| `steals` | Steals |
+| `blocks` | Blocks |
+| `m3p` | 3-pointers made |
+| `fgm` | Field goals made |
+| `ftm` | Free throws made |
+
+**Response** — array ordered by `value` descending:
+
+```json
+[
+  {
+    "player_id": 42,
+    "first_name": "John",
+    "last_name": "Smith",
+    "jersey_number": "23",
+    "class": "2026",
+    "competition_id": 101,
+    "game_date": "2026-01-15",
+    "season_label": "2025-2026",
+    "opponent": "Riverview",
+    "value": 34
+  }
+]
+```
+
+`value` always holds the requested stat. `class` is the player's 4-digit graduation
+year (e.g. `"2026"`), used to display and highlight active players. `limit` defaults
+to 10, max 100.
+
+### TeamManager PHP — add `getSingleGameRecords()` to `StatManagerApiClient`
+
+```php
+public function getSingleGameRecords(array $params): array|false {
+    return $this->get('/api/public/stats/single-game', $params);
+}
+```
+
+### TeamManager PHP — new `[TM_SingleGameRecords]` shortcode
+
+```php
+function createSingleGameRecords(array $atts = []): string {
+    $tm_atts = shortcode_atts([
+        'teamcode' => 'KVHS02',
+        'stat'     => 'pts',
+        'label'    => '',
+        'limit'    => '10',
+    ], $atts);
+
+    $client = new StatManagerApiClient();
+    $teamId = $client->resolveTeamId($tm_atts['teamcode']);
+    if (!$teamId) return '<p>Team not found.</p>';
+
+    $params = ['team_id' => $teamId, 'stat' => $tm_atts['stat'], 'limit' => $tm_atts['limit']];
+    if ($tm_atts['label']) {
+        $seasonId = $client->resolveSeasonId($teamId, $tm_atts['label']);
+        if ($seasonId) $params['season_id'] = $seasonId;
+    }
+
+    $records = $client->getSingleGameRecords($params);
+    if (!$records) return '<p>No records found.</p>';
+
+    $statLabels = [
+        'pts' => 'Points', 'rebs' => 'Rebounds', 'assists' => 'Assists',
+        'steals' => 'Steals', 'blocks' => 'Blocks', 'm3p' => '3-Pointers Made',
+        'fgm' => 'FG Made', 'ftm' => 'FT Made',
+    ];
+    $label = $statLabels[$tm_atts['stat']] ?? $tm_atts['stat'];
+
+    $output  = "<table class='tm-records'>";
+    $output .= "<thead><tr><th>#</th><th>Player</th><th>{$label}</th><th>Opponent</th><th>Date</th><th>Season</th></tr></thead>";
+    $output .= "<tbody>";
+    foreach ($records as $i => $r) {
+        $output .= "<tr>";
+        $output .= "<td>" . ($i + 1) . "</td>";
+        $output .= "<td>" . esc_html($r['first_name'] . ' ' . $r['last_name']) . "</td>";
+        $output .= "<td>" . esc_html($r['value']) . "</td>";
+        $output .= "<td>" . esc_html($r['opponent']) . "</td>";
+        $output .= "<td>" . esc_html($r['game_date']) . "</td>";
+        $output .= "<td>" . esc_html($r['season_label']) . "</td>";
+        $output .= "</tr>";
+    }
+    $output .= "</tbody></table>";
+    return $output;
+}
+add_shortcode('TM_SingleGameRecords', 'createSingleGameRecords');
+```
+
+Register `TM_SingleGameRecords` in `team-manager.php` alongside the existing shortcodes.
+
+**Usage examples:**
+```
+[TM_SingleGameRecords stat="pts" limit="10"]
+[TM_SingleGameRecords stat="rebs" limit="5" label="2025-2026"]
+[TM_SingleGameRecords stat="assists" limit="10" teamcode="KVHS02"]
+```
