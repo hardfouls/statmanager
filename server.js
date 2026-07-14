@@ -1,11 +1,12 @@
-const express = require('express');
-const fs = require('fs');
-const path = require('path');
-const ini = require('ini');
-const mysql   = require('mysql2/promise');
-const bcrypt  = require('bcryptjs');
-const crypto  = require('crypto');
-const session = require('express-session');
+const express    = require('express');
+const fs         = require('fs');
+const path       = require('path');
+const ini        = require('ini');
+const mysql      = require('mysql2/promise');
+const bcrypt     = require('bcryptjs');
+const crypto     = require('crypto');
+const session    = require('express-session');
+const nodemailer = require('nodemailer');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -137,6 +138,10 @@ app.use('/api', (req, res, next) => {
       ADD COLUMN IF NOT EXISTS last_name  VARCHAR(64)  NULL,
       ADD COLUMN IF NOT EXISTS email      VARCHAR(255) NULL,
       ADD COLUMN IF NOT EXISTS phone      VARCHAR(30)  NULL`);
+    await migrate(`ALTER TABLE app_users
+      ADD COLUMN IF NOT EXISTS user_type ENUM('administrator','team_manager') NOT NULL DEFAULT 'administrator'`);
+    await migrate(`ALTER TABLE app_users ADD COLUMN IF NOT EXISTS default_team_id   INT UNSIGNED NULL`);
+    await migrate(`ALTER TABLE app_users ADD COLUMN IF NOT EXISTS default_season_id INT UNSIGNED NULL`);
     await migrate(`ALTER TABLE boxscores CHANGE COLUMN IF EXISTS pts tp  TINYINT UNSIGNED NOT NULL DEFAULT 0`);
     await migrate(`ALTER TABLE boxscores CHANGE COLUMN IF EXISTS tpm fgm3 TINYINT UNSIGNED NOT NULL DEFAULT 0`);
     await migrate(`ALTER TABLE boxscores CHANGE COLUMN IF EXISTS tpa fga3 TINYINT UNSIGNED NOT NULL DEFAULT 0`);
@@ -218,7 +223,11 @@ app.get('/api/auth/me', async (req, res) => {
     const [[{ cnt }]] = await conn.execute('SELECT COUNT(*) AS cnt FROM app_users');
     if (!cnt) return res.json({ status: 'setup' });
     if (!req.session?.userId) return res.status(401).json({ error: 'Unauthorized' });
-    res.json({ user_id: req.session.userId, username: req.session.username });
+    const [[me]] = await conn.execute(
+      'SELECT default_team_id, default_season_id FROM app_users WHERE user_id = ?',
+      [req.session.userId]
+    );
+    res.json({ user_id: req.session.userId, username: req.session.username, default_team_id: me?.default_team_id || null, default_season_id: me?.default_season_id || null });
   } catch (err) {
     if (err.code === 'NOT_CONFIGURED') return res.json({ status: 'no_db' });
     res.json({ status: 'no_db' });
@@ -257,7 +266,7 @@ app.post('/api/auth/login', async (req, res) => {
   try {
     conn = await dbConnect();
     const [[user]] = await conn.execute(
-      'SELECT user_id, username, password_hash, first_name, last_name FROM app_users WHERE username = ?',
+      'SELECT user_id, username, password_hash, first_name, last_name, default_team_id, default_season_id FROM app_users WHERE username = ?',
       [username.trim().toLowerCase()]
     );
     if (!user || !(await bcrypt.compare(password, user.password_hash)))
@@ -265,7 +274,7 @@ app.post('/api/auth/login', async (req, res) => {
     req.session.userId      = user.user_id;
     req.session.username    = user.username;
     req.session.displayName = [user.first_name, user.last_name].filter(Boolean).join(' ') || user.username;
-    res.json({ user_id: user.user_id, username: user.username });
+    res.json({ user_id: user.user_id, username: user.username, default_team_id: user.default_team_id || null, default_season_id: user.default_season_id || null });
   } catch (err) {
     res.status(500).json({ error: err.message });
   } finally {
@@ -283,7 +292,7 @@ app.get('/api/users', async (req, res) => {
   try {
     conn = await dbConnect();
     const [rows] = await conn.execute(
-      'SELECT user_id, username, first_name, last_name, email, phone, created_at FROM app_users ORDER BY username'
+      'SELECT user_id, username, first_name, last_name, email, phone, user_type, default_team_id, default_season_id, created_at FROM app_users ORDER BY username'
     );
     res.json({ users: rows });
   } catch (err) {
@@ -294,17 +303,41 @@ app.get('/api/users', async (req, res) => {
 });
 
 app.post('/api/users', async (req, res) => {
-  const { username, password } = req.body;
+  const { username, password, user_type, email, notify } = req.body;
   if (!username?.trim() || !password) return res.status(400).json({ error: 'Username and password required' });
+  const validTypes = ['administrator', 'team_manager'];
+  const type = validTypes.includes(user_type) ? user_type : 'administrator';
   let conn;
   try {
     conn = await dbConnect();
     const hash = await bcrypt.hash(password, 12);
     const [result] = await conn.execute(
-      'INSERT INTO app_users (username, password_hash) VALUES (?, ?)',
-      [username.trim().toLowerCase(), hash]
+      'INSERT INTO app_users (username, password_hash, user_type, email) VALUES (?, ?, ?, ?)',
+      [username.trim().toLowerCase(), hash, type, email?.trim() || null]
     );
-    res.json({ success: true, user_id: result.insertId });
+    const userId = result.insertId;
+
+    if (notify && email?.trim()) {
+      const em = getEmailConfig();
+      if (em.host && em.user) {
+        try {
+          const transporter = nodemailer.createTransport({
+            host:   em.host,
+            port:   parseInt(em.port) || 587,
+            secure: em.secure === true || em.secure === 'true',
+            auth: { user: em.user, pass: em.password || '' },
+          });
+          const uname = username.trim().toLowerCase();
+          const subjectTpl = em.welcome_subject?.trim() || 'Your StatManager account has been created';
+          const bodyTpl    = em.welcome_body?.trim()    || 'Your StatManager account has been created.\n\nUsername: {username}\nPassword: {password}\n\nPlease log in and change your password.';
+          const subject = subjectTpl.replace(/\{username\}/g, uname).replace(/\{password\}/g, password);
+          const text    = bodyTpl.replace(/\{username\}/g, uname).replace(/\{password\}/g, password);
+          await transporter.sendMail({ from: em.from || em.user, to: email.trim(), subject, text });
+        } catch { /* email failure doesn't fail user creation */ }
+      }
+    }
+
+    res.json({ success: true, user_id: userId });
   } catch (err) {
     if (err.errno === 1062) return res.json({ error: 'Username already taken' });
     res.json({ error: err.message });
@@ -340,14 +373,16 @@ app.put('/api/users/:id/password', async (req, res) => {
 app.put('/api/users/:id/profile', async (req, res) => {
   const userId = parseInt(req.params.id);
   if (req.session.userId !== userId) return res.status(403).json({ error: 'Forbidden' });
-  const { first_name, last_name, email, phone } = req.body;
+  const { first_name, last_name, email, phone, default_team_id, default_season_id } = req.body;
   let conn;
   try {
     conn = await dbConnect();
     await conn.execute(
-      'UPDATE app_users SET first_name=?, last_name=?, email=?, phone=? WHERE user_id=?',
+      'UPDATE app_users SET first_name=?, last_name=?, email=?, phone=?, default_team_id=?, default_season_id=? WHERE user_id=?',
       [first_name?.trim() || null, last_name?.trim() || null,
-       email?.trim() || null, phone?.trim() || null, userId]
+       email?.trim() || null, phone?.trim() || null,
+       parseInt(default_team_id) || null, parseInt(default_season_id) || null,
+       userId]
     );
     res.json({ success: true });
   } catch (err) {
@@ -387,6 +422,11 @@ function writeConfig(config) {
 function getServerConfig() {
   const config = readConfig();
   return config.server || {};
+}
+
+function getEmailConfig() {
+  const config = readConfig();
+  return config.email || {};
 }
 
 function getDbConfig() {
@@ -476,6 +516,72 @@ app.post('/api/settings/test', async (req, res) => {
     res.json({ success: false, error: err.message });
   } finally {
     await conn?.end().catch(() => {});
+  }
+});
+
+app.get('/api/settings/email', (req, res) => {
+  const em = getEmailConfig();
+  res.json({
+    host:            em.host || '',
+    port:            em.port || '587',
+    secure:          em.secure === true || em.secure === 'true',
+    user:            em.user || '',
+    from:            em.from || '',
+    passwordSet:     !!em.password,
+    welcome_subject: em.welcome_subject || '',
+    welcome_body:    em.welcome_body    || '',
+  });
+});
+
+app.post('/api/settings/email', (req, res) => {
+  const { host, port, secure, user, password, from, welcome_subject, welcome_body } = req.body;
+  const config   = readConfig();
+  const existing = config.email || {};
+  config.email = {
+    host:            host?.trim()            || existing.host            || '',
+    port:            port?.trim()            || existing.port            || '587',
+    secure:          secure ? 'true' : 'false',
+    user:            user?.trim()            || existing.user            || '',
+    from:            from?.trim()            || existing.from            || '',
+    password:        password?.trim() ? password.trim() : (existing.password || ''),
+    welcome_subject: welcome_subject?.trim() ?? (existing.welcome_subject ?? ''),
+    welcome_body:    welcome_body?.trim()    ?? (existing.welcome_body    ?? ''),
+  };
+  try {
+    writeConfig(config);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to write settings file' });
+  }
+});
+
+app.post('/api/settings/email/test', async (req, res) => {
+  const { host, port, secure, user, password, from, to } = req.body;
+  const stored = getEmailConfig();
+  const cfg = {
+    host:   host?.trim()  || stored.host,
+    port:   parseInt(port || stored.port) || 587,
+    secure: secure !== undefined ? !!secure : (stored.secure === true || stored.secure === 'true'),
+    auth: {
+      user: user?.trim()  || stored.user,
+      pass: password?.trim() || stored.password || '',
+    },
+  };
+  if (!cfg.host || !cfg.auth.user) return res.json({ success: false, error: 'Host and username are required' });
+  try {
+    const transporter = nodemailer.createTransport(cfg);
+    await transporter.verify();
+    if (to) {
+      await transporter.sendMail({
+        from: from?.trim() || stored.from || cfg.auth.user,
+        to,
+        subject: 'StatManager — Email Test',
+        text: 'Email settings are configured correctly.',
+      });
+    }
+    res.json({ success: true });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
   }
 });
 
@@ -1686,6 +1792,133 @@ app.get('/api/teams/no-games', async (req, res) => {
     res.json(rows);
   } catch (err) { res.json({ error: err.message }); }
   finally { await conn?.end().catch(() => {}); }
+});
+
+app.get('/api/teams/:id', async (req, res) => {
+  const teamId = parseInt(req.params.id);
+  if (!teamId) return res.status(400).json({ error: 'Invalid id' });
+  let conn;
+  try {
+    conn = await dbConnect();
+    const [[team]] = await conn.execute(
+      'SELECT team_id, name, abbrev, nickname, gender + 0 AS gender, external_code, photo_path FROM teams WHERE team_id = ?',
+      [teamId]
+    );
+    if (!team) return res.status(404).json({ error: 'Team not found' });
+    res.json({ team });
+  } catch (err) {
+    res.json({ error: err.message });
+  } finally {
+    await conn?.end().catch(() => {});
+  }
+});
+
+app.get('/api/teams/:id/games', async (req, res) => {
+  const teamId   = parseInt(req.params.id);
+  const seasonId = parseInt(req.query.season_id);
+  if (!teamId || !seasonId) return res.status(400).json({ error: 'team id and season_id required' });
+  let conn;
+  try {
+    conn = await dbConnect();
+    const [rows] = await conn.execute(`
+      SELECT c.competition_id, c.start_time, c.location,
+             CASE WHEN c.team_id = ? THEN opp.name ELSE ht.name END  AS opponent_name,
+             CASE WHEN c.team_id = ? THEN opp.abbrev ELSE ht.abbrev END AS opponent_abbrev,
+             CASE WHEN c.team_id = ? THEN ts.score ELSE os.score END  AS team_score,
+             CASE WHEN c.team_id = ? THEN os.score ELSE ts.score END  AS opponent_score,
+             trn.name AS tournament_name
+      FROM competitions c
+      JOIN team_schedules tsch ON tsch.competition_id = c.competition_id
+                               AND tsch.team_id = ? AND tsch.season_id = ?
+      JOIN teams ht  ON ht.team_id  = c.team_id
+      JOIN teams opp ON opp.team_id = c.opponent_id
+      LEFT JOIN tournaments trn ON trn.tournament_id = c.tournament_id
+      LEFT JOIN (SELECT competition_id, team_id, SUM(score) AS score
+                 FROM periods GROUP BY competition_id, team_id) ts
+             ON ts.competition_id = c.competition_id AND ts.team_id = c.team_id
+      LEFT JOIN (SELECT competition_id, team_id, SUM(score) AS score
+                 FROM periods GROUP BY competition_id, team_id) os
+             ON os.competition_id = c.competition_id AND os.team_id = c.opponent_id
+      ORDER BY c.start_time ASC
+    `, [teamId, teamId, teamId, teamId, teamId, seasonId]);
+    res.json({ games: rows });
+  } catch (err) {
+    res.json({ error: err.message });
+  } finally {
+    await conn?.end().catch(() => {});
+  }
+});
+
+app.get('/api/teams/:id/roster', async (req, res) => {
+  const teamId   = parseInt(req.params.id);
+  const seasonId = parseInt(req.query.season_id);
+  if (!teamId || !seasonId) return res.status(400).json({ error: 'team_id and season_id are required' });
+  let conn;
+  try {
+    conn = await dbConnect();
+    const [rows] = await conn.execute(`
+      SELECT p.player_id, p.first_name, p.last_name,
+             CAST(ps.jersey_number AS CHAR) AS jersey_number,
+             p.position, ps.height, ps.year AS grad_year
+      FROM players p
+      JOIN player_seasons ps ON ps.player_id = p.player_id
+      WHERE ps.team_id = ? AND ps.season_id = ?
+      ORDER BY ps.jersey_number, p.last_name
+    `, [teamId, seasonId]);
+    res.json({ roster: rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  } finally {
+    await conn?.end().catch(() => {});
+  }
+});
+
+app.get('/api/teams/:id/player-stats', async (req, res) => {
+  const teamId   = parseInt(req.params.id);
+  const seasonId = parseInt(req.query.season_id);
+  if (!teamId || !seasonId) return res.status(400).json({ error: 'team_id and season_id are required' });
+  let conn;
+  try {
+    conn = await dbConnect();
+    const [rows] = await conn.execute(`
+      SELECT p.player_id, p.first_name, p.last_name,
+             CAST(ps.jersey_number AS CHAR) AS jersey_number,
+             p.position,
+             COUNT(DISTINCT b.competition_id)                                                     AS gp,
+             COUNT(DISTINCT CASE WHEN b.started > 0 THEN b.competition_id END)                    AS gs,
+             SUM(b.tp)                                                                             AS pts,
+             SUM(b.reb)                                                                            AS reb,
+             SUM(b.ast)                                                                            AS ast,
+             SUM(b.stl)                                                                            AS stl,
+             SUM(b.blk)                                                                            AS blk,
+             SUM(b.fgm)                                                                            AS fgm,
+             SUM(b.fga)                                                                            AS fga,
+             SUM(b.fgm3)                                                                           AS fgm3,
+             SUM(b.fga3)                                                                           AS fga3,
+             SUM(b.ftm)                                                                            AS ftm,
+             SUM(b.fta)                                                                            AS fta,
+             SUM(b.oreb)                                                                           AS oreb,
+             SUM(b.\`to\`)                                                                         AS turnovers,
+             ROUND(SUM(b.min) / 60.0, 1)                                                           AS total_min,
+             ROUND(SUM(b.min) / 60.0 / NULLIF(COUNT(DISTINCT b.competition_id), 0), 1)            AS mpg
+      FROM players p
+      JOIN player_seasons ps ON ps.player_id = p.player_id
+                             AND ps.team_id = ? AND ps.season_id = ?
+      LEFT JOIN boxscores b  ON b.player_id = p.player_id
+                             AND b.period > 0
+                             AND b.competition_id IN (
+                               SELECT tsch.competition_id FROM team_schedules tsch
+                               WHERE tsch.team_id = ? AND tsch.season_id = ?
+                             )
+      GROUP BY p.player_id, p.first_name, p.last_name, ps.jersey_number, p.position
+      ORDER BY ps.jersey_number, p.last_name
+    `, [teamId, seasonId, teamId, seasonId]);
+    res.json({ players: rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  } finally {
+    await conn?.end().catch(() => {});
+  }
 });
 
 app.get('/api/games', async (req, res) => {

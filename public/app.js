@@ -3711,6 +3711,55 @@ const pages = {
           </form>
         </div>
         <div class="card">
+          <h3 class="section-title">Email (SMTP)</h3>
+          <form id="email-form" novalidate>
+            <div class="host-port-row">
+              <div class="form-group">
+                <label for="em-host">SMTP Host</label>
+                <input type="text" id="em-host" placeholder="smtp.example.com" autocomplete="off" spellcheck="false">
+              </div>
+              <div class="form-group">
+                <label for="em-port">Port</label>
+                <input type="number" id="em-port" placeholder="587" min="1" max="65535">
+              </div>
+            </div>
+            <div style="margin-bottom:12px">
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.9em;color:var(--text)">
+                <input type="checkbox" id="em-secure" style="width:auto;padding:0;border:none;background:none;cursor:pointer"> Use TLS (port 465)
+              </label>
+            </div>
+            <div class="two-col">
+              <div class="form-group">
+                <label for="em-user">Username</label>
+                <input type="text" id="em-user" autocomplete="off" spellcheck="false">
+              </div>
+              <div class="form-group">
+                <label for="em-password">Password</label>
+                <input type="password" id="em-password" autocomplete="new-password">
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="em-from">From Address</label>
+              <input type="email" id="em-from" placeholder="StatManager <noreply@example.com>" autocomplete="off">
+            </div>
+            <hr style="border:none;border-top:1px solid var(--border);margin:16px 0">
+            <p style="font-size:0.85em;color:var(--text-muted);margin:0 0 12px">Welcome email sent when a new user account is created. Use <code style="background:var(--surface2);padding:2px 5px;border-radius:3px">{username}</code> and <code style="background:var(--surface2);padding:2px 5px;border-radius:3px">{password}</code> as placeholders.</p>
+            <div class="form-group">
+              <label for="em-welcome-subject">Welcome Email Subject</label>
+              <input type="text" id="em-welcome-subject" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="form-group">
+              <label for="em-welcome-body">Welcome Email Body</label>
+              <textarea id="em-welcome-body" rows="6" style="width:100%;resize:vertical;font-family:inherit;font-size:0.9em;padding:8px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);box-sizing:border-box"></textarea>
+            </div>
+            <div class="form-actions">
+              <button type="button" class="btn btn-secondary" id="em-test-btn">Send Test Email</button>
+              <button type="submit" class="btn btn-primary">Save Email Settings</button>
+            </div>
+            <div class="status-msg" id="em-status"></div>
+          </form>
+        </div>
+        <div class="card">
           <h3 class="section-title">Database Setup</h3>
           <p class="setup-warning">
             Creates the database if it does not exist, then runs the schema.
@@ -3906,6 +3955,74 @@ const pages = {
         }
       });
 
+      // ── Email settings ────────────────────────────────────────────────────────
+      try {
+        const emData = await fetch('api/settings/email').then(r => r.json());
+        document.getElementById('em-host').value = emData.host || '';
+        document.getElementById('em-port').value = emData.port || '587';
+        document.getElementById('em-secure').checked = !!emData.secure;
+        document.getElementById('em-user').value = emData.user || '';
+        document.getElementById('em-from').value = emData.from || '';
+        if (emData.passwordSet) document.getElementById('em-password').placeholder = 'Saved — leave blank to keep';
+        document.getElementById('em-welcome-subject').value = emData.welcome_subject || '';
+        document.getElementById('em-welcome-body').value = emData.welcome_body || '';
+      } catch { /* ignore */ }
+
+      document.getElementById('email-form').addEventListener('submit', async e => {
+        e.preventDefault();
+        const btn = e.target.querySelector('[type=submit]');
+        btn.disabled = true; btn.textContent = 'Saving…';
+        try {
+          const res = await fetch('api/settings/email', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              host:            document.getElementById('em-host').value,
+              port:            document.getElementById('em-port').value,
+              secure:          document.getElementById('em-secure').checked,
+              user:            document.getElementById('em-user').value,
+              password:        document.getElementById('em-password').value,
+              from:            document.getElementById('em-from').value,
+              welcome_subject: document.getElementById('em-welcome-subject').value,
+              welcome_body:    document.getElementById('em-welcome-body').value,
+            })
+          });
+          const data = await res.json();
+          if (data.success) {
+            showStatus('em-status', 'success', 'Email settings saved.');
+            document.getElementById('em-password').value = '';
+            document.getElementById('em-password').placeholder = 'Saved — leave blank to keep';
+          } else showStatus('em-status', 'error', data.error || 'Save failed');
+        } catch { showStatus('em-status', 'error', 'Request failed.'); }
+        finally { btn.disabled = false; btn.textContent = 'Save Email Settings'; }
+      });
+
+      document.getElementById('em-test-btn').addEventListener('click', async () => {
+        const to = prompt('Send test email to:');
+        if (!to) return;
+        const btn = document.getElementById('em-test-btn');
+        btn.disabled = true; btn.textContent = 'Sending…';
+        try {
+          const res = await fetch('api/settings/email/test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              host:     document.getElementById('em-host').value,
+              port:     document.getElementById('em-port').value,
+              secure:   document.getElementById('em-secure').checked,
+              user:     document.getElementById('em-user').value,
+              password: document.getElementById('em-password').value,
+              from:     document.getElementById('em-from').value,
+              to,
+            })
+          });
+          const data = await res.json();
+          if (data.success) showStatus('em-status', 'success', `Test email sent to ${to}.`);
+          else showStatus('em-status', 'error', data.error || 'Send failed');
+        } catch { showStatus('em-status', 'error', 'Request failed.'); }
+        finally { btn.disabled = false; btn.textContent = 'Send Test Email'; }
+      });
+
       // ── API Tokens ────────────────────────────────────────────────────────────
       const tokList    = document.getElementById('tok-list');
       const tokForm    = document.getElementById('tok-form');
@@ -4012,30 +4129,87 @@ const pages = {
   users: {
     render() {
       return `
-        <h2 class="page-title">Users</h2>
-        <div class="card">
-          <div class="section-header">
-            <h3 class="section-title">User Accounts</h3>
-            <button class="btn btn-primary btn-sm" id="new-user-btn">+ Add User</button>
+        <div style="display:flex;flex-direction:column;height:calc(100vh - var(--header-h) - 56px)">
+          <h2 class="page-title" style="flex-shrink:0">Users</h2>
+          <div class="card" style="flex:1;display:flex;flex-direction:column;min-height:0">
+            <div class="section-header" style="flex-shrink:0">
+              <h3 class="section-title">User Accounts</h3>
+              <button class="btn btn-primary btn-sm" id="new-user-btn">+ Add User</button>
+            </div>
+            <div class="table-wrap" style="flex:1;overflow-y:auto">
+              <table class="data-table">
+                <thead><tr>
+                  <th>Username</th>
+                  <th>Name</th>
+                  <th>Type</th>
+                  <th>Email</th>
+                  <th>Phone</th>
+                  <th>Created</th>
+                  <th class="col-actions"></th>
+                </tr></thead>
+                <tbody id="user-list">
+                  <tr><td colspan="7" class="list-empty">Loading…</td></tr>
+                </tbody>
+              </table>
+            </div>
           </div>
-          <div class="table-wrap">
-            <table class="data-table">
-              <thead><tr>
-                <th>Username</th>
-                <th>Name</th>
-                <th>Email</th>
-                <th>Phone</th>
-                <th>Created</th>
-                <th class="col-actions"></th>
-              </tr></thead>
-              <tbody id="user-list">
-                <tr><td colspan="6" class="list-empty">Loading…</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
+        </div>`;
+    },
+
+    async init() {
+      async function loadUsers() {
+        const res  = await fetch('api/users');
+        const data = await res.json();
+        const list = document.getElementById('user-list');
+        if (data.error) {
+          list.innerHTML = `<tr><td colspan="7" class="list-empty">${escapeHtml(data.error)}</td></tr>`;
+          return;
+        }
+        const typeLabel = { administrator: 'Administrator', team_manager: 'Team Manager' };
+        list.innerHTML = data.users.map(u => {
+          const isMe = u.user_id === currentUser?.user_id;
+          const name = [u.first_name, u.last_name].filter(Boolean).join(' ');
+          return `
+          <tr>
+            <td>${escapeHtml(u.username)}${isMe ? ' <span style="font-size:.75rem;color:var(--text-muted)">(you)</span>' : ''}</td>
+            <td>${escapeHtml(name || '—')}</td>
+            <td style="color:var(--text-muted)">${typeLabel[u.user_type] || escapeHtml(u.user_type || '—')}</td>
+            <td>${u.email ? `<a href="mailto:${escapeHtml(u.email)}" class="row-link">${escapeHtml(u.email)}</a>` : '<span style="color:var(--text-muted)">—</span>'}</td>
+            <td>${escapeHtml(u.phone || '—')}</td>
+            <td style="color:var(--text-muted)">${u.created_at ? new Date(u.created_at).toLocaleDateString() : ''}</td>
+            <td class="col-actions">
+              ${isMe ? `<a href="#/user-profile" class="btn-icon" title="My Profile"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></a>` : `<button class="btn-icon delete-btn" data-id="${u.user_id}" title="Delete">${DELETE_ICON}</button>`}
+            </td>
+          </tr>`;
+        }).join('');
+
+        list.querySelectorAll('.delete-btn').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            const u = data.users.find(x => x.user_id === parseInt(btn.dataset.id));
+            if (!await confirmDialog('Delete User', `Delete "${u.username}"? This cannot be undone.`)) return;
+            const r  = await fetch(`api/users/${btn.dataset.id}`, { method: 'DELETE' });
+            const d2 = await r.json();
+            if (d2.error) { await alertDialog('Error', d2.error); return; }
+            await loadUsers();
+          });
+        });
+      }
+
+      await loadUsers();
+
+      document.getElementById('new-user-btn').addEventListener('click', () => {
+        showAddUserModal(loadUsers);
+      });
+    }
+  },
+
+  'user-profile': {
+    menuRoute: 'users',
+    render() {
+      return `
+        <h2 class="page-title">My Profile</h2>
         <div class="card">
-          <h3 class="section-title">My Profile</h3>
+          <h3 class="section-title">Profile</h3>
           <div class="two-col">
             <div class="form-group">
               <label for="prof-first">First Name</label>
@@ -4056,13 +4230,23 @@ const pages = {
               <input id="prof-phone" type="tel" autocomplete="tel" name="tel">
             </div>
           </div>
+          <div class="two-col">
+            <div class="form-group">
+              <label for="prof-team">Default Team</label>
+              <select id="prof-team"><option value="">Loading…</option></select>
+            </div>
+            <div class="form-group">
+              <label for="prof-season">Default Season</label>
+              <select id="prof-season"><option value="">— None —</option></select>
+            </div>
+          </div>
           <div class="form-actions">
             <button class="btn btn-primary" id="prof-save">Save Profile</button>
           </div>
           <div class="status-msg" id="prof-status"></div>
         </div>
         <div class="card">
-          <h3 class="section-title">Change My Password</h3>
+          <h3 class="section-title">Change Password</h3>
           <div class="form-group">
             <label for="cp-current">Current Password</label>
             <input id="cp-current" type="password" autocomplete="current-password">
@@ -4083,56 +4267,56 @@ const pages = {
     },
 
     async init() {
-      async function loadUsers() {
-        const res  = await fetch('api/users');
-        const data = await res.json();
-        const list = document.getElementById('user-list');
-        if (data.error) {
-          list.innerHTML = `<tr><td colspan="6" class="list-empty">${escapeHtml(data.error)}</td></tr>`;
-          return;
-        }
-        list.innerHTML = data.users.map(u => {
-          const isMe = u.user_id === currentUser?.user_id;
-          const name = [u.first_name, u.last_name].filter(Boolean).join(' ');
-          return `
-          <tr>
-            <td>${escapeHtml(u.username)}${isMe ? ' <span style="font-size:.75rem;color:var(--text-muted)">(you)</span>' : ''}</td>
-            <td>${escapeHtml(name || '—')}</td>
-            <td>${u.email ? `<a href="mailto:${escapeHtml(u.email)}" class="row-link">${escapeHtml(u.email)}</a>` : '<span style="color:var(--text-muted)">—</span>'}</td>
-            <td>${escapeHtml(u.phone || '—')}</td>
-            <td style="color:var(--text-muted)">${u.created_at ? new Date(u.created_at).toLocaleDateString() : ''}</td>
-            <td class="col-actions">
-              ${!isMe ? `<button class="btn-icon delete-btn" data-id="${u.user_id}" title="Delete">${DELETE_ICON}</button>` : ''}
-            </td>
-          </tr>`;
-        }).join('');
 
-        list.querySelectorAll('.delete-btn').forEach(btn => {
-          btn.addEventListener('click', async () => {
-            const u = data.users.find(x => x.user_id === parseInt(btn.dataset.id));
-            if (!await confirmDialog('Delete User', `Delete "${u.username}"? This cannot be undone.`)) return;
-            const r  = await fetch(`api/users/${btn.dataset.id}`, { method: 'DELETE' });
-            const d2 = await r.json();
-            if (d2.error) { await alertDialog('Error', d2.error); return; }
-            await loadUsers();
-          });
-        });
+      const teamSel   = document.getElementById('prof-team');
+      const seasonSel = document.getElementById('prof-season');
+      seasonSel.disabled = true;
 
-        // Populate profile form with current user's data
-        const me = data.users.find(u => u.user_id === currentUser?.user_id);
+      async function loadTeamSeasons(teamId, selectSeasonId) {
+        seasonSel.innerHTML = '<option value="">— None —</option>';
+        seasonSel.disabled = true;
+        if (!teamId) return;
+        try {
+          const data = await fetch(`api/teams/${teamId}/seasons`).then(r => r.json());
+          seasonSel.innerHTML = '<option value="">— None —</option>' +
+            (data.seasons || []).map(s =>
+              `<option value="${s.season_id}"${s.season_id === selectSeasonId ? ' selected' : ''}>${escapeHtml(s.season_name)} (${escapeHtml(s.label)})</option>`
+            ).join('');
+          seasonSel.disabled = false;
+        } catch { /* leave disabled */ }
+      }
+
+      teamSel.addEventListener('change', () => {
+        loadTeamSeasons(parseInt(teamSel.value) || null, null);
+      });
+
+      let me = null;
+      try {
+        const [usersRes, teamsRes] = await Promise.all([
+          fetch('api/users'),
+          fetch('api/teams'),
+        ]);
+        const [usersData, teamsData] = await Promise.all([
+          usersRes.json(), teamsRes.json()
+        ]);
+
+        me = (usersData.users || []).find(u => u.user_id === currentUser?.user_id);
         if (me) {
           document.getElementById('prof-first').value = me.first_name || '';
           document.getElementById('prof-last').value  = me.last_name  || '';
           document.getElementById('prof-email').value = me.email      || '';
           document.getElementById('prof-phone').value = me.phone      || '';
         }
-      }
 
-      await loadUsers();
+        teamSel.innerHTML = '<option value="">— None —</option>' +
+          (teamsData.teams || []).map(t =>
+            `<option value="${t.team_id}"${me?.default_team_id === t.team_id ? ' selected' : ''}>${escapeHtml(t.name)}</option>`
+          ).join('');
 
-      document.getElementById('new-user-btn').addEventListener('click', () => {
-        showAddUserModal(loadUsers);
-      });
+        if (me?.default_team_id) {
+          await loadTeamSeasons(me.default_team_id, me.default_season_id);
+        }
+      } catch { /* leave fields empty */ }
 
       document.getElementById('prof-save').addEventListener('click', async () => {
         const btn = document.getElementById('prof-save');
@@ -4142,10 +4326,12 @@ const pages = {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              first_name: document.getElementById('prof-first').value,
-              last_name:  document.getElementById('prof-last').value,
-              email:      document.getElementById('prof-email').value,
-              phone:      document.getElementById('prof-phone').value
+              first_name:        document.getElementById('prof-first').value,
+              last_name:         document.getElementById('prof-last').value,
+              email:             document.getElementById('prof-email').value,
+              phone:             document.getElementById('prof-phone').value,
+              default_team_id:   document.getElementById('prof-team').value   || null,
+              default_season_id: document.getElementById('prof-season').value || null,
             })
           });
           const data = await res.json();
@@ -4186,6 +4372,660 @@ const pages = {
         } finally {
           btn.disabled = false; btn.textContent = 'Change Password';
         }
+      });
+    }
+  },
+
+  'team-profile': {
+    render() {
+      return `
+        <h2 class="page-title" id="tp-title">Team Profile</h2>
+        <div class="card">
+          <div class="section-header" style="flex-wrap:wrap;gap:8px">
+            <div>
+              <h3 class="section-title" id="tp-team-name" style="margin:0"></h3>
+              <div id="tp-meta" style="font-size:.85em;color:var(--text-muted);margin-top:4px"></div>
+              <div id="tp-coach" style="font-size:.85em;color:var(--text-muted);margin-top:2px"></div>
+              <div id="tp-record" style="font-size:.85em;color:var(--text-muted);margin-top:2px"></div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;margin-left:auto">
+              <label for="tp-season" style="font-size:.85em;color:var(--text-muted);white-space:nowrap">Season</label>
+              <select id="tp-season" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:5px 10px;font-size:.9em;min-width:180px"><option>Loading…</option></select>
+            </div>
+          </div>
+        </div>
+        <div class="card" style="padding-bottom:0">
+          <div style="display:flex;gap:0;border-bottom:1px solid var(--border);margin:-16px -16px 0">
+            <button class="tp-tab" data-tab="schedule" style="padding:11px 20px;background:none;border:none;border-bottom:2px solid var(--accent);cursor:pointer;font-size:.9em;font-weight:600;color:var(--accent)">Schedule</button>
+            <button class="tp-tab" data-tab="roster" style="padding:11px 20px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:.9em;color:var(--text-muted)">Roster</button>
+            <button class="tp-tab" data-tab="player-stats" style="padding:11px 20px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:.9em;color:var(--text-muted)">Player Stats</button>
+            <button class="tp-tab" data-tab="leaders" style="padding:11px 20px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:.9em;color:var(--text-muted)">Leaders</button>
+            <button class="tp-tab" data-tab="team-stats" style="padding:11px 20px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:.9em;color:var(--text-muted)">Team Stats</button>
+            <button class="tp-tab" data-tab="photo" style="padding:11px 20px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:.9em;color:var(--text-muted)">Photo</button>
+          </div>
+          <div id="tp-pane-schedule" style="padding-top:16px">
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead><tr>
+                  <th>Date</th><th>Opponent</th><th>Score</th><th style="width:32px"></th><th>Location</th><th>Tournament</th>
+                </tr></thead>
+                <tbody id="tp-games"><tr><td colspan="6" class="list-empty">Loading…</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+          <div id="tp-pane-roster" style="display:none;padding-top:16px">
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead><tr>
+                  <th style="width:48px">#</th><th>Name</th><th>Position</th><th>Height</th><th>Year</th>
+                </tr></thead>
+                <tbody id="tp-roster"><tr><td colspan="5" class="list-empty">Loading…</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+          <div id="tp-pane-player-stats" style="display:none;padding-top:16px">
+            <div style="display:flex;border-bottom:1px solid var(--border);margin-bottom:14px">
+              <button class="tp-ps-tab" data-ps-tab="averages" style="padding:7px 18px;background:none;border:none;border-bottom:2px solid var(--accent);cursor:pointer;font-size:0.82em;color:var(--accent);font-weight:600">Averages</button>
+              <button class="tp-ps-tab" data-ps-tab="totals"   style="padding:7px 18px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:0.82em;color:var(--text-muted);font-weight:400">Totals</button>
+            </div>
+            <div id="tp-ps-pane-averages" class="table-wrap">
+              <table class="data-table">
+                <thead><tr>
+                  <th style="width:40px">#</th>
+                  <th>Name</th>
+                  <th style="text-align:center" title="Games Played">GP</th>
+                  <th style="text-align:center" title="Games Started">GS</th>
+                  <th style="text-align:right" title="Minutes Per Game">MINS</th>
+                  <th style="text-align:right" title="Points Per Game">PPG</th>
+                  <th style="text-align:right" title="Rebounds Per Game">RPG</th>
+                  <th style="text-align:right" title="Assists Per Game">APG</th>
+                  <th style="text-align:right" title="Steals Per Game">SPG</th>
+                  <th style="text-align:right" title="Blocks Per Game">BPG</th>
+                  <th style="text-align:right" title="Field Goal Percentage">FG%</th>
+                  <th style="text-align:right" title="Three-Point Percentage">3P%</th>
+                  <th style="text-align:right" title="Free Throw Percentage">FT%</th>
+                  <th style="text-align:right" title="Points Per Possession">PPP</th>
+                </tr></thead>
+                <tbody id="tp-player-stats"><tr><td colspan="14" class="list-empty">Loading…</td></tr></tbody>
+              </table>
+            </div>
+            <div id="tp-ps-pane-totals" class="table-wrap" style="display:none">
+              <table class="data-table">
+                <thead><tr>
+                  <th style="width:40px">#</th>
+                  <th>Name</th>
+                  <th style="text-align:center" title="Games Played">GP</th>
+                  <th style="text-align:center" title="Games Started">GS</th>
+                  <th style="text-align:right" title="Total Minutes">MIN</th>
+                  <th style="text-align:right" title="Total Points">PTS</th>
+                  <th style="text-align:right" title="Total Rebounds">REB</th>
+                  <th style="text-align:right" title="Total Assists">AST</th>
+                  <th style="text-align:right" title="Total Steals">STL</th>
+                  <th style="text-align:right" title="Total Blocks">BLK</th>
+                  <th style="text-align:right" title="Field Goals Made-Attempted">FGM-FGA</th>
+                  <th style="text-align:right" title="Three-Pointers Made-Attempted">3PM-3PA</th>
+                  <th style="text-align:right" title="Free Throws Made-Attempted">FTM-FTA</th>
+                </tr></thead>
+                <tbody id="tp-player-stats-totals"><tr><td colspan="13" class="list-empty">Loading…</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+          <div id="tp-pane-leaders" style="display:none;padding-top:16px">
+            <div id="tp-leaders-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px;align-items:start"></div>
+          </div>
+          <div id="tp-pane-team-stats" style="display:none;padding-top:16px">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start">
+              <div class="card" style="margin:0">
+                <h3 class="section-title" style="margin-top:0">Point Differential</h3>
+                <canvas id="tp-chart-diff"></canvas>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:12px">
+                <div class="card" style="margin:0">
+                  <h3 class="section-title" style="margin-top:0">Scoring Trends</h3>
+                  <canvas id="tp-chart-scoring"></canvas>
+                </div>
+                <div class="card" style="margin:0">
+                  <h3 class="section-title" style="margin-top:0">Avg Points Per Game</h3>
+                  <div id="tp-gauges" style="display:flex;justify-content:space-around;align-items:flex-end;padding:8px 0 4px"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div id="tp-pane-photo" style="display:none;padding-top:16px;text-align:center">
+            <div id="tp-photo-wrap"></div>
+          </div>
+        </div>`;
+    },
+
+    async init(params) {
+      const teamId = parseInt(params?.team) || currentUser?.default_team_id;
+      if (!teamId) {
+        document.getElementById('tp-team-name').textContent = 'No team selected';
+        return;
+      }
+
+      const [teamRes, seasonsRes] = await Promise.all([
+        fetch(`api/teams/${teamId}`).then(r => r.json()).catch(() => ({})),
+        fetch(`api/teams/${teamId}/seasons`).then(r => r.json()).catch(() => ({})),
+      ]);
+
+      const team = teamRes.team;
+      if (!team) {
+        document.getElementById('tp-team-name').textContent = 'Team not found';
+        return;
+      }
+
+      document.getElementById('tp-title').textContent = team.name;
+      document.getElementById('tp-team-name').textContent = team.abbrev ? `${team.name} (${team.abbrev})` : team.name;
+
+      const metaParts = [];
+      if (team.nickname) metaParts.push(escapeHtml(team.nickname));
+      if (team.gender != null && team.gender !== '') metaParts.push(team.gender == 0 ? 'Male' : 'Female');
+      document.getElementById('tp-meta').innerHTML = metaParts.join(' &middot; ');
+
+      const seasons = seasonsRes.seasons || [];
+      const seasonSel = document.getElementById('tp-season');
+
+      function updateCoach(seasonId) {
+        const s = seasons.find(s => s.season_id === seasonId);
+        const coachEl = document.getElementById('tp-coach');
+        coachEl.textContent = s?.coach ? `Coach: ${s.coach}` : '';
+      }
+
+      if (seasons.length === 0) {
+        seasonSel.innerHTML = '<option value="">No seasons</option>';
+        document.getElementById('tp-games').innerHTML = '<tr><td colspan="5" class="list-empty">No seasons found</td></tr>';
+        document.getElementById('tp-roster').innerHTML = '<tr><td colspan="5" class="list-empty">No seasons found</td></tr>';
+        return;
+      }
+
+      const preferredId = parseInt(params?.season) || currentUser?.default_season_id;
+      const hasPreferred = preferredId && seasons.some(s => s.season_id === preferredId);
+      const defaultSeasonId = hasPreferred ? preferredId : seasons[0].season_id;
+      seasonSel.innerHTML = seasons.map(s =>
+        `<option value="${s.season_id}"${s.season_id === defaultSeasonId ? ' selected' : ''}>${escapeHtml(s.season_name)} (${escapeHtml(s.label)})</option>`
+      ).join('');
+
+      // ── Tab switching ────────────────────────────────────────────────────────
+      let rosterLoaded = false;
+      let playerStatsLoaded = false;
+      let leadersLoaded = false;
+      let playerStatsData = [];
+      let psActiveTab = 'averages';
+      let seasonGames = [];
+      let diffChart = null;
+      let scoringChart = null;
+      let activeTab = 'schedule';
+
+      function activateTab(name) {
+        activeTab = name;
+        document.querySelectorAll('.tp-tab').forEach(btn => {
+          const active = btn.dataset.tab === name;
+          btn.style.color        = active ? 'var(--accent)' : 'var(--text-muted)';
+          btn.style.borderBottom = active ? '2px solid var(--accent)' : '2px solid transparent';
+          btn.style.fontWeight   = active ? '600' : '400';
+        });
+        document.getElementById('tp-pane-schedule').style.display    = name === 'schedule'    ? '' : 'none';
+        document.getElementById('tp-pane-roster').style.display      = name === 'roster'      ? '' : 'none';
+        document.getElementById('tp-pane-player-stats').style.display= name === 'player-stats'? '' : 'none';
+        document.getElementById('tp-pane-leaders').style.display     = name === 'leaders'     ? '' : 'none';
+        document.getElementById('tp-pane-team-stats').style.display  = name === 'team-stats'  ? '' : 'none';
+        document.getElementById('tp-pane-photo').style.display       = name === 'photo'       ? '' : 'none';
+        if (name === 'roster'       && !rosterLoaded)      loadRoster(parseInt(seasonSel.value));
+        if (name === 'player-stats' && !playerStatsLoaded) loadPlayerStats(parseInt(seasonSel.value));
+        if (name === 'leaders'      && !leadersLoaded)     loadLeaders(parseInt(seasonSel.value));
+        if (name === 'team-stats')                         { renderDiffChart(); renderScoringChart(); renderScoringGauges(); }
+        if (name === 'photo')                              showPhoto(parseInt(seasonSel.value));
+      }
+
+      document.querySelectorAll('.tp-tab').forEach(btn =>
+        btn.addEventListener('click', () => activateTab(btn.dataset.tab))
+      );
+
+      function switchPsTab(tab) {
+        psActiveTab = tab;
+        document.querySelectorAll('.tp-ps-tab').forEach(btn => {
+          const active = btn.dataset.psTab === tab;
+          btn.style.color       = active ? 'var(--accent)'    : 'var(--text-muted)';
+          btn.style.fontWeight  = active ? '600'              : '400';
+          btn.style.borderBottom= active ? '2px solid var(--accent)' : '2px solid transparent';
+        });
+        document.getElementById('tp-ps-pane-averages').style.display = tab === 'averages' ? '' : 'none';
+        document.getElementById('tp-ps-pane-totals').style.display   = tab === 'totals'   ? '' : 'none';
+        if (tab === 'totals') renderPlayerStatsTotals();
+      }
+
+      document.querySelectorAll('.tp-ps-tab').forEach(btn =>
+        btn.addEventListener('click', () => switchPsTab(btn.dataset.psTab))
+      );
+
+      // ── Schedule ─────────────────────────────────────────────────────────────
+      async function loadGames(seasonId) {
+        const tbody = document.getElementById('tp-games');
+        tbody.innerHTML = `<tr><td colspan="6" class="list-empty">Loading…</td></tr>`;
+        document.getElementById('tp-record').textContent = '';
+        try {
+          const data  = await fetch(`api/teams/${teamId}/games?season_id=${seasonId}`).then(r => r.json());
+          const games = data.games || [];
+          seasonGames = games;
+
+          let wins = 0, losses = 0, upcoming = 0;
+          games.forEach(g => {
+            const ts = parseInt(g.team_score), os = parseInt(g.opponent_score);
+            if (!isNaN(ts) && !isNaN(os)) {
+              ts > os ? wins++ : losses++;
+            } else {
+              upcoming++;
+            }
+          });
+
+          document.getElementById('tp-record').textContent = `Overall Record: ${wins} - ${losses}`;
+
+          tbody.innerHTML = games.length === 0
+            ? '<tr><td colspan="6" class="list-empty">No games scheduled</td></tr>'
+            : games.map(g => {
+                const d = g.start_time ? new Date(g.start_time) : null;
+                const dateStr  = d ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
+                const ts = parseInt(g.team_score), os = parseInt(g.opponent_score);
+                const hasScore = !isNaN(ts) && !isNaN(os);
+                const score    = hasScore ? `${ts}–${os}` : '—';
+                const result   = hasScore
+                  ? (ts > os
+                      ? `<span style="color:#4caf50;font-weight:700">W</span>`
+                      : `<span style="color:#f44336;font-weight:700">L</span>`)
+                  : '';
+                return `<tr>
+                  <td style="white-space:nowrap;color:var(--text-muted)">${escapeHtml(dateStr)}</td>
+                  <td>${escapeHtml(g.opponent_name || '')}</td>
+                  <td style="font-variant-numeric:tabular-nums">${score}</td>
+                  <td style="text-align:center">${result}</td>
+                  <td style="color:var(--text-muted)">${escapeHtml(g.location || '')}</td>
+                  <td style="color:var(--text-muted)">${escapeHtml(g.tournament_name || '')}</td>
+                </tr>`;
+              }).join('');
+          if (activeTab === 'team-stats') { renderDiffChart(); renderScoringChart(); renderScoringGauges(); }
+        } catch {
+          tbody.innerHTML = '<tr><td colspan="5" class="list-empty">Failed to load games</td></tr>';
+        }
+      }
+
+      // ── Leaders ──────────────────────────────────────────────────────────────
+      async function loadLeaders(seasonId) {
+        leadersLoaded = true;
+        const wrap = document.getElementById('tp-leaders-grid');
+        if (!wrap) return;
+        wrap.innerHTML = '<p style="color:var(--text-muted)">Loading…</p>';
+        try {
+          const data    = await fetch(`api/teams/${teamId}/player-stats?season_id=${seasonId}`).then(r => r.json());
+          const players = (data.players || []).filter(p => parseInt(p.gp) > 0);
+
+          if (!players.length) {
+            wrap.innerHTML = '<p style="color:var(--text-muted)">No player stats found</p>';
+            return;
+          }
+
+          const avg = (total, gp) => {
+            const t = parseInt(total), g = parseInt(gp);
+            return g > 0 ? t / g : 0;
+          };
+          const pct = (made, att) => {
+            const m = parseInt(made), a = parseInt(att);
+            return a > 0 ? m / a * 100 : null;
+          };
+          const pppVal = p => {
+            const fga = parseInt(p.fga), fta = parseInt(p.fta), oreb = parseInt(p.oreb),
+                  to  = parseInt(p.turnovers), pts = parseInt(p.pts);
+            const poss = fga + 0.44 * fta - oreb + to;
+            return poss > 0 ? pts / poss : null;
+          };
+
+          const categories = [
+            { label: 'Points Per Game',   entries: players.map(p => ({ p, v: avg(p.pts,  p.gp) })),                                                                  fmt: v => v.toFixed(1) },
+            { label: 'Rebounds Per Game', entries: players.map(p => ({ p, v: avg(p.reb,  p.gp) })),                                                                  fmt: v => v.toFixed(1) },
+            { label: 'Assists Per Game',  entries: players.map(p => ({ p, v: avg(p.ast,  p.gp) })),                                                                  fmt: v => v.toFixed(1) },
+            { label: 'Steals Per Game',   entries: players.map(p => ({ p, v: avg(p.stl,  p.gp) })),                                                                  fmt: v => v.toFixed(1) },
+            { label: 'Blocks Per Game',   entries: players.map(p => ({ p, v: avg(p.blk,  p.gp) })),                                                                  fmt: v => v.toFixed(1) },
+            { label: 'Minutes Per Game',  entries: players.map(p => ({ p, v: parseFloat(p.mpg) || 0 })),                                                             fmt: v => v.toFixed(1) },
+            { label: 'Field Goal %',      entries: players.filter(p => parseInt(p.fga)  >= 3).map(p => ({ p, v: pct(p.fgm,  p.fga)  })).filter(x => x.v !== null), fmt: v => v.toFixed(1) + '%' },
+            { label: 'Three-Point %',     entries: players.filter(p => parseInt(p.fga3) >= 3).map(p => ({ p, v: pct(p.fgm3, p.fga3) })).filter(x => x.v !== null), fmt: v => v.toFixed(1) + '%' },
+            { label: 'Free Throw %',      entries: players.filter(p => parseInt(p.fta)  >= 3).map(p => ({ p, v: pct(p.ftm,  p.fta)  })).filter(x => x.v !== null), fmt: v => v.toFixed(1) + '%' },
+            { label: 'Pts Per Possession',entries: players.filter(p => parseInt(p.fga)  >  0).map(p => ({ p, v: pppVal(p) })).filter(x => x.v !== null),            fmt: v => v.toFixed(2) },
+          ];
+
+          const rankColors = ['#e5a00d', '#9e9e9e', '#cd7f32'];
+          const name = p => `${p.first_name || ''} ${p.last_name || ''}`.trim();
+
+          wrap.innerHTML = categories.map(cat => {
+            const top3 = [...cat.entries].sort((a, b) => b.v - a.v).slice(0, 3);
+            if (!top3.length) return '';
+            const rows = top3.map((item, i) => `
+              <div style="display:flex;align-items:center;gap:8px;padding:6px 0${i < top3.length - 1 ? ';border-bottom:1px solid var(--border)' : ''}">
+                <span style="font-size:0.75em;font-weight:700;color:${rankColors[i]};width:14px;text-align:center;flex-shrink:0">${i + 1}</span>
+                <span style="flex:1;font-size:0.85em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:${i === 0 ? 'var(--text)' : 'var(--text-muted)'};font-weight:${i === 0 ? '600' : '400'}">${escapeHtml(name(item.p))}</span>
+                <span style="font-size:0.85em;font-variant-numeric:tabular-nums;font-weight:${i === 0 ? '700' : '400'};color:${i === 0 ? 'var(--text)' : 'var(--text-muted)'}">${cat.fmt(item.v)}</span>
+              </div>`).join('');
+            return `
+              <div class="card" style="margin:0">
+                <div style="font-size:0.68em;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);margin-bottom:6px">${escapeHtml(cat.label)}</div>
+                ${rows}
+              </div>`;
+          }).filter(Boolean).join('');
+        } catch {
+          wrap.innerHTML = '<p style="color:var(--text-muted)">Failed to load leaders</p>';
+        }
+      }
+
+      // ── Team Stats chart ──────────────────────────────────────────────────────
+      function renderDiffChart() {
+        const played = seasonGames.filter(g => {
+          const ts = parseInt(g.team_score), os = parseInt(g.opponent_score);
+          return !isNaN(ts) && !isNaN(os);
+        });
+
+        const labels = played.map(g => {
+          const d = g.start_time ? new Date(g.start_time) : null;
+          return d ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '?';
+        });
+        const diffs  = played.map(g => parseInt(g.team_score) - parseInt(g.opponent_score));
+        const colors = diffs.map(d => d >= 0 ? '#4caf50' : '#f44336');
+
+        if (diffChart) { diffChart.destroy(); diffChart = null; }
+        const ctx = document.getElementById('tp-chart-diff');
+        if (!ctx) return;
+
+        diffChart = new Chart(ctx, {
+          type: 'bar',
+          data: {
+            labels,
+            datasets: [{
+              data: diffs,
+              backgroundColor: colors,
+              borderColor: colors,
+              borderWidth: 1,
+              borderRadius: 3,
+            }]
+          },
+          options: {
+            responsive: true,
+            aspectRatio: 2.5,
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                callbacks: {
+                  title: (items) => {
+                    const g = played[items[0].dataIndex];
+                    return `${labels[items[0].dataIndex]} vs ${g.opponent_name || ''}`;
+                  },
+                  label: (item) => {
+                    const v = item.raw;
+                    return v >= 0 ? `+${v} (W)` : `${v} (L)`;
+                  }
+                }
+              }
+            },
+            scales: {
+              x: {
+                ticks: { color: '#888', font: { size: 11 } },
+                grid:  { display: false }
+              },
+              y: {
+                ticks: { color: '#888' },
+                grid:  {
+                  color: (ctx) => ctx.tick.value === 0 ? 'rgba(0,0,0,0.35)' : 'rgba(0,0,0,0.07)',
+                  drawBorder: false
+                },
+                border: { display: false },
+                title: { display: true, text: 'Point Differential', color: '#888', font: { size: 12 } }
+              }
+            }
+          }
+        });
+      }
+
+      // ── Scoring trends chart ─────────────────────────────────────────────────
+      function renderScoringChart() {
+        const played = seasonGames.filter(g => {
+          const ts = parseInt(g.team_score), os = parseInt(g.opponent_score);
+          return !isNaN(ts) && !isNaN(os);
+        });
+
+        const labels   = played.map(g => {
+          const d = g.start_time ? new Date(g.start_time) : null;
+          return d ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '?';
+        });
+        const teamPts  = played.map(g => parseInt(g.team_score));
+        const oppPts   = played.map(g => parseInt(g.opponent_score));
+
+        if (scoringChart) { scoringChart.destroy(); scoringChart = null; }
+        const ctx = document.getElementById('tp-chart-scoring');
+        if (!ctx) return;
+
+        const gridColor = (c) => c.tick.value === 0 ? 'rgba(0,0,0,0.35)' : 'rgba(0,0,0,0.07)';
+
+        scoringChart = new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels,
+            datasets: [
+              {
+                label: 'Team',
+                data: teamPts,
+                borderColor: '#e5a00d',
+                backgroundColor: 'rgba(229,160,13,0.08)',
+                tension: 0.3,
+                pointRadius: 4,
+                pointHoverRadius: 6,
+                fill: false,
+              },
+              {
+                label: 'Opponent',
+                data: oppPts,
+                borderColor: '#888',
+                backgroundColor: 'rgba(136,136,136,0.08)',
+                tension: 0.3,
+                pointRadius: 4,
+                pointHoverRadius: 6,
+                fill: false,
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            aspectRatio: 2.5,
+            plugins: {
+              legend: { display: true, labels: { color: '#888', boxWidth: 12, font: { size: 11 } } },
+              tooltip: {
+                callbacks: {
+                  title: (items) => {
+                    const g = played[items[0].dataIndex];
+                    return `${labels[items[0].dataIndex]} vs ${g.opponent_name || ''}`;
+                  }
+                }
+              }
+            },
+            scales: {
+              x: {
+                ticks: { color: '#888', font: { size: 11 } },
+                grid:  { display: false }
+              },
+              y: {
+                ticks: { color: '#888' },
+                grid:  { color: gridColor, drawBorder: false },
+                border: { display: false },
+                title: { display: true, text: 'Points', color: '#888', font: { size: 12 } }
+              }
+            }
+          }
+        });
+      }
+
+      // ── PPG gauges ───────────────────────────────────────────────────────────
+      function renderScoringGauges() {
+        const wrap = document.getElementById('tp-gauges');
+        if (!wrap) return;
+        const played = seasonGames.filter(g => {
+          const ts = parseInt(g.team_score), os = parseInt(g.opponent_score);
+          return !isNaN(ts) && !isNaN(os);
+        });
+        if (!played.length) {
+          wrap.innerHTML = '<p style="color:var(--text-muted);text-align:center;padding:12px 0;width:100%">No games played</p>';
+          return;
+        }
+        const teamAvg = played.reduce((s, g) => s + parseInt(g.team_score), 0)  / played.length;
+        const oppAvg  = played.reduce((s, g) => s + parseInt(g.opponent_score), 0) / played.length;
+        const maxPts  = 120;
+        const r = 80, arcLen = Math.PI * r;
+
+        function gauge(value, color, label) {
+          const filled = (arcLen * Math.min(value / maxPts, 1)).toFixed(1);
+          return `
+            <div style="text-align:center;flex:1">
+              <svg viewBox="0 0 200 115" style="width:100%;max-width:160px;display:block;margin:0 auto">
+                <path d="M 20 100 A 80 80 0 0 1 180 100"
+                      stroke="rgba(0,0,0,0.12)" stroke-width="16" fill="none" stroke-linecap="round"/>
+                <path d="M 20 100 A 80 80 0 0 1 180 100"
+                      stroke="${color}" stroke-width="16" fill="none" stroke-linecap="round"
+                      stroke-dasharray="${filled} ${arcLen.toFixed(1)}" stroke-dashoffset="0"/>
+                <text x="100" y="94" text-anchor="middle" font-size="30" font-weight="700"
+                      fill="#e8e8e8" font-family="inherit">${value.toFixed(1)}</text>
+                <text x="100" y="112" text-anchor="middle" font-size="11"
+                      fill="#888" font-family="inherit">${label}</text>
+              </svg>
+            </div>`;
+        }
+
+        wrap.innerHTML = gauge(teamAvg, '#e5a00d', 'Team') + gauge(oppAvg, '#888', 'Opponent');
+      }
+
+      // ── Roster ───────────────────────────────────────────────────────────────
+      async function loadRoster(seasonId) {
+        rosterLoaded = true;
+        const tbody = document.getElementById('tp-roster');
+        tbody.innerHTML = `<tr><td colspan="5" class="list-empty">Loading…</td></tr>`;
+        try {
+          const data   = await fetch(`api/teams/${teamId}/roster?season_id=${seasonId}`).then(r => r.json());
+          const roster = data.roster || [];
+          tbody.innerHTML = roster.length === 0
+            ? '<tr><td colspan="5" class="list-empty">No players on roster</td></tr>'
+            : roster.map(p => `<tr>
+                <td style="color:var(--text-muted);font-variant-numeric:tabular-nums">${escapeHtml(p.jersey_number || '—')}</td>
+                <td>${escapeHtml(`${p.first_name || ''} ${p.last_name || ''}`.trim())}</td>
+                <td style="color:var(--text-muted)">${escapeHtml(p.position || '—')}</td>
+                <td style="color:var(--text-muted)">${escapeHtml(p.height || '—')}</td>
+                <td style="color:var(--text-muted)">${escapeHtml(p.grad_year ? String(p.grad_year) : '—')}</td>
+              </tr>`).join('');
+        } catch {
+          tbody.innerHTML = '<tr><td colspan="5" class="list-empty">Failed to load roster</td></tr>';
+        }
+      }
+
+      // ── Player Stats ─────────────────────────────────────────────────────────
+      async function loadPlayerStats(seasonId) {
+        playerStatsLoaded = true;
+        const tbody = document.getElementById('tp-player-stats');
+        tbody.innerHTML = `<tr><td colspan="14" class="list-empty">Loading…</td></tr>`;
+        try {
+          const data    = await fetch(`api/teams/${teamId}/player-stats?season_id=${seasonId}`).then(r => r.json());
+          const players = data.players || [];
+          playerStatsData = players;
+          if (psActiveTab === 'totals') renderPlayerStatsTotals();
+          const pct = (made, att) => {
+            const m = parseInt(made), a = parseInt(att);
+            return a > 0 ? (m / a * 100).toFixed(1) + '%' : '—';
+          };
+          const avg = (total, gp) => {
+            const t = parseInt(total), g = parseInt(gp);
+            return g > 0 ? (t / g).toFixed(1) : '—';
+          };
+          const ppp = (pts, fga, fta, oreb, to) => {
+            const poss = parseInt(fga) + (0.44 * parseInt(fta)) - parseInt(oreb) + parseInt(to);
+            return poss > 0 ? (parseInt(pts) / poss).toFixed(2) : '—';
+          };
+          tbody.innerHTML = players.length === 0
+            ? '<tr><td colspan="14" class="list-empty">No player stats found</td></tr>'
+            : players.map(p => `<tr>
+                <td style="color:var(--text-muted);font-variant-numeric:tabular-nums">${escapeHtml(p.jersey_number || '—')}</td>
+                <td>${escapeHtml(`${p.first_name || ''} ${p.last_name || ''}`.trim())}</td>
+                <td style="text-align:center">${p.gp || 0}</td>
+                <td style="text-align:center">${p.gs || 0}</td>
+                <td style="text-align:right;font-variant-numeric:tabular-nums">${p.mpg ?? '—'}</td>
+                <td style="text-align:right;font-variant-numeric:tabular-nums">${avg(p.pts,  p.gp)}</td>
+                <td style="text-align:right;font-variant-numeric:tabular-nums">${avg(p.reb,  p.gp)}</td>
+                <td style="text-align:right;font-variant-numeric:tabular-nums">${avg(p.ast,  p.gp)}</td>
+                <td style="text-align:right;font-variant-numeric:tabular-nums">${avg(p.stl,  p.gp)}</td>
+                <td style="text-align:right;font-variant-numeric:tabular-nums">${avg(p.blk,  p.gp)}</td>
+                <td style="text-align:right;font-variant-numeric:tabular-nums">${pct(p.fgm,  p.fga)}</td>
+                <td style="text-align:right;font-variant-numeric:tabular-nums">${pct(p.fgm3, p.fga3)}</td>
+                <td style="text-align:right;font-variant-numeric:tabular-nums">${pct(p.ftm,  p.fta)}</td>
+                <td style="text-align:right;font-variant-numeric:tabular-nums">${ppp(p.pts, p.fga, p.fta, p.oreb, p.turnovers)}</td>
+              </tr>`).join('');
+        } catch {
+          tbody.innerHTML = '<tr><td colspan="14" class="list-empty">Failed to load player stats</td></tr>';
+        }
+      }
+
+      // ── Player Stats totals render ───────────────────────────────────────────
+      function renderPlayerStatsTotals() {
+        const tbody = document.getElementById('tp-player-stats-totals');
+        if (!tbody) return;
+        if (!playerStatsData.length) {
+          tbody.innerHTML = '<tr><td colspan="13" class="list-empty">No player stats found</td></tr>';
+          return;
+        }
+        const n = (val, fallback = '—') => { const v = parseInt(val); return isNaN(v) ? fallback : v; };
+        tbody.innerHTML = playerStatsData.map(p => {
+          const totalMin = parseFloat(p.total_min);
+          const minStr   = isNaN(totalMin) || totalMin === 0 ? '—' : Math.round(totalMin);
+          return `<tr>
+            <td style="color:var(--text-muted);font-variant-numeric:tabular-nums">${escapeHtml(p.jersey_number || '—')}</td>
+            <td>${escapeHtml(`${p.first_name || ''} ${p.last_name || ''}`.trim())}</td>
+            <td style="text-align:center">${p.gp || 0}</td>
+            <td style="text-align:center">${p.gs || 0}</td>
+            <td style="text-align:right;font-variant-numeric:tabular-nums">${minStr}</td>
+            <td style="text-align:right;font-variant-numeric:tabular-nums">${n(p.pts,  0)}</td>
+            <td style="text-align:right;font-variant-numeric:tabular-nums">${n(p.reb,  0)}</td>
+            <td style="text-align:right;font-variant-numeric:tabular-nums">${n(p.ast,  0)}</td>
+            <td style="text-align:right;font-variant-numeric:tabular-nums">${n(p.stl,  0)}</td>
+            <td style="text-align:right;font-variant-numeric:tabular-nums">${n(p.blk,  0)}</td>
+            <td style="text-align:right;font-variant-numeric:tabular-nums">${n(p.fgm,  0)}-${n(p.fga,  0)}</td>
+            <td style="text-align:right;font-variant-numeric:tabular-nums">${n(p.fgm3, 0)}-${n(p.fga3, 0)}</td>
+            <td style="text-align:right;font-variant-numeric:tabular-nums">${n(p.ftm,  0)}-${n(p.fta,  0)}</td>
+          </tr>`;
+        }).join('');
+      }
+
+      // ── Photo ────────────────────────────────────────────────────────────────
+      function showPhoto(seasonId) {
+        const wrap = document.getElementById('tp-photo-wrap');
+        if (!wrap) return;
+        const season = seasons.find(s => s.season_id === seasonId);
+        if (season?.photo_path) {
+          wrap.innerHTML = `<img src="${season.photo_path}" alt="Team photo"
+            style="max-width:100%;max-height:600px;border-radius:6px;object-fit:contain">`;
+        } else {
+          wrap.innerHTML = `<p style="color:var(--text-muted);padding:32px 0">No photo available for this season.</p>`;
+        }
+      }
+
+      // ── Init ─────────────────────────────────────────────────────────────────
+      updateCoach(parseInt(seasonSel.value));
+      await loadGames(parseInt(seasonSel.value));
+
+      seasonSel.addEventListener('change', () => {
+        rosterLoaded = false;
+        playerStatsLoaded = false;
+        leadersLoaded = false;
+        playerStatsData = [];
+        psActiveTab = 'averages';
+        switchPsTab('averages');
+        if (diffChart)    { diffChart.destroy();    diffChart    = null; }
+        if (scoringChart) { scoringChart.destroy(); scoringChart = null; }
+        updateCoach(parseInt(seasonSel.value));
+        loadGames(parseInt(seasonSel.value));
+        if (activeTab === 'roster')       loadRoster(parseInt(seasonSel.value));
+        if (activeTab === 'player-stats') loadPlayerStats(parseInt(seasonSel.value));
+        if (activeTab === 'leaders')      loadLeaders(parseInt(seasonSel.value));
+        if (activeTab === 'photo')        showPhoto(parseInt(seasonSel.value));
       });
     }
   },
@@ -6090,7 +6930,7 @@ function showAuthScreen(mode) {
         submitEl.textContent = isSetup ? 'Create Account' : 'Sign In';
         return;
       }
-      currentUser = { user_id: data.user_id, username: data.username };
+      currentUser = { user_id: data.user_id, username: data.username, default_team_id: data.default_team_id || null, default_season_id: data.default_season_id || null };
       document.getElementById('sidebar').style.display = '';
       main.style.cssText = '';
       bootApp();
@@ -6112,11 +6952,58 @@ function renderHeaderUser() {
   if (!el) return;
   if (!currentUser) { el.innerHTML = ''; return; }
   el.innerHTML = `
-    <span style="font-size:.8rem;color:var(--text-muted)">${escapeHtml(currentUser.username)}</span>
-    <button class="btn btn-secondary btn-sm" id="logout-btn">Sign out</button>`;
-  document.getElementById('logout-btn').addEventListener('click', async () => {
+    <div style="position:relative" id="user-menu-wrap">
+      <button id="user-menu-btn" title="${escapeHtml(currentUser.username)}"
+        style="background:none;border:none;cursor:pointer;padding:4px;border-radius:50%;color:var(--text);display:flex;align-items:center;justify-content:center;width:34px;height:34px;transition:background .15s">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>
+        </svg>
+      </button>
+      <div id="user-menu-dropdown" style="display:none;position:absolute;right:0;top:calc(100% + 6px);background:var(--surface);border:1px solid var(--border);border-radius:8px;min-width:168px;box-shadow:0 4px 20px rgba(0,0,0,.5);z-index:1000;overflow:hidden">
+        <div style="padding:8px 14px 7px;border-bottom:1px solid var(--border);font-size:.75rem;color:var(--text-muted)">${escapeHtml(currentUser.username)}</div>
+        <button id="user-menu-profile" style="width:100%;background:none;border:none;cursor:pointer;padding:10px 14px;text-align:left;font-size:.9rem;color:var(--text);display:flex;align-items:center;gap:10px;transition:background .1s">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+          Edit Profile
+        </button>
+        <button id="user-menu-logout" style="width:100%;background:none;border:none;cursor:pointer;padding:10px 14px;text-align:left;font-size:.9rem;color:var(--text);display:flex;align-items:center;gap:10px;transition:background .1s">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          Log out
+        </button>
+      </div>
+    </div>`;
+
+  const menuBtn  = document.getElementById('user-menu-btn');
+  const dropdown = document.getElementById('user-menu-dropdown');
+
+  menuBtn.addEventListener('mouseenter', () => menuBtn.style.background = 'var(--surface2)');
+  menuBtn.addEventListener('mouseleave', () => menuBtn.style.background = 'none');
+  ['user-menu-profile','user-menu-logout'].forEach(id => {
+    const b = document.getElementById(id);
+    b.addEventListener('mouseenter', () => b.style.background = 'var(--surface2)');
+    b.addEventListener('mouseleave', () => b.style.background = 'none');
+  });
+
+  menuBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    const isOpen = dropdown.style.display !== 'none';
+    dropdown.style.display = isOpen ? 'none' : 'block';
+  });
+
+  document.getElementById('user-menu-profile').addEventListener('click', () => {
+    dropdown.style.display = 'none';
+    window.location.hash = '#/user-profile';
+  });
+
+  document.getElementById('user-menu-logout').addEventListener('click', async () => {
     await fetch('api/auth/logout', { method: 'POST' }).catch(() => {});
     window.location.reload();
+  });
+
+  document.addEventListener('click', function closeOnOutside(e) {
+    if (!document.getElementById('user-menu-wrap')?.contains(e.target)) {
+      dropdown.style.display = 'none';
+      document.removeEventListener('click', closeOnOutside);
+    }
   });
 }
 
@@ -6135,8 +7022,25 @@ function showAddUserModal(onDone) {
           <input id="adduser-name" type="text" autocomplete="off" autocapitalize="none" spellcheck="false">
         </div>
         <div class="form-group">
+          <label for="adduser-type">User Type</label>
+          <select id="adduser-type">
+            <option value="administrator">Administrator</option>
+            <option value="team_manager">Team Manager</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="adduser-email">Email</label>
+          <input id="adduser-email" type="email" autocomplete="off">
+        </div>
+        <div class="form-group">
           <label for="adduser-pass">Password</label>
           <input id="adduser-pass" type="password" autocomplete="new-password">
+        </div>
+        <div style="margin-bottom:12px">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.9em;color:var(--text)">
+            <input type="checkbox" id="adduser-notify" disabled style="width:auto;padding:0;border:none;background:none;cursor:pointer">
+            <span id="adduser-notify-label">Notify via email</span>
+          </label>
         </div>
         <div class="form-actions">
           <button class="btn btn-primary" id="adduser-save">Add User</button>
@@ -6152,9 +7056,31 @@ function showAddUserModal(onDone) {
   document.getElementById('adduser-cancel').addEventListener('click', close);
   overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
 
+  const emailInput   = document.getElementById('adduser-email');
+  const notifyCheck  = document.getElementById('adduser-notify');
+  const notifyLabel  = document.getElementById('adduser-notify-label');
+
+  // Check if SMTP is configured to decide if notify can be enabled
+  fetch('api/settings/email').then(r => r.json()).then(em => {
+    if (!em.host || !em.user) {
+      notifyLabel.style.color = 'var(--text-muted)';
+      notifyLabel.title = 'Email (SMTP) is not configured in Settings';
+    }
+  }).catch(() => {});
+
+  emailInput.addEventListener('input', () => {
+    fetch('api/settings/email').then(r => r.json()).then(em => {
+      notifyCheck.disabled = !emailInput.value.trim() || !em.host || !em.user;
+      if (notifyCheck.disabled) notifyCheck.checked = false;
+    }).catch(() => { notifyCheck.disabled = true; });
+  });
+
   document.getElementById('adduser-save').addEventListener('click', async () => {
-    const username = document.getElementById('adduser-name').value.trim();
-    const password = document.getElementById('adduser-pass').value;
+    const username  = document.getElementById('adduser-name').value.trim();
+    const user_type = document.getElementById('adduser-type').value;
+    const email     = document.getElementById('adduser-email').value.trim();
+    const password  = document.getElementById('adduser-pass').value;
+    const notify    = document.getElementById('adduser-notify').checked;
     if (!username || !password) { showStatus('adduser-status', 'error', 'Username and password required'); return; }
     const btn = document.getElementById('adduser-save');
     btn.disabled = true; btn.textContent = 'Adding…';
@@ -6162,7 +7088,7 @@ function showAddUserModal(onDone) {
       const res  = await fetch('api/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password })
+        body: JSON.stringify({ username, password, user_type, email, notify })
       });
       const data = await res.json();
       if (data.success) { close(); onDone?.(); }
@@ -6178,6 +7104,12 @@ function showAddUserModal(onDone) {
 function bootApp() {
   renderHeaderUser();
   initSidebar();
+  const route = getRoute().route;
+  if (route === 'home' && currentUser?.default_team_id) {
+    const qs = currentUser.default_season_id ? `?team=${currentUser.default_team_id}&season=${currentUser.default_season_id}` : `?team=${currentUser.default_team_id}`;
+    window.location.hash = `#/team-profile${qs}`;
+    return;
+  }
   renderPage();
 }
 
