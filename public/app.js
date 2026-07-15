@@ -5,6 +5,16 @@ let currentUser = null;
 // ── Menu definition ──────────────────────────────────────────────────────────
 const MENU_ITEMS = [
   {
+    label: 'Dashboard',
+    route: 'home',
+    icon: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="3" width="7" height="7" rx="1"/>
+      <rect x="14" y="3" width="7" height="7" rx="1"/>
+      <rect x="14" y="14" width="7" height="7" rx="1"/>
+      <rect x="3" y="14" width="7" height="7" rx="1"/>
+    </svg>`
+  },
+  {
     label: 'Leagues',
     route: 'leagues',
     icon: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -4407,9 +4417,9 @@ const pages = {
             <div class="table-wrap">
               <table class="data-table">
                 <thead><tr>
-                  <th>Date</th><th>Opponent</th><th>Score</th><th style="width:32px"></th><th>Location</th><th>Tournament</th>
+                  <th>Date</th><th>Opponent</th><th>Score</th><th style="width:32px"></th><th>Location</th><th>Tournament</th><th style="width:40px"></th>
                 </tr></thead>
-                <tbody id="tp-games"><tr><td colspan="6" class="list-empty">Loading…</td></tr></tbody>
+                <tbody id="tp-games"><tr><td colspan="7" class="list-empty">Loading…</td></tr></tbody>
               </table>
             </div>
           </div>
@@ -4534,7 +4544,7 @@ const pages = {
 
       if (seasons.length === 0) {
         seasonSel.innerHTML = '<option value="">No seasons</option>';
-        document.getElementById('tp-games').innerHTML = '<tr><td colspan="5" class="list-empty">No seasons found</td></tr>';
+        document.getElementById('tp-games').innerHTML = '<tr><td colspan="7" class="list-empty">No seasons found</td></tr>';
         document.getElementById('tp-roster').innerHTML = '<tr><td colspan="5" class="list-empty">No seasons found</td></tr>';
         return;
       }
@@ -4602,7 +4612,7 @@ const pages = {
       // ── Schedule ─────────────────────────────────────────────────────────────
       async function loadGames(seasonId) {
         const tbody = document.getElementById('tp-games');
-        tbody.innerHTML = `<tr><td colspan="6" class="list-empty">Loading…</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="7" class="list-empty">Loading…</td></tr>`;
         document.getElementById('tp-record').textContent = '';
         try {
           const data  = await fetch(`api/teams/${teamId}/games?season_id=${seasonId}`).then(r => r.json());
@@ -4621,8 +4631,9 @@ const pages = {
 
           document.getElementById('tp-record').textContent = `Overall Record: ${wins} - ${losses}`;
 
+          const bsIcon = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="12" width="4" height="9"/><rect x="10" y="5" width="4" height="16"/><rect x="17" y="2" width="4" height="19"/></svg>`;
           tbody.innerHTML = games.length === 0
-            ? '<tr><td colspan="6" class="list-empty">No games scheduled</td></tr>'
+            ? '<tr><td colspan="7" class="list-empty">No games scheduled</td></tr>'
             : games.map(g => {
                 const d = g.start_time ? new Date(g.start_time) : null;
                 const dateStr  = d ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
@@ -4634,6 +4645,13 @@ const pages = {
                       ? `<span style="color:#4caf50;font-weight:700">W</span>`
                       : `<span style="color:#f44336;font-weight:700">L</span>`)
                   : '';
+                const videoIcon = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>`;
+                const bsCell   = g.has_boxscore
+                  ? `<a href="#/boxscore?id=${g.competition_id}" title="View Boxscore" style="color:var(--accent);display:inline-flex;align-items:center">${bsIcon}</a>`
+                  : `<span title="No boxscore available" style="color:var(--text-muted);opacity:0.3;display:inline-flex;align-items:center">${bsIcon}</span>`;
+                const videoCell = g.video_url
+                  ? `<a href="${escapeHtml(g.video_url)}" target="_blank" rel="noopener noreferrer" title="Watch Game" style="color:var(--accent);display:inline-flex;align-items:center">${videoIcon}</a>`
+                  : `<span title="No video available" style="color:var(--text-muted);opacity:0.3;display:inline-flex;align-items:center">${videoIcon}</span>`;
                 return `<tr>
                   <td style="white-space:nowrap;color:var(--text-muted)">${escapeHtml(dateStr)}</td>
                   <td>${escapeHtml(g.opponent_name || '')}</td>
@@ -4641,11 +4659,12 @@ const pages = {
                   <td style="text-align:center">${result}</td>
                   <td style="color:var(--text-muted)">${escapeHtml(g.location || '')}</td>
                   <td style="color:var(--text-muted)">${escapeHtml(g.tournament_name || '')}</td>
+                  <td style="text-align:center;display:flex;gap:8px;justify-content:center;align-items:center">${bsCell}${videoCell}</td>
                 </tr>`;
               }).join('');
           if (activeTab === 'team-stats') { renderDiffChart(); renderScoringChart(); renderScoringGauges(); }
         } catch {
-          tbody.innerHTML = '<tr><td colspan="5" class="list-empty">Failed to load games</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="7" class="list-empty">Failed to load games</td></tr>';
         }
       }
 
@@ -7104,18 +7123,12 @@ function showAddUserModal(onDone) {
 function bootApp() {
   renderHeaderUser();
   initSidebar();
-  const route = getRoute().route;
-  if (route === 'home' && currentUser?.default_team_id) {
-    const qs = currentUser.default_season_id ? `?team=${currentUser.default_team_id}&season=${currentUser.default_season_id}` : `?team=${currentUser.default_team_id}`;
-    window.location.hash = `#/team-profile${qs}`;
-    return;
-  }
   renderPage();
 }
 
 // ── Router ────────────────────────────────────────────────────────────────────
 function getRoute() {
-  const hash = window.location.hash.replace(/^#\/?/, '') || 'home';
+  const hash = window.location.hash.replace(/^#\/?/, '') || 'team-profile';
   const [route, qs] = hash.split('?');
   const params = {};
   if (qs) qs.split('&').forEach(pair => {
@@ -7127,7 +7140,7 @@ function getRoute() {
 
 function renderPage() {
   const { route, params } = getRoute();
-  const page = pages[route] || pages.home;
+  const page = pages[route] || pages['team-profile'];
   const main = document.getElementById('main');
   main.innerHTML = page.render();
   main.scrollTop = 0;

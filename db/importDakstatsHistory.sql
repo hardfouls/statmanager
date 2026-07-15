@@ -272,7 +272,7 @@ ON DUPLICATE KEY UPDATE
 --   • tournament_id is resolved via dakstats_history.tournaments
 --     (matched on TOURNID + SEASON) then to the statmanager tournaments
 --     table by name, assuming the 'NBIAA' league. NULL when no tournament.
-INSERT INTO competitions (season_id, team_id, start_time, end_time, opponent_id, comptype_id, location, tournament_id)
+INSERT INTO competitions (season_id, team_id, start_time, end_time, opponent_id, comptype_id, location, tournament_id, video_url)
 SELECT
     s.season_id                                                           AS season_id,
     ht.team_id                                                            AS team_id,
@@ -281,7 +281,12 @@ SELECT
     vt.team_id                                                            AS opponent_id,
     CASE WHEN comp.COMPTYPEID IN (1,2,3,4) THEN comp.COMPTYPEID ELSE NULL END AS comptype_id,
     comp.ARENA                                                            AS location,
-    trn.tournament_id                                                     AS tournament_id
+    trn.tournament_id                                                     AS tournament_id,
+        NULLIF(CONCAT('https://www.youtube.com/watch?v=',
+        SUBSTRING_INDEX(
+            COALESCE(REGEXP_SUBSTR(comp.notes, 'youtube\\.com/embed/[a-zA-Z0-9_-]+'), ''),
+            '/embed/', -1)),
+        'https://www.youtube.com/watch?v=')                               AS video_url
 FROM       dakstats_history.competitions  comp
 INNER JOIN dakstats_history.teams         h_src
         ON h_src.TMID            = comp.H_TMID
@@ -317,6 +322,32 @@ WHERE  comp.STARTTIME    IS NOT NULL
              AND  DATE(ex.start_time) = DATE(comp.STARTTIME)
              AND  ex.opponent_id = vt.team_id
        );
+
+-- ── Step 5a-ii: backfill video_url on already-imported competitions ──
+-- Runs after the INSERT so re-running the script picks up new video links
+-- added to dakstats_history.competitions.notes without re-importing rows.
+UPDATE competitions sm_comp
+INNER JOIN seasons   s  ON s.season_id  = sm_comp.season_id
+INNER JOIN teams     ht ON ht.team_id   = sm_comp.team_id
+INNER JOIN teams     vt ON vt.team_id   = sm_comp.opponent_id
+INNER JOIN dakstats_history.teams h_src
+        ON TRIM(h_src.TEAMSHORT) = ht.name
+       AND h_src.GENDER + 0     <=> ht.gender
+INNER JOIN dakstats_history.teams v_src
+        ON TRIM(v_src.TEAMSHORT) = vt.name
+       AND v_src.GENDER + 0     <=> vt.gender
+       AND TRIM(v_src.SEASON)   = TRIM(h_src.SEASON)
+INNER JOIN dakstats_history.competitions dkc
+        ON dkc.H_TMID            = h_src.TMID
+       AND dkc.V_TMID            = v_src.TMID
+       AND TRIM(dkc.SEASON)      = TRIM(h_src.SEASON)
+       AND DATE(dkc.STARTTIME)   = DATE(sm_comp.start_time)
+SET sm_comp.video_url = CONCAT(
+        'https://www.youtube.com/watch?v=',
+        SUBSTRING_INDEX(REGEXP_SUBSTR(dkc.NOTES, 'youtube\\.com/embed/[a-zA-Z0-9_-]+'), '/embed/', -1))
+WHERE sm_comp.video_url IS NULL
+  AND REGEXP_SUBSTR(dkc.NOTES, 'youtube\\.com/embed/[a-zA-Z0-9_-]+') IS NOT NULL
+  AND REGEXP_SUBSTR(dkc.NOTES, 'youtube\\.com/embed/[a-zA-Z0-9_-]+') != '';
 
 -- ── Step 5b: team_schedules ───────────────────────────────────
 -- Two rows per competition: one for the home team (resolved via their

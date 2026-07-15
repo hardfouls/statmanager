@@ -176,6 +176,7 @@ CREATE TABLE team_seasons (
     coach       VARCHAR(25)         DEFAULT NULL,
     conference  VARCHAR(25)         DEFAULT NULL,
     active      BIT(1)              DEFAULT NULL,
+    photo_path  VARCHAR(255)        NULL,
     PRIMARY KEY (team_id, season_id),
     CONSTRAINT fk_ts_team
         FOREIGN KEY (team_id)   REFERENCES teams (team_id)
@@ -231,6 +232,7 @@ CREATE TABLE competitions (
     opponent_id     SMALLINT UNSIGNED   NOT NULL,
     comptype_id     TINYINT UNSIGNED    NULL,
     location        VARCHAR(25)         NULL,
+    video_url       VARCHAR(500)        NULL,
     PRIMARY KEY (competition_id),
     KEY idx_competitions_season (season_id),
     KEY idx_competitions_team   (team_id),

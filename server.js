@@ -1826,7 +1826,9 @@ app.get('/api/teams/:id/games', async (req, res) => {
              CASE WHEN c.team_id = ? THEN opp.abbrev ELSE ht.abbrev END AS opponent_abbrev,
              CASE WHEN c.team_id = ? THEN ts.score ELSE os.score END  AS team_score,
              CASE WHEN c.team_id = ? THEN os.score ELSE ts.score END  AS opponent_score,
-             trn.name AS tournament_name
+             trn.name AS tournament_name,
+             c.video_url,
+             EXISTS(SELECT 1 FROM boxscores bx WHERE bx.competition_id = c.competition_id) AS has_boxscore
       FROM competitions c
       JOIN team_schedules tsch ON tsch.competition_id = c.competition_id
                                AND tsch.team_id = ? AND tsch.season_id = ?
