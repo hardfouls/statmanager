@@ -2,6 +2,30 @@
 
 let currentUser = null;
 
+// ── Navigation helpers ────────────────────────────────────────────────────────
+function navigateTo(route, params = {}) {
+  const qs = Object.entries(params)
+    .filter(([, v]) => v != null && v !== '')
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+    .join('&');
+  window.location.hash = `#/${route}${qs ? '?' + qs : ''}`;
+}
+
+function updateUrlSilent(route, params = {}) {
+  const qs = Object.entries(params)
+    .filter(([, v]) => v != null && v !== '')
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+    .join('&');
+  const next = `#/${route}${qs ? '?' + qs : ''}`;
+  if (window.location.hash !== next) history.replaceState(null, '', next);
+}
+
+function backUrl(encoded, fallback = '#/') {
+  if (!encoded) return fallback;
+  const decoded = decodeURIComponent(encoded);
+  return decoded.startsWith('#') ? decoded : `#/${decoded}`;
+}
+
 // ── Menu definition ──────────────────────────────────────────────────────────
 const MENU_ITEMS = [
   {
@@ -78,6 +102,14 @@ const MENU_ITEMS = [
     icon: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <circle cx="12" cy="12" r="3"/>
       <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+    </svg>`
+  },
+  {
+    label: 'Members',
+    route: 'membership',
+    icon: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+      <polyline points="9 22 9 12 15 12 15 22"/>
     </svg>`
   },
   {
@@ -237,7 +269,7 @@ const pages = {
           return `
           <tr>
             <td class="col-check"><input type="checkbox" class="row-check" data-id="${lg.league_id}"></td>
-            <td><a href="#/league-profile?id=${lg.league_id}" class="tbl-link" style="color:var(--accent);display:inline-flex;align-items:center;gap:3px">${escapeHtml(lg.name)}${CHEVRON_ICON}</a></td>
+            <td><a href="#/league-profile?id=${lg.league_id}&from=${encodeURIComponent(window.location.hash)}" class="tbl-link" style="color:var(--accent);display:inline-flex;align-items:center;gap:3px">${escapeHtml(lg.name)}${CHEVRON_ICON}</a></td>
             <td class="col-num" style="white-space:nowrap">${seasons}${seasonNav}</td>
             <td class="col-num">${games > 0 ? `<a class="tbl-link" href="#/seasons?league=${lg.league_id}">${games}</a>` : games}</td>
             <td class="col-num">${Number(lg.boxscore_count)}</td>
@@ -424,7 +456,7 @@ const pages = {
     },
 
     async init(params = {}) {
-      const backHash = `#/${params.back || 'leagues'}`;
+      const backHash = backUrl(params.back, '#/leagues');
       let league = null;
       if (params.id) {
         document.getElementById('lf-page-title').textContent = 'Edit League';
@@ -574,28 +606,7 @@ const pages = {
     render() {
       return `
         <h2 class="page-title" id="tf-page-title">New Team</h2>
-        <div id="tf-photo-section" class="card" style="margin-bottom:12px;display:none">
-          <h3 class="section-title">Team Photo</h3>
-          <div style="display:flex;align-items:center;gap:14px">
-            <div id="tf-photo-preview" style="width:80px;height:80px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0">
-              <svg id="tf-photo-placeholder" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-muted)"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-              <img id="tf-photo-img" style="display:none;width:100%;height:100%;object-fit:cover" alt="Team photo">
-            </div>
-            <div>
-              <input type="file" id="tf-photo-file" accept="image/png,image/jpeg,image/gif,image/webp" style="display:none">
-              <div style="display:flex;gap:8px;flex-wrap:wrap">
-                <button type="button" class="btn btn-secondary btn-sm" id="tf-photo-pick-btn">Upload Photo</button>
-                <button type="button" class="btn btn-secondary btn-sm" id="tf-photo-remove-btn" style="display:none">Remove</button>
-              </div>
-              <div class="status-msg" id="tf-photo-status" style="margin-top:6px"></div>
-            </div>
-          </div>
-        </div>
-        <div id="tf-season-photos-section" class="card" style="margin-bottom:12px;display:none">
-          <h3 class="section-title">Season Photos</h3>
-          <div id="tf-season-photos-list"></div>
-        </div>
-        <div class="card">
+        <div class="card" style="margin-bottom:12px">
           <form id="tf-form" novalidate style="padding:4px 0">
             <div class="form-group">
               <label for="tf-name">Team Name <span style="color:var(--accent)">*</span></label>
@@ -630,15 +641,32 @@ const pages = {
             <div class="status-msg" id="tf-status"></div>
           </form>
         </div>
+        <div id="tf-photo-section" class="card" style="margin-top:12px;display:none">
+          <h3 class="section-title">Team Logo</h3>
+          <div style="display:flex;align-items:center;gap:14px">
+            <div id="tf-photo-preview" style="width:80px;height:80px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0">
+              <svg id="tf-photo-placeholder" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-muted)"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+              <img id="tf-photo-img" style="display:none;width:100%;height:100%;object-fit:cover" alt="Team logo">
+            </div>
+            <div>
+              <input type="file" id="tf-photo-file" accept="image/png,image/jpeg,image/gif,image/webp" style="display:none">
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button type="button" class="btn btn-secondary btn-sm" id="tf-photo-pick-btn">Upload Logo</button>
+                <button type="button" class="btn btn-secondary btn-sm" id="tf-photo-remove-btn" style="display:none">Remove</button>
+              </div>
+              <div class="status-msg" id="tf-photo-status" style="margin-top:6px"></div>
+            </div>
+          </div>
+        </div>
+        <div id="tf-season-photos-section" class="card" style="margin-top:12px;display:none">
+          <h3 class="section-title">Season Info</h3>
+          <div id="tf-season-photos-list"></div>
+        </div>
       `;
     },
 
     async init(params = {}) {
-      const backQ = new URLSearchParams();
-      if (params.league) backQ.set('league', params.league);
-      if (params.team)   backQ.set('team',   params.team);
-      if (params.season) backQ.set('season', params.season);
-      const backHash = `#/${params.back || 'teams'}${backQ.toString() ? '?' + backQ : ''}`;
+      const backHash = backUrl(params.back, '#/teams');
 
       let team = null;
       if (params.id) {
@@ -672,7 +700,7 @@ const pages = {
               }
             }
 
-            setPhotoPreview(team.photo_path ? team.photo_path + '?t=' + Date.now() : null);
+            setPhotoPreview(team.logo_path ? team.logo_path + '?t=' + Date.now() : null);
 
             document.getElementById('tf-photo-pick-btn').addEventListener('click', () => photoFile.click());
 
@@ -699,7 +727,7 @@ const pages = {
                 });
                 const result = await res.json();
                 if (result.success) {
-                  setPhotoPreview(result.photo_path + '?t=' + Date.now());
+                  setPhotoPreview(result.logo_path + '?t=' + Date.now());
                   showStatus('tf-photo-status', 'success', 'Photo saved.');
                 } else {
                   showStatus('tf-photo-status', 'error', result.error || 'Upload failed');
@@ -713,7 +741,7 @@ const pages = {
             });
 
             photoRemoveBtn.addEventListener('click', async () => {
-              if (!confirm('Remove the team photo?')) return;
+              if (!confirm('Remove the team logo?')) return;
               photoRemoveBtn.disabled = true;
               try {
                 const res    = await fetch(`api/teams/${team.team_id}/photo`, { method: 'DELETE' });
@@ -731,7 +759,7 @@ const pages = {
               }
             });
 
-            // Season photos
+            // Season info list
             const spSection = document.getElementById('tf-season-photos-section');
             const spList    = document.getElementById('tf-season-photos-list');
             try {
@@ -739,103 +767,32 @@ const pages = {
               const spData = await spRes.json();
               if (!spData.error && spData.seasons?.length) {
                 spSection.style.display = '';
-                function renderSeasonPhotoRows(seasons) {
-                  spList.innerHTML = seasons.map(s => {
-                    const thumbSrc = s.photo_path ? `${s.photo_path}?t=${Date.now()}` : null;
-                    const thumbHtml = thumbSrc
-                      ? `<img src="${thumbSrc}" style="width:56px;height:56px;object-fit:cover;border-radius:6px;border:1px solid var(--border);flex-shrink:0" alt="">`
-                      : `<div style="width:56px;height:56px;border-radius:6px;background:var(--surface2);border:1px solid var(--border);flex-shrink:0;display:flex;align-items:center;justify-content:center"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color:var(--text-muted)"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>`;
-                    return `<div class="sp-row" data-season-id="${s.season_id}" style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)">
-                      ${thumbHtml}
-                      <div style="flex:1;min-width:0">
-                        <div style="font-size:0.85em;font-weight:600">${escapeHtml(s.season_name)} <span style="color:var(--text-muted);font-weight:400">${escapeHtml(s.label)}</span></div>
-                        ${s.coach ? `<div style="font-size:0.8em;color:var(--text-muted)">Coach: ${escapeHtml(s.coach)}</div>` : ''}
-                      </div>
-                      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-                        <input type="file" class="sp-file" data-season-id="${s.season_id}" accept="image/png,image/jpeg,image/gif,image/webp" style="display:none">
-                        <button type="button" class="btn btn-secondary btn-sm sp-upload-btn" data-season-id="${s.season_id}">Upload</button>
-                        ${s.photo_path ? `<button type="button" class="btn btn-secondary btn-sm sp-remove-btn" data-season-id="${s.season_id}">Remove</button>` : ''}
-                        <span class="status-msg sp-status" data-season-id="${s.season_id}" style="font-size:0.8em"></span>
-                      </div>
-                    </div>`;
-                  }).join('');
-                  // Remove bottom border on last row
-                  const rows = spList.querySelectorAll('.sp-row');
-                  if (rows.length) rows[rows.length - 1].style.borderBottom = 'none';
 
-                  spList.querySelectorAll('.sp-upload-btn').forEach(btn => {
+                function renderSeasonList(seasons) {
+                  spList.innerHTML = `<table class="data-table">
+                    <thead><tr><th>Season</th><th>League</th><th>Display Name</th><th>Sponsor</th><th>Logo</th><th class="col-actions"></th></tr></thead>
+                    <tbody>${seasons.map(s => `
+                      <tr>
+                        <td>${escapeHtml(s.season_name)} <span style="color:var(--text-muted);font-size:.8em">${escapeHtml(s.label)}</span></td>
+                        <td style="color:var(--text-muted)">${escapeHtml(s.league_name || '—')}</td>
+                        <td style="color:var(--text-muted)">${escapeHtml(s.display_name || '—')}</td>
+                        <td style="color:var(--text-muted)">${escapeHtml(s.sponsor || '—')}</td>
+                        <td>${s.logo_path ? `<img src="${s.logo_path}?t=${Date.now()}" style="width:32px;height:32px;object-fit:contain;border-radius:4px;vertical-align:middle" alt="">` : '<span style="color:var(--text-muted)">—</span>'}</td>
+                        <td class="col-actions"><button class="btn-icon sp-edit-btn" data-season-id="${s.season_id}" title="Edit">${EDIT_ICON}</button></td>
+                      </tr>`).join('')}
+                    </tbody></table>`;
+
+                  spList.querySelectorAll('.sp-edit-btn').forEach(btn => {
                     btn.addEventListener('click', () => {
-                      spList.querySelector(`.sp-file[data-season-id="${btn.dataset.seasonId}"]`).click();
-                    });
-                  });
-
-                  spList.querySelectorAll('.sp-file').forEach(input => {
-                    input.addEventListener('change', async () => {
-                      const file = input.files[0];
-                      if (!file) return;
-                      const sid  = input.dataset.seasonId;
-                      const statusEl = spList.querySelector(`.sp-status[data-season-id="${sid}"]`);
-                      const uploadBtn = spList.querySelector(`.sp-upload-btn[data-season-id="${sid}"]`);
-                      if (file.size > 1_048_576) {
-                        statusEl.textContent = 'Too large (max 1 MB)'; statusEl.style.color = '#e53935';
-                        input.value = ''; return;
-                      }
-                      uploadBtn.disabled = true; uploadBtn.textContent = 'Uploading…';
-                      try {
-                        const dataUrl = await new Promise((resolve, reject) => {
-                          const reader = new FileReader();
-                          reader.onload = e => resolve(e.target.result);
-                          reader.onerror = reject;
-                          reader.readAsDataURL(file);
-                        });
-                        const res = await fetch(`api/teams/${team.team_id}/seasons/${sid}/photo`, {
-                          method:  'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body:    JSON.stringify({ data: dataUrl }),
-                        });
-                        const result = await res.json();
-                        if (result.success) {
-                          const s = spData.seasons.find(x => String(x.season_id) === sid);
-                          if (s) s.photo_path = result.photo_path;
-                          renderSeasonPhotoRows(spData.seasons);
-                        } else {
-                          statusEl.textContent = result.error || 'Upload failed';
-                          statusEl.style.color = '#e53935';
-                          uploadBtn.disabled = false; uploadBtn.textContent = 'Upload';
-                        }
-                      } catch {
-                        statusEl.textContent = 'Upload failed'; statusEl.style.color = '#e53935';
-                        uploadBtn.disabled = false; uploadBtn.textContent = 'Upload';
-                      } finally {
-                        input.value = '';
-                      }
-                    });
-                  });
-
-                  spList.querySelectorAll('.sp-remove-btn').forEach(btn => {
-                    btn.addEventListener('click', async () => {
-                      const sid = btn.dataset.seasonId;
-                      if (!confirm('Remove photo for this season?')) return;
-                      btn.disabled = true;
-                      try {
-                        const res    = await fetch(`api/teams/${team.team_id}/seasons/${sid}/photo`, { method: 'DELETE' });
-                        const result = await res.json();
-                        if (result.success) {
-                          const s = spData.seasons.find(x => String(x.season_id) === sid);
-                          if (s) s.photo_path = null;
-                          renderSeasonPhotoRows(spData.seasons);
-                        } else {
-                          const statusEl = spList.querySelector(`.sp-status[data-season-id="${sid}"]`);
-                          statusEl.textContent = result.error || 'Remove failed'; statusEl.style.color = '#e53935';
-                          btn.disabled = false;
-                        }
-                      } catch {
-                        btn.disabled = false;
-                      }
+                      const s = spData.seasons.find(x => String(x.season_id) === btn.dataset.seasonId);
+                      if (s) TeamSeasonInfoModal.open(team, s, updated => {
+                        Object.assign(s, updated);
+                        renderSeasonList(spData.seasons);
+                      });
                     });
                   });
                 }
-                renderSeasonPhotoRows(spData.seasons);
+                renderSeasonList(spData.seasons);
               }
             } catch {}
           }
@@ -1071,10 +1028,10 @@ const pages = {
         }
       });
 
-      filterSel.addEventListener('change', renderRows);
+      filterSel.addEventListener('change', () => { updateUrlSilent('seasons', { league: filterSel.value }); renderRows(); });
 
       document.getElementById('new-season-btn').addEventListener('click', () => {
-        const q = new URLSearchParams({ back: 'seasons' });
+        const q = new URLSearchParams({ back: encodeURIComponent(window.location.hash || '#/seasons') });
         if (filterSel.value) q.set('league', filterSel.value);
         window.location.hash = `#/season-form?${q}`;
       });
@@ -1088,7 +1045,7 @@ const pages = {
         if (nameBtn) {
           const season = seasonsCache.find(s => s.season_id === parseInt(nameBtn.dataset.id));
           if (season) {
-            const q = new URLSearchParams({ id: season.season_id, back: 'seasons' });
+            const q = new URLSearchParams({ id: season.season_id, back: encodeURIComponent(window.location.hash || '#/seasons') });
             if (filterSel.value) q.set('league', filterSel.value);
             window.location.hash = `#/season-form?${q}`;
           }
@@ -1101,7 +1058,7 @@ const pages = {
         if (editBtn) {
           const season = seasonsCache.find(s => s.season_id === parseInt(editBtn.dataset.id));
           if (season) {
-            const q = new URLSearchParams({ id: season.season_id, back: 'seasons' });
+            const q = new URLSearchParams({ id: season.season_id, back: encodeURIComponent(window.location.hash || '#/seasons') });
             if (filterSel.value) q.set('league', filterSel.value);
             window.location.hash = `#/season-form?${q}`;
           }
@@ -1170,9 +1127,7 @@ const pages = {
     },
 
     async init(params = {}) {
-      const backQ = new URLSearchParams();
-      if (params.league) backQ.set('league', params.league);
-      const backHash = `#/${params.back || 'seasons'}${backQ.toString() ? '?' + backQ : ''}`;
+      const backHash = backUrl(params.back, '#/seasons');
 
       let leagues = [];
       try {
@@ -1305,7 +1260,7 @@ const pages = {
       });
 
       function teamFormHash(id = null) {
-        const q = new URLSearchParams({ back: 'teams' });
+        const q = new URLSearchParams({ back: encodeURIComponent(window.location.hash || '#/teams') });
         if (id)                  q.set('id',     id);
         if (leagueFilt.value)    q.set('league', leagueFilt.value);
         if (teamFilt.value)      q.set('team',   teamFilt.value);
@@ -1418,9 +1373,9 @@ const pages = {
         } catch { listEl.innerHTML = '<tr><td colspan="7" class="list-empty">Could not load teams.</td></tr>'; }
       }
 
-      leagueFilt.addEventListener('change', () => { refreshTeamFilter(); refreshSeasonFilter(); renderRows(); });
-      teamFilt.addEventListener('change',   () => { refreshSeasonFilter(); renderRows(); });
-      seasonFilt.addEventListener('change', renderRows);
+      leagueFilt.addEventListener('change', () => { updateUrlSilent('teams', { league: leagueFilt.value }); refreshTeamFilter(); refreshSeasonFilter(); renderRows(); });
+      teamFilt.addEventListener('change',   () => { updateUrlSilent('teams', { league: leagueFilt.value, team: teamFilt.value }); refreshSeasonFilter(); renderRows(); });
+      seasonFilt.addEventListener('change', () => { updateUrlSilent('teams', { league: leagueFilt.value, team: teamFilt.value, season: seasonFilt.value }); renderRows(); });
 
       checkAll.addEventListener('change', () => {
         listEl.querySelectorAll('.row-check').forEach(cb => cb.checked = checkAll.checked);
@@ -1657,7 +1612,7 @@ const pages = {
             ? `${g.team_score}–${g.opponent_score}` : '—';
           const date = String(g.start_time).substring(0, 10);
           const chevron = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>`;
-          const bsUrl = `#/boxscore?id=${g.competition_id}&back=games`;
+          const bsUrl = `#/boxscore?id=${g.competition_id}&from=${encodeURIComponent(window.location.hash)}`;
           return `
             <tr>
               <td style="white-space:nowrap"><a href="${bsUrl}" class="tbl-link" style="color:var(--accent);display:inline-flex;align-items:center;gap:3px">${date}${chevron}</a></td>
@@ -1692,12 +1647,12 @@ const pages = {
         } catch { listEl.innerHTML = '<tr><td colspan="6" class="list-empty">Could not load games.</td></tr>'; }
       }
 
-      leagueFilt.addEventListener('change', () => { refreshSeasonFilter(); refreshTeamFilter(); renderRows(); });
-      seasonFilt.addEventListener('change', () => { refreshTeamFilter(); renderRows(); });
-      teamFilt.addEventListener('change', renderRows);
+      leagueFilt.addEventListener('change', () => { updateUrlSilent('games', { league: leagueFilt.value, season: seasonFilt.value, team: teamFilt.value }); refreshSeasonFilter(); refreshTeamFilter(); renderRows(); });
+      seasonFilt.addEventListener('change', () => { updateUrlSilent('games', { league: leagueFilt.value, season: seasonFilt.value, team: teamFilt.value }); refreshTeamFilter(); renderRows(); });
+      teamFilt.addEventListener('change', () => { updateUrlSilent('games', { league: leagueFilt.value, season: seasonFilt.value, team: teamFilt.value }); renderRows(); });
 
       function gameFormHash(id = null) {
-        const q = new URLSearchParams({ back: 'games' });
+        const q = new URLSearchParams({ back: encodeURIComponent(window.location.hash || '#/games') });
         if (id)               q.set('id',     id);
         if (leagueFilt.value) q.set('league', leagueFilt.value);
         if (seasonFilt.value) q.set('season', seasonFilt.value);
@@ -1794,11 +1749,7 @@ const pages = {
     },
 
     async init(params = {}) {
-      const backQ = new URLSearchParams();
-      if (params.league) backQ.set('league', params.league);
-      if (params.season) backQ.set('season', params.season);
-      if (params.team)   backQ.set('team',   params.team);
-      const backHash = `#/${params.back || 'games'}${backQ.toString() ? '?' + backQ : ''}`;
+      const backHash = backUrl(params.back, '#/games');
 
       let leaguesCache = [], allSeasonsCache = [], allTeamsCache = [];
       try {
@@ -2058,7 +2009,7 @@ const pages = {
       }
 
       function playerFormHash(id = null) {
-        const q = new URLSearchParams({ back: 'players' });
+        const q = new URLSearchParams({ back: encodeURIComponent(window.location.hash || '#/players') });
         if (id)               q.set('id',     id);
         if (leagueFilt.value) q.set('league', leagueFilt.value);
         if (seasonFilt.value) q.set('season', seasonFilt.value);
@@ -2067,16 +2018,12 @@ const pages = {
       }
 
       function playerProfileHash(id) {
-        const q = new URLSearchParams({ id });
-        if (leagueFilt.value) q.set('league', leagueFilt.value);
-        if (seasonFilt.value) q.set('season', seasonFilt.value);
-        if (teamFilt.value)   q.set('team',   teamFilt.value);
-        return `#/player-profile?${q}`;
+        return `#/player-profile?id=${id}&from=${encodeURIComponent(window.location.hash || '#/players')}`;
       }
 
-      leagueFilt.addEventListener('change', () => { refreshSeasonFilter(); refreshTeamFilter(); renderRows(); });
-      seasonFilt.addEventListener('change', () => { refreshTeamFilter(teamFilt.value); renderRows(); });
-      teamFilt.addEventListener('change', renderRows);
+      leagueFilt.addEventListener('change', () => { updateUrlSilent('players', { league: leagueFilt.value, season: seasonFilt.value, team: teamFilt.value }); refreshSeasonFilter(); refreshTeamFilter(); renderRows(); });
+      seasonFilt.addEventListener('change', () => { updateUrlSilent('players', { league: leagueFilt.value, season: seasonFilt.value, team: teamFilt.value }); refreshTeamFilter(teamFilt.value); renderRows(); });
+      teamFilt.addEventListener('change', () => { updateUrlSilent('players', { league: leagueFilt.value, season: seasonFilt.value, team: teamFilt.value }); renderRows(); });
 
       document.getElementById('new-player-btn').addEventListener('click', () => {
         window.location.hash = playerFormHash();
@@ -2151,12 +2098,7 @@ const pages = {
     },
 
     async init(params = {}) {
-      const backQ = new URLSearchParams();
-      if (params.league) backQ.set('league', params.league);
-      if (params.season) backQ.set('season', params.season);
-      if (params.team)   backQ.set('team',   params.team);
-      if (params.back === 'player-profile' && params.id) backQ.set('id', params.id);
-      const backHash = `#/${params.back || 'players'}${backQ.toString() ? '?' + backQ : ''}`;
+      const backHash = backUrl(params.back, '#/players');
 
       let player = null;
       if (params.id) {
@@ -2233,7 +2175,7 @@ const pages = {
         </style>
         <div class="header-controls" style="margin-bottom:12px">
           <h2 class="page-title" style="margin:0">League Profile</h2>
-          <button class="btn btn-secondary btn-sm" id="lp-back">← Leagues</button>
+          <button class="btn btn-secondary btn-sm" id="lp-back">← Back</button>
         </div>
         <div class="card" style="margin-bottom:12px">
           <div class="section-header">
@@ -2287,7 +2229,7 @@ const pages = {
     },
 
     async init(params = {}) {
-      const backHash = `#/${params.back || 'leagues'}`;
+      const backHash = backUrl(params.from || params.back, '#/leagues');
       document.getElementById('lp-back').addEventListener('click', () => {
         window.location.hash = backHash;
       });
@@ -2298,7 +2240,7 @@ const pages = {
       }
 
       document.getElementById('lp-edit-btn').addEventListener('click', () => {
-        window.location.hash = `#/league-form?id=${params.id}&back=league-profile%3Fid%3D${params.id}`;
+        window.location.hash = `#/league-form?id=${params.id}&back=${encodeURIComponent(window.location.hash)}`;
       });
 
       document.getElementById('lp-delete-btn').addEventListener('click', async () => {
@@ -2393,7 +2335,7 @@ const pages = {
         const DESC_ICON = '<svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" style="vertical-align:middle"><path d="M5 8L1 2h8z"/></svg>';
         let lpSortAsc = true;
 
-        const lpBack = encodeURIComponent(`league-profile?id=${params.id}`);
+        const lpFrom = encodeURIComponent(window.location.hash);
         const renderSeasons = () => {
           if (!seasons.length) {
             tbody.innerHTML = '<tr><td colspan="5" class="list-empty">No seasons yet.</td></tr>';
@@ -2405,7 +2347,7 @@ const pages = {
           iconEl.innerHTML = lpSortAsc ? ASC_ICON : DESC_ICON;
           tbody.innerHTML = sorted.map(s => `
             <tr>
-              <td><a href="#/season-profile?id=${s.season_id}&back=${lpBack}" class="tbl-link" style="color:var(--accent);display:inline-flex;align-items:center;gap:3px">${escapeHtml(s.name)}${CHEVRON_ICON}</a></td>
+              <td><a href="#/season-profile?id=${s.season_id}&from=${lpFrom}" class="tbl-link" style="color:var(--accent);display:inline-flex;align-items:center;gap:3px">${escapeHtml(s.name)}${CHEVRON_ICON}</a></td>
               <td class="col-num">${Number(s.game_count)}</td>
               <td class="col-num">${Number(s.boxscore_count)}</td>
               <td class="col-num">${Number(s.team_count)}</td>
@@ -2532,7 +2474,7 @@ const pages = {
     },
 
     async init(params = {}) {
-      const backHash = params.back ? `#/${params.back}` : '#/leagues';
+      const backHash = backUrl(params.from || params.back, '#/leagues');
       document.getElementById('sp-back').addEventListener('click', () => {
         window.location.hash = backHash;
       });
@@ -2559,13 +2501,13 @@ const pages = {
           SeasonModal.open(s, () => { window.location.reload(); });
         });
 
-        const navBackQ = params.back ? `&back=${encodeURIComponent(params.back)}` : '';
+        const navFromQ = params.from ? `&from=${params.from}` : (params.back ? `&from=${encodeURIComponent('#/' + params.back)}` : '');
         const prevBtn = document.getElementById('sp-prev');
         const nextBtn = document.getElementById('sp-next');
         prevBtn.disabled = !prevSeasonId;
         nextBtn.disabled = !nextSeasonId;
-        if (prevSeasonId) prevBtn.addEventListener('click', () => { window.location.hash = `#/season-profile?id=${prevSeasonId}${navBackQ}`; });
-        if (nextSeasonId) nextBtn.addEventListener('click', () => { window.location.hash = `#/season-profile?id=${nextSeasonId}${navBackQ}`; });
+        if (prevSeasonId) prevBtn.addEventListener('click', () => { window.location.hash = `#/season-profile?id=${prevSeasonId}${navFromQ}`; });
+        if (nextSeasonId) nextBtn.addEventListener('click', () => { window.location.hash = `#/season-profile?id=${nextSeasonId}${navFromQ}`; });
 
         const statsEl = document.getElementById('sp-stats');
         [
@@ -2718,7 +2660,7 @@ const pages = {
         // ── Games renderer ────────────────────────────────────────
         const tbody   = document.getElementById('sp-games-tbody');
         const countEl = document.getElementById('sp-count');
-        const backQ   = encodeURIComponent(`season-profile?id=${params.id}`);
+        const spFrom  = encodeURIComponent(window.location.hash);
         const chevron = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>`;
 
         let sortAsc     = true;
@@ -2746,7 +2688,7 @@ const pages = {
             const noBs = !g.has_boxscore;
             const fg   = noBs ? ' style="color:#e53935"' : '';
             return `<tr${noBs ? ' style="color:#e53935"' : ''}>
-              <td class="sp-col1"><a href="#/boxscore?id=${g.competition_id}&back=${backQ}" class="tbl-link" style="color:var(--accent);display:inline-flex;align-items:center;gap:3px">${date}${chevron}</a></td>
+              <td class="sp-col1"><a href="#/boxscore?id=${g.competition_id}&from=${spFrom}" class="tbl-link" style="color:var(--accent);display:inline-flex;align-items:center;gap:3px">${date}${chevron}</a></td>
               <td${fg}>${homeWon ? `<strong>${escapeHtml(g.team_name)}</strong>` : escapeHtml(g.team_name)}</td>
               <td class="col-num"${fg}>${score}</td>
               <td${fg}>${awayWon ? `<strong>${escapeHtml(g.opponent_name)}</strong>` : escapeHtml(g.opponent_name)}</td>
@@ -2820,7 +2762,7 @@ const pages = {
         </style>
         <div class="header-controls" style="margin-bottom:12px">
           <h2 class="page-title" style="margin:0">Player Profile</h2>
-          <button class="btn btn-secondary btn-sm" id="pp-back">← Players</button>
+          <button class="btn btn-secondary btn-sm" id="pp-back">← Back</button>
         </div>
         <div class="card" style="margin-bottom:12px">
           <div style="display:flex;align-items:center;gap:16px">
@@ -2892,11 +2834,7 @@ const pages = {
     },
 
     async init(params = {}) {
-      const backQ = new URLSearchParams();
-      if (params.league) backQ.set('league', params.league);
-      if (params.season) backQ.set('season', params.season);
-      if (params.team)   backQ.set('team',   params.team);
-      const backHash = `#/players${backQ.toString() ? '?' + backQ : ''}`;
+      const backHash = backUrl(params.from, '#/players');
 
       document.getElementById('pp-back').addEventListener('click', () => {
         window.location.hash = backHash;
@@ -2930,11 +2868,7 @@ const pages = {
         }
 
         document.getElementById('pp-edit-btn').addEventListener('click', () => {
-          const q = new URLSearchParams({ id: params.id, back: 'player-profile' });
-          if (params.league) q.set('league', params.league);
-          if (params.season) q.set('season', params.season);
-          if (params.team)   q.set('team',   params.team);
-          window.location.hash = `#/player-form?${q}`;
+          window.location.hash = `#/player-form?id=${params.id}&back=${encodeURIComponent(window.location.hash)}`;
         });
 
         const seasonsEl = document.getElementById('pp-season-tbody');
@@ -3152,12 +3086,7 @@ const pages = {
     },
 
     async init(params = {}) {
-      const backQ = new URLSearchParams();
-      if (params.player_id) backQ.set('id', params.player_id);
-      if (params.league)    backQ.set('league', params.league);
-      if (params.season)    backQ.set('season', params.season);
-      if (params.team)      backQ.set('team',   params.team);
-      const backHash = `#/${params.back || 'games'}${backQ.toString() ? '?' + backQ : ''}`;
+      const backHash = backUrl(params.from || params.back, '#/games');
       document.getElementById('bs-back').addEventListener('click', () => {
         window.location.hash = backHash;
       });
@@ -3181,23 +3110,22 @@ const pages = {
         document.getElementById('bs-meta').textContent =
           `${c.league_name} · ${c.season_name} · ${date}${c.location ? ' · ' + c.location : ''}`;
 
-        const logoPlaceholder = `
-          <div style="width:56px;flex-shrink:0;background:var(--surface2);border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--text-muted)">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 3L3 7v5c0 5.25 3.75 10.2 9 11.4C17.25 22.2 21 17.25 21 12V7L12 3z"/>
-            </svg>
-          </div>`;
+        const logoBlock = (logoPath) => {
+          return logoPath
+            ? `<img src="${logoPath}?t=${Date.now()}" style="width:80px;height:80px;object-fit:contain;flex-shrink:0" alt="">`
+            : `<div style="width:80px;height:80px;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--border)"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3L3 7v5c0 5.25 3.75 10.2 9 11.4C17.25 22.2 21 17.25 21 12V7L12 3z"/></svg></div>`;
+        };
         const textBlock = (name, score) => `
           <div style="flex:1;text-align:center;display:flex;flex-direction:column;justify-content:center">
             <div style="font-weight:600;color:var(--text);margin-bottom:6px">${escapeHtml(name)}</div>
             <div class="bs-score">${score}</div>
           </div>`;
-        const scoreCard = (name, score, logoSide) => `
-          <div style="display:flex;align-items:stretch;gap:12px">
-            ${logoSide === 'left' ? logoPlaceholder + textBlock(name, score) : textBlock(name, score) + logoPlaceholder}
+        const scoreCard = (name, score, logoPath, logoSide) => `
+          <div style="display:flex;align-items:center;gap:12px">
+            ${logoSide === 'left' ? logoBlock(logoPath) + textBlock(name, score) : textBlock(name, score) + logoBlock(logoPath)}
           </div>`;
-        document.getElementById('bs-card-team').innerHTML = scoreCard(c.team_name,     c.team_score,     'left');
-        document.getElementById('bs-card-opp').innerHTML  = scoreCard(c.opponent_name, c.opponent_score, 'right');
+        document.getElementById('bs-card-team').innerHTML = scoreCard(c.team_name,     c.team_score,     c.team_logo,     'left');
+        document.getElementById('bs-card-opp').innerHTML  = scoreCard(c.opponent_name, c.opponent_score, c.opponent_logo, 'right');
         document.getElementById('bs-header').style.display = '';
 
         function bsTable(title, players) {
@@ -3631,7 +3559,7 @@ const pages = {
             }
             leaguesEl.innerHTML = visible.map(lg => {
               const label = mkLabel(lg);
-              return `<a href="#/league-profile?id=${lg.league_id}" class="tbl-link" style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);color:var(--text);text-decoration:none">
+              return `<a href="#/league-profile?id=${lg.league_id}&from=${encodeURIComponent(window.location.hash)}" class="tbl-link" style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);color:var(--text);text-decoration:none">
                 <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:0.85em">${escapeHtml(label)}</span>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;color:var(--text-muted)"><polyline points="9 18 15 12 9 6"/></svg>
               </a>`;
@@ -4392,11 +4320,17 @@ const pages = {
         <h2 class="page-title" id="tp-title">Team Profile</h2>
         <div class="card">
           <div class="section-header" style="flex-wrap:wrap;gap:8px">
-            <div>
-              <h3 class="section-title" id="tp-team-name" style="margin:0"></h3>
-              <div id="tp-meta" style="font-size:.85em;color:var(--text-muted);margin-top:4px"></div>
-              <div id="tp-coach" style="font-size:.85em;color:var(--text-muted);margin-top:2px"></div>
-              <div id="tp-record" style="font-size:.85em;color:var(--text-muted);margin-top:2px"></div>
+            <div style="display:flex;align-items:flex-start;gap:16px">
+              <div id="tp-logo" style="width:72px;height:72px;flex-shrink:0;border-radius:8px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;overflow:hidden">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color:var(--border)"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+              </div>
+              <div>
+                <h3 class="section-title" id="tp-team-name" style="margin:0"></h3>
+                <div id="tp-meta" style="font-size:.85em;color:var(--text-muted);margin-top:4px"></div>
+                <div id="tp-coach" style="font-size:.85em;color:var(--text-muted);margin-top:2px"></div>
+                <div id="tp-record" style="font-size:.85em;color:var(--text-muted);margin-top:2px"></div>
+                <a id="tp-edit-btn" href="#" class="btn btn-secondary btn-sm" style="margin-top:10px;display:inline-block">Edit</a>
+              </div>
             </div>
             <div style="display:flex;align-items:center;gap:8px;margin-left:auto">
               <label for="tp-season" style="font-size:.85em;color:var(--text-muted);white-space:nowrap">Season</label>
@@ -4513,6 +4447,10 @@ const pages = {
         document.getElementById('tp-team-name').textContent = 'No team selected';
         return;
       }
+      document.getElementById('tp-edit-btn').addEventListener('click', e => {
+        e.preventDefault();
+        window.location.hash = `#/team-form?id=${teamId}&back=${encodeURIComponent(window.location.hash || '#/team-profile')}`;
+      });
 
       const [teamRes, seasonsRes] = await Promise.all([
         fetch(`api/teams/${teamId}`).then(r => r.json()).catch(() => ({})),
@@ -4528,6 +4466,16 @@ const pages = {
       document.getElementById('tp-title').textContent = team.name;
       document.getElementById('tp-team-name').textContent = team.abbrev ? `${team.name} (${team.abbrev})` : team.name;
 
+      if (params.from) {
+        const titleEl = document.getElementById('tp-title');
+        const backBtn = document.createElement('a');
+        backBtn.href = decodeURIComponent(params.from);
+        backBtn.className = 'btn btn-secondary btn-sm';
+        backBtn.style.cssText = 'margin-bottom:8px;display:inline-flex;align-items:center;gap:6px;font-size:.85em';
+        backBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg> Back`;
+        titleEl.parentNode.insertBefore(backBtn, titleEl);
+      }
+
       const metaParts = [];
       if (team.nickname) metaParts.push(escapeHtml(team.nickname));
       if (team.gender != null && team.gender !== '') metaParts.push(team.gender == 0 ? 'Male' : 'Female');
@@ -4540,6 +4488,17 @@ const pages = {
         const s = seasons.find(s => s.season_id === seasonId);
         const coachEl = document.getElementById('tp-coach');
         coachEl.textContent = s?.coach ? `Coach: ${s.coach}` : '';
+      }
+
+      function updateLogo(seasonId) {
+        const s = seasons.find(s => s.season_id === seasonId);
+        const src = (s?.logo_path || team.logo_path) ? `${s?.logo_path || team.logo_path}?t=${Date.now()}` : null;
+        const logoEl = document.getElementById('tp-logo');
+        if (src) {
+          logoEl.innerHTML = `<img src="${src}" style="width:72px;height:72px;object-fit:contain" alt="">`;
+        } else {
+          logoEl.innerHTML = `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color:var(--border)"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>`;
+        }
       }
 
       if (seasons.length === 0) {
@@ -4589,7 +4548,10 @@ const pages = {
       }
 
       document.querySelectorAll('.tp-tab').forEach(btn =>
-        btn.addEventListener('click', () => activateTab(btn.dataset.tab))
+        btn.addEventListener('click', () => {
+          activateTab(btn.dataset.tab);
+          updateUrlSilent('team-profile', { team: teamId, season: seasonSel.value, tab: btn.dataset.tab, ...(params.from ? { from: params.from } : {}) });
+        })
       );
 
       function switchPsTab(tab) {
@@ -4647,7 +4609,7 @@ const pages = {
                   : '';
                 const videoIcon = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>`;
                 const bsCell   = g.has_boxscore
-                  ? `<a href="#/boxscore?id=${g.competition_id}" title="View Boxscore" style="color:var(--accent);display:inline-flex;align-items:center">${bsIcon}</a>`
+                  ? `<a href="#/boxscore?id=${g.competition_id}&from=${encodeURIComponent(window.location.hash)}" title="View Boxscore" style="color:var(--accent);display:inline-flex;align-items:center">${bsIcon}</a>`
                   : `<span title="No boxscore available" style="color:var(--text-muted);opacity:0.3;display:inline-flex;align-items:center">${bsIcon}</span>`;
                 const videoCell = g.video_url
                   ? `<a href="${escapeHtml(g.video_url)}" target="_blank" rel="noopener noreferrer" title="Watch Game" style="color:var(--accent);display:inline-flex;align-items:center">${videoIcon}</a>`
@@ -5018,19 +4980,22 @@ const pages = {
         const wrap = document.getElementById('tp-photo-wrap');
         if (!wrap) return;
         const season = seasons.find(s => s.season_id === seasonId);
-        if (season?.photo_path) {
-          wrap.innerHTML = `<img src="${season.photo_path}" alt="Team photo"
+        if (season?.logo_path) {
+          wrap.innerHTML = `<img src="${season.logo_path}" alt="Team logo"
             style="max-width:100%;max-height:600px;border-radius:6px;object-fit:contain">`;
         } else {
-          wrap.innerHTML = `<p style="color:var(--text-muted);padding:32px 0">No photo available for this season.</p>`;
+          wrap.innerHTML = `<p style="color:var(--text-muted);padding:32px 0">No logo available for this season.</p>`;
         }
       }
 
       // ── Init ─────────────────────────────────────────────────────────────────
       updateCoach(parseInt(seasonSel.value));
       await loadGames(parseInt(seasonSel.value));
+      updateLogo(parseInt(seasonSel.value));
+      activateTab(params.tab || 'schedule');
 
       seasonSel.addEventListener('change', () => {
+        updateUrlSilent('team-profile', { team: teamId, season: seasonSel.value, tab: activeTab, ...(params.from ? { from: params.from } : {}) });
         rosterLoaded = false;
         playerStatsLoaded = false;
         leadersLoaded = false;
@@ -5040,11 +5005,303 @@ const pages = {
         if (diffChart)    { diffChart.destroy();    diffChart    = null; }
         if (scoringChart) { scoringChart.destroy(); scoringChart = null; }
         updateCoach(parseInt(seasonSel.value));
+        updateLogo(parseInt(seasonSel.value));
         loadGames(parseInt(seasonSel.value));
         if (activeTab === 'roster')       loadRoster(parseInt(seasonSel.value));
         if (activeTab === 'player-stats') loadPlayerStats(parseInt(seasonSel.value));
         if (activeTab === 'leaders')      loadLeaders(parseInt(seasonSel.value));
         if (activeTab === 'photo')        showPhoto(parseInt(seasonSel.value));
+      });
+    }
+  },
+
+  'org-form': {
+    menuRoute: 'membership',
+    render() {
+      return `
+        <h2 class="page-title" id="of-page-title">Edit Organization</h2>
+        <div class="card">
+          <form id="of-form" novalidate style="padding:4px 0">
+            <div class="two-col">
+              <div class="form-group">
+                <label for="of-name">Name <span style="color:var(--accent)">*</span></label>
+                <input type="text" id="of-name" autocomplete="off" spellcheck="false">
+              </div>
+              <div class="form-group">
+                <label for="of-short-name">Short Name</label>
+                <input type="text" id="of-short-name" autocomplete="off" spellcheck="false">
+              </div>
+            </div>
+            <div class="two-col">
+              <div class="form-group">
+                <label for="of-acronym">Acronym</label>
+                <input type="text" id="of-acronym" autocomplete="off" spellcheck="false">
+              </div>
+              <div class="form-group">
+                <label for="of-level">Level</label>
+                <select id="of-level">
+                  <option value="">— Select —</option>
+                  <option value="international">International</option>
+                  <option value="national">National</option>
+                  <option value="provincial">Provincial</option>
+                  <option value="regional">Regional</option>
+                </select>
+              </div>
+            </div>
+            <div class="two-col">
+              <div class="form-group">
+                <label for="of-parent">Parent Organization</label>
+                <select id="of-parent"><option value="">— None —</option></select>
+              </div>
+              <div class="form-group">
+                <label for="of-jurisdiction">Jurisdiction</label>
+                <input type="text" id="of-jurisdiction" autocomplete="off" spellcheck="false">
+              </div>
+            </div>
+            <div class="two-col">
+              <div class="form-group">
+                <label for="of-website">Website</label>
+                <input type="url" id="of-website" placeholder="https://" spellcheck="false">
+              </div>
+              <div class="form-group">
+                <label for="of-email">Contact Email</label>
+                <input type="email" id="of-email" spellcheck="false">
+              </div>
+            </div>
+            <div class="form-group" style="max-width:200px">
+              <label for="of-founded">Founded Date</label>
+              <input type="date" id="of-founded">
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary" id="of-save">Save</button>
+              <button type="button" class="btn btn-secondary" id="of-cancel">Cancel</button>
+            </div>
+            <div class="status-msg" id="of-status"></div>
+          </form>
+        </div>`;
+    },
+    async init(params = {}) {
+      const backHash = backUrl(params.back, '#/membership');
+      const res  = await fetch(`api/membership/orgs/${params.id}`).then(r => r.json()).catch(() => ({}));
+      const org  = res.org || null;
+
+      const allOrgs = await fetch('api/membership').then(r => r.json()).then(d => d.organizations || []).catch(() => []);
+      const parentSel = document.getElementById('of-parent');
+      allOrgs.filter(o => o.org_id !== parseInt(params.id)).forEach(o => {
+        const opt = document.createElement('option');
+        opt.value = o.org_id;
+        opt.textContent = o.acronym ? `${o.name} (${o.acronym})` : o.name;
+        parentSel.appendChild(opt);
+      });
+
+      if (org) {
+        setValue('of-name',       org.name);
+        setValue('of-short-name', org.short_name);
+        setValue('of-acronym',    org.acronym);
+        setValue('of-level',      org.level);
+        setValue('of-parent',     org.parent_org_id);
+        setValue('of-jurisdiction', org.jurisdiction);
+        setValue('of-website',    org.website);
+        setValue('of-email',      org.contact_email);
+        setValue('of-founded',    org.founded_date ? String(org.founded_date).substring(0, 10) : '');
+      }
+
+      document.getElementById('of-cancel').addEventListener('click', () => { window.location.hash = backHash; });
+
+      document.getElementById('of-form').addEventListener('submit', async e => {
+        e.preventDefault();
+        const btn  = document.getElementById('of-save');
+        const body = {
+          name:             document.getElementById('of-name').value.trim(),
+          short_name:       document.getElementById('of-short-name').value.trim() || null,
+          acronym:          document.getElementById('of-acronym').value.trim() || null,
+          level:            document.getElementById('of-level').value || null,
+          parent_org_id:    document.getElementById('of-parent').value || null,
+          jurisdiction:     document.getElementById('of-jurisdiction').value.trim() || null,
+          website:          document.getElementById('of-website').value.trim() || null,
+          contact_email:    document.getElementById('of-email').value.trim() || null,
+          founded_date:     document.getElementById('of-founded').value || null,
+        };
+        if (!body.name) { showStatus('of-status', 'error', 'Name is required.'); return; }
+        btn.disabled = true; btn.textContent = 'Saving…';
+        try {
+          const data = await fetch(`api/membership/orgs/${params.id}`, {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+          }).then(r => r.json());
+          if (data.success) { window.location.hash = backHash; }
+          else { showStatus('of-status', 'error', data.error || 'Save failed'); }
+        } catch {
+          showStatus('of-status', 'error', 'Request failed — is the server running?');
+        } finally {
+          btn.disabled = false; btn.textContent = 'Save';
+        }
+      });
+    }
+  },
+
+  'member-form': {
+    menuRoute: 'membership',
+    render() {
+      return `
+        <h2 class="page-title" id="mf-page-title">Edit Member</h2>
+        <div class="card">
+          <form id="mf-form" novalidate style="padding:4px 0">
+            <div class="two-col">
+              <div class="form-group">
+                <label for="mf-name">Name <span style="color:var(--accent)">*</span></label>
+                <input type="text" id="mf-name" autocomplete="off" spellcheck="false">
+              </div>
+              <div class="form-group">
+                <label for="mf-short-name">Short Name</label>
+                <input type="text" id="mf-short-name" autocomplete="off" spellcheck="false">
+              </div>
+            </div>
+            <div class="two-col">
+              <div class="form-group">
+                <label for="mf-type">Type</label>
+                <select id="mf-type">
+                  <option value="">— Select —</option>
+                  <option value="club">Club</option>
+                  <option value="school">School</option>
+                  <option value="academy">Academy</option>
+                  <option value="rep_program">Rep Program</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="mf-status">Status</label>
+                <select id="mf-status">
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                  <option value="suspended">Suspended</option>
+                </select>
+              </div>
+            </div>
+            <div class="two-col">
+              <div class="form-group">
+                <label for="mf-sanctioning">Sanctioning Organization</label>
+                <select id="mf-sanctioning"><option value="">— None —</option></select>
+              </div>
+              <div class="form-group">
+                <label for="mf-founded">Founded Date</label>
+                <input type="date" id="mf-founded">
+              </div>
+            </div>
+            <div class="two-col">
+              <div class="form-group">
+                <label for="mf-email">Contact Email</label>
+                <input type="email" id="mf-email" spellcheck="false">
+              </div>
+              <div class="form-group">
+                <label for="mf-phone">Phone</label>
+                <input type="tel" id="mf-phone" autocomplete="off">
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="mf-website">Website</label>
+              <input type="url" id="mf-website" placeholder="https://" spellcheck="false">
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary" id="mf-save">Save</button>
+              <button type="button" class="btn btn-secondary" id="mf-cancel">Cancel</button>
+            </div>
+            <div class="status-msg" id="mf-msg"></div>
+          </form>
+        </div>
+        <div class="card" style="margin-top:12px">
+          <h3 class="section-title">Teams</h3>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead><tr>
+                <th>Name</th>
+                <th>Abbrev</th>
+                <th>Gender</th>
+                <th>Leagues</th>
+                <th class="col-num">Seasons</th>
+              </tr></thead>
+              <tbody id="mf-team-list">
+                <tr><td colspan="5" class="list-empty">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>`;
+    },
+    async init(params = {}) {
+      const backHash = backUrl(params.back, '#/membership');
+      const [res, memberRes, orgsRes] = await Promise.all([
+        fetch(`api/membership/members/${params.id}`).then(r => r.json()).catch(() => ({})),
+        fetch(`api/membership/members/${params.id}/teams`).then(r => r.json()).catch(() => ({})),
+        fetch('api/membership').then(r => r.json()).then(d => d.organizations || []).catch(() => []),
+      ]);
+      const member  = res.member || null;
+      const allOrgs = orgsRes;
+
+      const sanctSel = document.getElementById('mf-sanctioning');
+      allOrgs.forEach(o => {
+        const opt = document.createElement('option');
+        opt.value = o.org_id;
+        opt.textContent = o.acronym ? `${o.name} (${o.acronym})` : o.name;
+        sanctSel.appendChild(opt);
+      });
+
+      if (member) {
+        setValue('mf-name',        member.name);
+        setValue('mf-short-name',  member.short_name);
+        setValue('mf-type',        member.type);
+        setValue('mf-status',      member.status);
+        setValue('mf-sanctioning', member.sanctioning_org_id);
+        setValue('mf-founded',     member.founded_date ? String(member.founded_date).substring(0, 10) : '');
+        setValue('mf-email',       member.contact_email);
+        setValue('mf-phone',       member.phone);
+        setValue('mf-website',     member.website);
+      }
+
+      const teamList = document.getElementById('mf-team-list');
+      const teams = memberRes.teams || [];
+      if (memberRes.error) {
+        teamList.innerHTML = `<tr><td colspan="5" class="list-empty">${escapeHtml(memberRes.error)}</td></tr>`;
+      } else if (!teams.length) {
+        teamList.innerHTML = `<tr><td colspan="5" class="list-empty">No teams associated with this member.</td></tr>`;
+      } else {
+        const gl = g => g == null ? '—' : Number(g) === 0 ? 'Male' : 'Female';
+        teamList.innerHTML = teams.map(t => `
+          <tr>
+            <td><a href="#/team-profile?team=${t.team_id}&back=${encodeURIComponent(window.location.hash || '#/membership')}" class="row-link">${escapeHtml(t.name)}</a></td>
+            <td style="color:var(--text-muted)">${escapeHtml(t.abbrev || '—')}</td>
+            <td style="color:var(--text-muted)">${gl(t.gender)}</td>
+            <td style="color:var(--text-muted)">${escapeHtml(t.leagues || '—')}</td>
+            <td class="col-num">${Number(t.season_count)}</td>
+          </tr>`).join('');
+      }
+
+      document.getElementById('mf-cancel').addEventListener('click', () => { window.location.hash = backHash; });
+
+      document.getElementById('mf-form').addEventListener('submit', async e => {
+        e.preventDefault();
+        const btn  = document.getElementById('mf-save');
+        const body = {
+          name:              document.getElementById('mf-name').value.trim(),
+          short_name:        document.getElementById('mf-short-name').value.trim() || null,
+          type:              document.getElementById('mf-type').value || null,
+          status:            document.getElementById('mf-status').value.trim() || null,
+          sanctioning_org_id: document.getElementById('mf-sanctioning').value || null,
+          founded_date:      document.getElementById('mf-founded').value || null,
+          contact_email:     document.getElementById('mf-email').value.trim() || null,
+          phone:             document.getElementById('mf-phone').value.trim() || null,
+          website:           document.getElementById('mf-website').value.trim() || null,
+        };
+        if (!body.name) { showStatus('mf-msg', 'error', 'Name is required.'); return; }
+        btn.disabled = true; btn.textContent = 'Saving…';
+        try {
+          const data = await fetch(`api/membership/members/${params.id}`, {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+          }).then(r => r.json());
+          if (data.success) { window.location.hash = backHash; }
+          else { showStatus('mf-msg', 'error', data.error || 'Save failed'); }
+        } catch {
+          showStatus('mf-msg', 'error', 'Request failed — is the server running?');
+        } finally {
+          btn.disabled = false; btn.textContent = 'Save';
+        }
       });
     }
   },
@@ -5061,6 +5318,217 @@ const pages = {
       const data = await fetch('api/import/teams').then(r => r.json()).catch(() => ({}));
       wiz.allTeams = data.teams || [];
       wizRender();
+    }
+  },
+
+  membership: {
+    render() {
+      return `
+        <h2 class="page-title">Members</h2>
+        <div class="card">
+          <div class="section-header">
+            <h3 class="section-title">Membership Manager</h3>
+            <div class="header-controls">
+              <select id="mm-type-filter" class="filter-select">
+                <option value="">All Types</option>
+                <option value="org">Organizations</option>
+                <option value="club">Clubs</option>
+                <option value="school">Schools</option>
+                <option value="academy">Academies</option>
+                <option value="rep_program">Rep Programs</option>
+              </select>
+              <select id="mm-bulk-action" class="filter-select">
+                <option value=""></option>
+                <option value="merge">Merge</option>
+                <option value="delete">Delete</option>
+              </select>
+              <button class="btn btn-secondary btn-sm" id="mm-bulk-execute" disabled>Execute</button>
+              <button class="btn btn-primary btn-sm" id="new-member-btn">+ New Member</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead><tr>
+                <th class="col-check"><input type="checkbox" id="mm-check-all" title="Select all"></th>
+                <th>Name</th>
+                <th>Short Name</th>
+                <th>Type</th>
+                <th>Level / Status</th>
+                <th>Parent / Sanctioning Body</th>
+                <th>Website</th>
+              </tr></thead>
+              <tbody id="mm-list">
+                <tr><td colspan="7" class="list-empty">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>`;
+    },
+
+    async init() {
+      const TYPE_LABEL = {
+        international: 'International', national: 'National',
+        provincial: 'Provincial', regional: 'Regional',
+        club: 'Club', school: 'School', academy: 'Academy', rep_program: 'Rep Program'
+      };
+
+      let allRows      = [];
+      let visibleRows  = [];
+
+      const listEl      = document.getElementById('mm-list');
+      const checkAll    = document.getElementById('mm-check-all');
+      const bulkAction  = document.getElementById('mm-bulk-action');
+      const bulkExecute = document.getElementById('mm-bulk-execute');
+
+      bulkAction.addEventListener('change', () => {
+        bulkExecute.disabled = !bulkAction.value;
+      });
+
+      function syncMasterCheck() {
+        const boxes   = [...listEl.querySelectorAll('.row-check')];
+        const checked = boxes.filter(cb => cb.checked).length;
+        checkAll.checked       = boxes.length > 0 && checked === boxes.length;
+        checkAll.indeterminate = checked > 0 && checked < boxes.length;
+      }
+
+      checkAll.addEventListener('change', () => {
+        listEl.querySelectorAll('.row-check').forEach(cb => cb.checked = checkAll.checked);
+        checkAll.indeterminate = false;
+      });
+
+      listEl.addEventListener('change', e => {
+        if (e.target.matches('.row-check')) syncMasterCheck();
+      });
+
+      function renderRows(filter) {
+        visibleRows = filter ? allRows.filter(r => r._kind === filter || r.type === filter) : allRows;
+        if (!visibleRows.length) {
+          listEl.innerHTML = `<tr><td colspan="7" class="list-empty">No records found.</td></tr>`;
+          checkAll.checked = false; checkAll.indeterminate = false;
+          return;
+        }
+        listEl.innerHTML = visibleRows.map(r => {
+          const typeLabel = TYPE_LABEL[r.level || r.type] || r.level || r.type || '—';
+          const parentCol = r._kind === 'org'
+            ? (r.parent_acronym ? escapeHtml(r.parent_acronym) : r.parent_name ? escapeHtml(r.parent_name) : '<span style="color:var(--text-muted)">—</span>')
+            : (r.sanctioning_acronym ? escapeHtml(r.sanctioning_acronym) : r.sanctioning_org ? escapeHtml(r.sanctioning_org) : '<span style="color:var(--text-muted)">—</span>');
+          const levelStatus = r._kind === 'org' ? typeLabel : `<span style="color:var(--text-muted)">${escapeHtml(r.status || '—')}</span>`;
+          const kindBadge = r._kind === 'org'
+            ? `<span style="font-size:.7rem;padding:1px 6px;border-radius:10px;background:var(--accent);color:#000;font-weight:600">ORG</span>`
+            : `<span style="font-size:.7rem;padding:1px 6px;border-radius:10px;background:var(--surface2);color:var(--text-muted)">${escapeHtml(typeLabel)}</span>`;
+          const rowId   = r._kind === 'org' ? r.org_id : r.member_id;
+          const editHash = r._kind === 'org'
+            ? `#/org-form?id=${r.org_id}&back=${encodeURIComponent(window.location.hash || '#/membership')}`
+            : `#/member-form?id=${r.member_id}&back=${encodeURIComponent(window.location.hash || '#/membership')}`;
+          return `
+            <tr>
+              <td class="col-check"><input type="checkbox" class="row-check" data-id="${rowId}" data-kind="${r._kind}"></td>
+              <td><a href="${editHash}" class="row-link">${escapeHtml(r.name)}</a></td>
+              <td style="color:var(--text-muted)">${escapeHtml(r.short_name || r.acronym || '—')}</td>
+              <td>${kindBadge}</td>
+              <td>${levelStatus}</td>
+              <td>${parentCol}</td>
+              <td>${r.website ? `<a href="${escapeHtml(r.website)}" target="_blank" class="row-link" rel="noopener noreferrer">${escapeHtml(r.website)}</a>` : '<span style="color:var(--text-muted)">—</span>'}</td>
+            </tr>`;
+        }).join('');
+        syncMasterCheck();
+      }
+
+      async function loadAll() {
+        listEl.innerHTML = `<tr><td colspan="7" class="list-empty">Loading…</td></tr>`;
+        const res  = await fetch('api/membership');
+        const data = await res.json();
+        if (data.error) {
+          listEl.innerHTML = `<tr><td colspan="7" class="list-empty">${escapeHtml(data.error)}</td></tr>`;
+          return;
+        }
+        const orgs    = (data.organizations || []).map(o => ({ ...o, _kind: 'org' }));
+        const members = (data.members || []).map(m => ({ ...m, _kind: 'member' }));
+        allRows = [...orgs, ...members];
+        renderRows(document.getElementById('mm-type-filter').value);
+      }
+
+      document.getElementById('mm-type-filter').addEventListener('change', e => {
+        renderRows(e.target.value);
+      });
+
+      bulkExecute.addEventListener('click', async () => {
+        const action  = bulkAction.value;
+        if (!action) return;
+        const checked = [...listEl.querySelectorAll('.row-check:checked')];
+        if (!checked.length) { await alertDialog('No Selection', 'Select at least one row first.'); return; }
+
+        if (action === 'delete') {
+          const selected = checked.map(cb => {
+            const kind = cb.dataset.kind;
+            const id   = parseInt(cb.dataset.id);
+            const row  = allRows.find(r => r._kind === kind && (kind === 'org' ? r.org_id : r.member_id) === id);
+            return { kind, id, name: row?.name ?? `#${id}` };
+          });
+          const preview = selected.length <= 5
+            ? selected.map(s => s.name).join('\n')
+            : selected.slice(0, 5).map(s => s.name).join('\n') + `\n…and ${selected.length - 5} more`;
+          if (!await confirmDialog('Delete', `Delete ${selected.length} record(s)? This cannot be undone.\n\n${preview}`)) return;
+
+          bulkExecute.disabled = true; bulkExecute.textContent = 'Deleting…';
+          let deleted = 0;
+          const errors = [];
+          for (const s of selected) {
+            const url = s.kind === 'org' ? `api/membership/orgs/${s.id}` : `api/membership/members/${s.id}`;
+            try {
+              const d = await fetch(url, { method: 'DELETE' }).then(r => r.json());
+              if (d.success) deleted++;
+              else errors.push(`${s.name}: ${d.error}`);
+            } catch { errors.push(`${s.name}: request failed`); }
+          }
+          await loadAll();
+          bulkAction.value = ''; bulkExecute.disabled = true; bulkExecute.textContent = 'Execute';
+          if (errors.length) await alertDialog('Delete Results', `${deleted} deleted.\n\nSkipped:\n${errors.join('\n')}`);
+        }
+
+        if (action === 'merge') {
+          const selected = checked.map(cb => {
+            const kind = cb.dataset.kind;
+            const id   = parseInt(cb.dataset.id);
+            const row  = allRows.find(r => r._kind === kind && (kind === 'org' ? r.org_id : r.member_id) === id);
+            return { kind, id, name: row?.name ?? `#${id}` };
+          });
+          const kinds = [...new Set(selected.map(s => s.kind))];
+          if (kinds.length > 1) {
+            await alertDialog('Cannot Merge', 'All selected rows must be the same type (all organizations or all members).'); return;
+          }
+          if (kinds[0] === 'org') {
+            await alertDialog('Not yet implemented', 'Merge is not yet implemented for organizations.'); return;
+          }
+          if (selected.length < 2) {
+            await alertDialog('Cannot Merge', 'Select at least 2 members to merge.'); return;
+          }
+          const mergeItems = selected.map(s => ({ id: s.id, label: s.name }));
+          TeamMergeModal.open(mergeItems, async () => {
+            await loadAll();
+            bulkAction.value = '';
+            bulkExecute.disabled = true;
+          }, {
+            title: `Merge ${selected.length} Members`,
+            description: 'Select the master member. All teams from the other member(s) will be reassigned to it, then the source members will be deleted. This cannot be undone.',
+            confirmFn: async (masterKey, master, sources) => {
+              return fetch('api/membership/members/merge', {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body:    JSON.stringify({ masterId: parseInt(masterKey), sourceIds: sources.map(s => s.id) }),
+              }).then(r => r.json());
+            },
+            successMsg: (master, sources) =>
+              `Merge complete.\n\nMaster: ${master.label}\nMerged in: ${sources.map(s => s.label).join(', ')}`,
+          });
+        }
+      });
+
+      document.getElementById('new-member-btn').addEventListener('click', () => {
+        // TODO: open new member form
+      });
+
+      await loadAll();
     }
   }
 };
@@ -6793,6 +7261,194 @@ const LeagueMergeModal = (() => {
   }
 
   return { open, close: _close };
+})();
+
+const TeamSeasonInfoModal = (() => {
+  let _overlay = null;
+
+  const CLOSE_SVG = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+
+  function _onKey(e) { if (e.key === 'Escape') _close(); }
+
+  function _close() {
+    document.removeEventListener('keydown', _onKey);
+    if (_overlay) { _overlay.remove(); _overlay = null; }
+  }
+
+  function open(team, season, onUpdated) {
+    _close();
+
+    const thumbSrc = season.logo_path ? `${season.logo_path}?t=${Date.now()}` : null;
+    const thumbHtml = thumbSrc
+      ? `<img id="tsi-thumb" src="${thumbSrc}" style="width:80px;height:80px;object-fit:contain;border-radius:6px;border:1px solid var(--border);background:var(--surface2)" alt="">`
+      : `<div id="tsi-thumb" style="width:80px;height:80px;border-radius:6px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color:var(--text-muted)"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>`;
+
+    const wrap = document.createElement('div');
+    wrap.innerHTML = `
+      <div class="modal-overlay" id="tsi-modal">
+        <div class="modal" role="dialog" aria-modal="true" style="max-width:480px">
+          <div class="modal-header">
+            <span class="modal-title">Edit Season Info</span>
+            <button class="modal-close" id="tsi-x" aria-label="Close">${CLOSE_SVG}</button>
+          </div>
+          <div style="margin-bottom:10px;color:var(--text-muted);font-size:.85em">
+            ${escapeHtml(season.season_name)} &mdash; ${escapeHtml(season.label)}
+          </div>
+
+          <div style="display:flex;align-items:flex-start;gap:16px;margin-bottom:16px">
+            ${thumbHtml}
+            <div style="display:flex;flex-direction:column;gap:6px;padding-top:4px">
+              <input type="file" id="tsi-file" accept="image/png,image/jpeg,image/gif,image/webp" style="display:none">
+              <button type="button" class="btn btn-secondary btn-sm" id="tsi-upload-btn">Upload Logo</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="tsi-remove-btn" ${season.logo_path ? '' : 'style="display:none"'}>Remove Logo</button>
+              <span id="tsi-logo-status" style="font-size:.8em"></span>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Display Name <span style="color:var(--text-muted);font-weight:400;font-size:.85em">(overrides team name this season)</span></label>
+            <input type="text" id="tsi-display-name" value="${escapeHtml(season.display_name || '')}" placeholder="${escapeHtml(team.name)}" autocomplete="off" spellcheck="false">
+          </div>
+          <div class="form-group">
+            <label>Nickname <span style="color:var(--text-muted);font-weight:400;font-size:.85em">(overrides team nickname)</span></label>
+            <input type="text" id="tsi-nickname" value="${escapeHtml(season.nickname || '')}" placeholder="${escapeHtml(team.nickname || '')}" autocomplete="off" spellcheck="false">
+          </div>
+          <div class="form-group">
+            <label>Title Sponsor</label>
+            <input type="text" id="tsi-sponsor" value="${escapeHtml(season.sponsor || '')}" placeholder="e.g. Scotiabank" autocomplete="off" spellcheck="false">
+          </div>
+
+          <div class="form-actions">
+            <button class="btn btn-primary" id="tsi-save">Save</button>
+            <button class="btn btn-secondary" id="tsi-cancel">Cancel</button>
+          </div>
+          <div class="status-msg" id="tsi-status"></div>
+        </div>
+      </div>`;
+    document.body.appendChild(wrap.firstElementChild);
+    _overlay = document.getElementById('tsi-modal');
+
+    let currentLogoPath = season.logo_path;
+
+    const _openedAt = Date.now();
+    _overlay.addEventListener('click', e => {
+      if (Date.now() - _openedAt < 400) return;
+      if (e.target === _overlay) _close();
+    });
+    document.getElementById('tsi-x').addEventListener('click', _close);
+    document.getElementById('tsi-cancel').addEventListener('click', _close);
+    document.addEventListener('keydown', _onKey);
+
+    document.getElementById('tsi-upload-btn').addEventListener('click', () => {
+      document.getElementById('tsi-file').click();
+    });
+
+    document.getElementById('tsi-file').addEventListener('change', async () => {
+      const file = document.getElementById('tsi-file').files[0];
+      if (!file) return;
+      const statusEl   = document.getElementById('tsi-logo-status');
+      const uploadBtn  = document.getElementById('tsi-upload-btn');
+      const removeBtn  = document.getElementById('tsi-remove-btn');
+      if (file.size > 1_048_576) {
+        statusEl.textContent = 'Too large (max 1 MB)'; statusEl.style.color = '#e53935';
+        document.getElementById('tsi-file').value = ''; return;
+      }
+      uploadBtn.disabled = true; uploadBtn.textContent = 'Uploading…';
+      statusEl.textContent = ''; statusEl.style.color = '';
+      try {
+        const dataUrl = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = e => resolve(e.target.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+        const res    = await fetch(`api/teams/${team.team_id}/seasons/${season.season_id}/photo`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data: dataUrl }),
+        });
+        const result = await res.json();
+        if (result.success) {
+          currentLogoPath = result.logo_path;
+          const thumb = document.getElementById('tsi-thumb');
+          if (thumb.tagName === 'IMG') {
+            thumb.src = `${currentLogoPath}?t=${Date.now()}`;
+          } else {
+            const img = document.createElement('img');
+            img.id = 'tsi-thumb';
+            img.style.cssText = 'width:80px;height:80px;object-fit:contain;border-radius:6px;border:1px solid var(--border);background:var(--surface2)';
+            img.alt = '';
+            img.src = `${currentLogoPath}?t=${Date.now()}`;
+            thumb.replaceWith(img);
+          }
+          removeBtn.style.display = '';
+          statusEl.textContent = 'Uploaded.'; statusEl.style.color = 'var(--accent)';
+        } else {
+          statusEl.textContent = result.error || 'Upload failed'; statusEl.style.color = '#e53935';
+        }
+      } catch {
+        statusEl.textContent = 'Upload failed'; statusEl.style.color = '#e53935';
+      } finally {
+        uploadBtn.disabled = false; uploadBtn.textContent = 'Upload Logo';
+        document.getElementById('tsi-file').value = '';
+      }
+    });
+
+    document.getElementById('tsi-remove-btn').addEventListener('click', async () => {
+      const statusEl  = document.getElementById('tsi-logo-status');
+      const removeBtn = document.getElementById('tsi-remove-btn');
+      removeBtn.disabled = true;
+      try {
+        const res    = await fetch(`api/teams/${team.team_id}/seasons/${season.season_id}/photo`, { method: 'DELETE' });
+        const result = await res.json();
+        if (result.success) {
+          currentLogoPath = null;
+          const noThumb = document.createElement('div');
+          noThumb.id = 'tsi-thumb';
+          noThumb.style.cssText = 'width:80px;height:80px;border-radius:6px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center';
+          noThumb.innerHTML = `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color:var(--text-muted)"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>`;
+          document.getElementById('tsi-thumb').replaceWith(noThumb);
+          removeBtn.style.display = 'none';
+          statusEl.textContent = 'Logo removed.'; statusEl.style.color = 'var(--accent)';
+        } else {
+          statusEl.textContent = result.error || 'Remove failed'; statusEl.style.color = '#e53935';
+          removeBtn.disabled = false;
+        }
+      } catch {
+        statusEl.textContent = 'Request failed'; statusEl.style.color = '#e53935';
+        removeBtn.disabled = false;
+      }
+    });
+
+    document.getElementById('tsi-save').addEventListener('click', async () => {
+      const btn      = document.getElementById('tsi-save');
+      const statusEl = document.getElementById('tsi-status');
+      btn.disabled = true; btn.textContent = 'Saving…';
+      statusEl.textContent = ''; statusEl.style.color = '';
+      try {
+        const body = {
+          display_name: document.getElementById('tsi-display-name').value.trim() || null,
+          nickname:     document.getElementById('tsi-nickname').value.trim() || null,
+          sponsor:      document.getElementById('tsi-sponsor').value.trim() || null,
+        };
+        const res    = await fetch(`api/teams/${team.team_id}/seasons/${season.season_id}`, {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+        });
+        const result = await res.json();
+        if (result.success) {
+          const updated = { ...body, logo_path: currentLogoPath };
+          if (onUpdated) onUpdated(updated);
+          _close();
+        } else {
+          statusEl.textContent = result.error || 'Save failed'; statusEl.style.color = '#e53935';
+          btn.disabled = false; btn.textContent = 'Save';
+        }
+      } catch {
+        statusEl.textContent = 'Request failed'; statusEl.style.color = '#e53935';
+        btn.disabled = false; btn.textContent = 'Save';
+      }
+    });
+  }
+
+  return { open };
 })();
 
 const TeamMergeModal = (() => {

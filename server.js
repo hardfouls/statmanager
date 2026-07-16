@@ -172,8 +172,13 @@ app.use('/api', (req, res, next) => {
       CONSTRAINT fk_playbyplay_player FOREIGN KEY (player_id) REFERENCES players (player_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
     await migrate(`ALTER TABLE teams ADD COLUMN IF NOT EXISTS external_code VARCHAR(20) NULL`);
-    await migrate(`ALTER TABLE teams ADD COLUMN IF NOT EXISTS photo_path    VARCHAR(255) NULL`);
-    await migrate(`ALTER TABLE team_seasons ADD COLUMN IF NOT EXISTS photo_path VARCHAR(255) NULL`);
+    await migrate(`ALTER TABLE teams ADD COLUMN IF NOT EXISTS logo_path VARCHAR(255) NULL`);
+    await migrate(`UPDATE teams SET logo_path = photo_path WHERE logo_path IS NULL AND photo_path IS NOT NULL`);
+    await migrate(`ALTER TABLE team_seasons ADD COLUMN IF NOT EXISTS logo_path    VARCHAR(255) NULL`);
+    await migrate(`ALTER TABLE team_seasons ADD COLUMN IF NOT EXISTS display_name VARCHAR(100) NULL`);
+    await migrate(`ALTER TABLE team_seasons ADD COLUMN IF NOT EXISTS nickname     VARCHAR(25)  NULL`);
+    await migrate(`ALTER TABLE team_seasons ADD COLUMN IF NOT EXISTS sponsor      VARCHAR(100) NULL`);
+    await migrate(`UPDATE team_seasons SET logo_path = photo_path WHERE logo_path IS NULL AND photo_path IS NOT NULL`);
     await migrate(`ALTER TABLE xml_uploads
       ADD COLUMN IF NOT EXISTS uploaded_by_username VARCHAR(64)  NULL,
       ADD COLUMN IF NOT EXISTS uploaded_by_name     VARCHAR(130) NULL`);
@@ -1256,7 +1261,7 @@ app.get('/api/teams', async (req, res) => {
     conn = await dbConnect();
     const [rows] = await conn.execute(`
       SELECT t.team_id, t.name, t.abbrev, t.nickname,
-             t.gender + 0 AS gender, t.external_code, t.photo_path,
+             t.gender + 0 AS gender, t.external_code, t.logo_path,
              l.league_id  AS league_id,
              l.name AS league_name,
              (SELECT ts_r.coach
@@ -1278,7 +1283,7 @@ app.get('/api/teams', async (req, res) => {
       GROUP BY t.team_id, l.league_id
       UNION ALL
       SELECT t.team_id, t.name, t.abbrev, t.nickname,
-             t.gender + 0 AS gender, t.external_code, t.photo_path,
+             t.gender + 0 AS gender, t.external_code, t.logo_path,
              NULL, NULL, NULL, 0, 0, NULL
       FROM teams t
       WHERE NOT EXISTS (SELECT 1 FROM team_seasons ts WHERE ts.team_id = t.team_id)
@@ -1498,7 +1503,8 @@ app.get('/api/teams/:id/seasons', async (req, res) => {
   try {
     conn = await dbConnect();
     const [rows] = await conn.execute(`
-      SELECT ts.season_id, ts.coach, ts.active, ts.photo_path,
+      SELECT ts.season_id, ts.coach, ts.active, ts.logo_path,
+             ts.display_name, ts.nickname, ts.sponsor,
              s.name AS season_name,
              CONCAT(YEAR(s.start_date), '-', YEAR(s.end_date)) AS label,
              l.name AS league_name
@@ -1509,6 +1515,27 @@ app.get('/api/teams/:id/seasons', async (req, res) => {
       ORDER BY s.start_date DESC
     `, [teamId]);
     res.json({ seasons: rows });
+  } catch (err) {
+    res.json({ error: err.message });
+  } finally {
+    await conn?.end().catch(() => {});
+  }
+});
+
+app.put('/api/teams/:teamId/seasons/:seasonId', async (req, res) => {
+  const teamId   = parseInt(req.params.teamId);
+  const seasonId = parseInt(req.params.seasonId);
+  if (!teamId || !seasonId) return res.status(400).json({ error: 'Invalid id' });
+  const { display_name, nickname, sponsor } = req.body;
+  let conn;
+  try {
+    conn = await dbConnect();
+    await conn.execute(
+      `UPDATE team_seasons SET display_name=?, nickname=?, sponsor=?
+       WHERE team_id=? AND season_id=?`,
+      [display_name || null, nickname || null, sponsor || null, teamId, seasonId]
+    );
+    res.json({ success: true });
   } catch (err) {
     res.json({ error: err.message });
   } finally {
@@ -1655,10 +1682,10 @@ app.post('/api/teams/:teamId/seasons/:seasonId/photo', async (req, res) => {
   try {
     conn = await dbConnect();
     await conn.execute(
-      'UPDATE team_seasons SET photo_path = ? WHERE team_id = ? AND season_id = ?',
+      'UPDATE team_seasons SET logo_path = ? WHERE team_id = ? AND season_id = ?',
       [photoPath, teamId, seasonId]
     );
-    res.json({ success: true, photo_path: photoPath });
+    res.json({ success: true, logo_path: photoPath });
   } catch (err) {
     res.json({ error: err.message });
   } finally {
@@ -1674,15 +1701,15 @@ app.delete('/api/teams/:teamId/seasons/:seasonId/photo', async (req, res) => {
   try {
     conn = await dbConnect();
     const [[row]] = await conn.execute(
-      'SELECT photo_path FROM team_seasons WHERE team_id = ? AND season_id = ?',
+      'SELECT logo_path FROM team_seasons WHERE team_id = ? AND season_id = ?',
       [teamId, seasonId]
     );
-    if (row?.photo_path) {
-      const fp = path.join(__dirname, 'public', row.photo_path);
+    if (row?.logo_path) {
+      const fp = path.join(__dirname, 'public', row.logo_path);
       if (fs.existsSync(fp)) fs.unlinkSync(fp);
     }
     await conn.execute(
-      'UPDATE team_seasons SET photo_path = NULL WHERE team_id = ? AND season_id = ?',
+      'UPDATE team_seasons SET logo_path = NULL WHERE team_id = ? AND season_id = ?',
       [teamId, seasonId]
     );
     res.json({ success: true });
@@ -1719,8 +1746,8 @@ app.post('/api/teams/:id/photo', async (req, res) => {
   let conn;
   try {
     conn = await dbConnect();
-    await conn.execute('UPDATE teams SET photo_path = ? WHERE team_id = ?', [photoPath, id]);
-    res.json({ success: true, photo_path: photoPath });
+    await conn.execute('UPDATE teams SET logo_path = ? WHERE team_id = ?', [photoPath, id]);
+    res.json({ success: true, logo_path: photoPath });
   } catch (err) {
     res.json({ error: err.message });
   } finally {
@@ -1734,12 +1761,12 @@ app.delete('/api/teams/:id/photo', async (req, res) => {
   let conn;
   try {
     conn = await dbConnect();
-    const [[row]] = await conn.execute('SELECT photo_path FROM teams WHERE team_id = ?', [id]);
-    if (row?.photo_path) {
-      const fp = path.join(__dirname, 'public', row.photo_path);
+    const [[row]] = await conn.execute('SELECT logo_path FROM teams WHERE team_id = ?', [id]);
+    if (row?.logo_path) {
+      const fp = path.join(__dirname, 'public', row.logo_path);
       if (fs.existsSync(fp)) fs.unlinkSync(fp);
     }
-    await conn.execute('UPDATE teams SET photo_path = NULL WHERE team_id = ?', [id]);
+    await conn.execute('UPDATE teams SET logo_path = NULL WHERE team_id = ?', [id]);
     res.json({ success: true });
   } catch (err) {
     res.json({ error: err.message });
@@ -1801,7 +1828,7 @@ app.get('/api/teams/:id', async (req, res) => {
   try {
     conn = await dbConnect();
     const [[team]] = await conn.execute(
-      'SELECT team_id, name, abbrev, nickname, gender + 0 AS gender, external_code, photo_path FROM teams WHERE team_id = ?',
+      'SELECT team_id, name, abbrev, nickname, gender + 0 AS gender, external_code, logo_path FROM teams WHERE team_id = ?',
       [teamId]
     );
     if (!team) return res.status(404).json({ error: 'Team not found' });
@@ -2012,6 +2039,190 @@ app.delete('/api/games/:id', async (req, res) => {
     if (result.affectedRows === 0) return res.status(404).json({ error: 'Game not found' });
     res.json({ success: true });
   } catch (err) {
+    res.json({ error: err.message });
+  } finally {
+    await conn?.end().catch(() => {});
+  }
+});
+
+// ── Membership ───────────────────────────────────────────────────────────────
+app.get('/api/membership', async (req, res) => {
+  let conn;
+  try {
+    conn = await dbConnect();
+    const [orgs] = await conn.execute(`
+      SELECT o.org_id, o.name, o.short_name, o.acronym, o.level,
+             o.jurisdiction, o.website, o.contact_email,
+             p.name AS parent_name, p.acronym AS parent_acronym
+      FROM   organizations o
+      LEFT JOIN organizations p ON p.org_id = o.parent_org_id
+      ORDER  BY FIELD(o.level,'international','national','provincial','regional'), o.name
+    `);
+    const [members] = await conn.execute(`
+      SELECT m.member_id, m.name, m.short_name, m.type, m.status,
+             m.contact_email, m.phone, m.website,
+             o.name AS sanctioning_org, o.acronym AS sanctioning_acronym
+      FROM   members m
+      LEFT JOIN organizations o ON o.org_id = m.sanctioning_org_id
+      ORDER  BY m.type, m.name
+    `);
+    res.json({ organizations: orgs, members });
+  } catch (err) {
+    res.json({ error: err.message });
+  } finally {
+    await conn?.end().catch(() => {});
+  }
+});
+
+app.get('/api/membership/orgs/:id', async (req, res) => {
+  let conn;
+  try {
+    conn = await dbConnect();
+    const [[org]] = await conn.execute(
+      `SELECT o.*, p.name AS parent_name, p.acronym AS parent_acronym
+       FROM   organizations o
+       LEFT JOIN organizations p ON p.org_id = o.parent_org_id
+       WHERE  o.org_id = ?`, [req.params.id]);
+    res.json({ org: org || null });
+  } catch (err) {
+    res.json({ error: err.message });
+  } finally {
+    await conn?.end().catch(() => {});
+  }
+});
+
+app.put('/api/membership/orgs/:id', async (req, res) => {
+  const { name, short_name, acronym, level, parent_org_id, jurisdiction, website, contact_email, founded_date } = req.body;
+  if (!name) return res.json({ error: 'Name is required.' });
+  let conn;
+  try {
+    conn = await dbConnect();
+    await conn.execute(
+      `UPDATE organizations SET name=?, short_name=?, acronym=?, level=?, parent_org_id=?,
+              jurisdiction=?, website=?, contact_email=?, founded_date=?
+       WHERE  org_id=?`,
+      [name, short_name || null, acronym || null, level || null, parent_org_id || null,
+       jurisdiction || null, website || null, contact_email || null, founded_date || null,
+       req.params.id]);
+    res.json({ success: true });
+  } catch (err) {
+    res.json({ error: err.message });
+  } finally {
+    await conn?.end().catch(() => {});
+  }
+});
+
+app.get('/api/membership/members/:id', async (req, res) => {
+  let conn;
+  try {
+    conn = await dbConnect();
+    const [[member]] = await conn.execute(
+      `SELECT m.*, o.name AS sanctioning_org_name
+       FROM   members m
+       LEFT JOIN organizations o ON o.org_id = m.sanctioning_org_id
+       WHERE  m.member_id = ?`, [req.params.id]);
+    res.json({ member: member || null });
+  } catch (err) {
+    res.json({ error: err.message });
+  } finally {
+    await conn?.end().catch(() => {});
+  }
+});
+
+app.post('/api/membership/members/merge', async (req, res) => {
+  const { masterId, sourceIds } = req.body;
+  if (!masterId || !Array.isArray(sourceIds) || !sourceIds.length)
+    return res.json({ error: 'masterId and sourceIds are required.' });
+  let conn;
+  try {
+    conn = await dbConnect();
+    await conn.beginTransaction();
+    if (sourceIds.length === 1) {
+      await conn.execute('UPDATE teams SET member_id = ? WHERE member_id = ?', [masterId, sourceIds[0]]);
+    } else {
+      const placeholders = sourceIds.map(() => '?').join(',');
+      await conn.execute(`UPDATE teams SET member_id = ? WHERE member_id IN (${placeholders})`, [masterId, ...sourceIds]);
+    }
+    const placeholders = sourceIds.map(() => '?').join(',');
+    await conn.execute(`DELETE FROM members WHERE member_id IN (${placeholders})`, sourceIds);
+    await conn.commit();
+    res.json({ success: true });
+  } catch (err) {
+    await conn?.rollback().catch(() => {});
+    res.json({ error: err.message });
+  } finally {
+    await conn?.end().catch(() => {});
+  }
+});
+
+app.get('/api/membership/members/:id/teams', async (req, res) => {
+  let conn;
+  try {
+    conn = await dbConnect();
+    const [rows] = await conn.execute(`
+      SELECT t.team_id, t.name, t.abbrev, t.gender + 0 AS gender,
+             GROUP_CONCAT(DISTINCT l.name ORDER BY l.name SEPARATOR ', ') AS leagues,
+             COUNT(DISTINCT ts.season_id) AS season_count
+      FROM   teams t
+      LEFT JOIN team_seasons ts ON ts.team_id = t.team_id
+      LEFT JOIN seasons s       ON s.season_id = ts.season_id
+      LEFT JOIN leagues l       ON l.league_id = s.league_id
+      WHERE  t.member_id = ?
+      GROUP  BY t.team_id
+      ORDER  BY t.name
+    `, [req.params.id]);
+    res.json({ teams: rows });
+  } catch (err) {
+    res.json({ error: err.message });
+  } finally {
+    await conn?.end().catch(() => {});
+  }
+});
+
+app.put('/api/membership/members/:id', async (req, res) => {
+  const { name, short_name, type, sanctioning_org_id, contact_email, phone, website, founded_date, status } = req.body;
+  if (!name) return res.json({ error: 'Name is required.' });
+  let conn;
+  try {
+    conn = await dbConnect();
+    await conn.execute(
+      `UPDATE members SET name=?, short_name=?, type=?, sanctioning_org_id=?,
+              contact_email=?, phone=?, website=?, founded_date=?, status=?
+       WHERE  member_id=?`,
+      [name, short_name || null, type || null, sanctioning_org_id || null,
+       contact_email || null, phone || null, website || null, founded_date || null,
+       status || 'active', req.params.id]);
+    res.json({ success: true });
+  } catch (err) {
+    if (err.code === 'ER_DUP_ENTRY') return res.json({ error: 'That name is already in use.' });
+    res.json({ error: err.message });
+  } finally {
+    await conn?.end().catch(() => {});
+  }
+});
+
+app.delete('/api/membership/orgs/:id', async (req, res) => {
+  let conn;
+  try {
+    conn = await dbConnect();
+    await conn.execute('DELETE FROM organizations WHERE org_id = ?', [req.params.id]);
+    res.json({ success: true });
+  } catch (err) {
+    if (err.code === 'ER_ROW_IS_REFERENCED_2') return res.json({ error: 'Cannot delete — other records reference this organization.' });
+    res.json({ error: err.message });
+  } finally {
+    await conn?.end().catch(() => {});
+  }
+});
+
+app.delete('/api/membership/members/:id', async (req, res) => {
+  let conn;
+  try {
+    conn = await dbConnect();
+    await conn.execute('DELETE FROM members WHERE member_id = ?', [req.params.id]);
+    res.json({ success: true });
+  } catch (err) {
+    if (err.code === 'ER_ROW_IS_REFERENCED_2') return res.json({ error: 'Cannot delete — this member has teams on record.' });
     res.json({ error: err.message });
   } finally {
     await conn?.end().catch(() => {});
@@ -2236,8 +2447,8 @@ async function handleBoxscore(req, res) {
     const [[comp]] = await conn.execute(`
       SELECT
         c.competition_id, c.start_time, c.location,
-        c.team_id, ht.name AS team_name,
-        c.opponent_id, vt.name AS opponent_name,
+        c.team_id, ht.name AS team_name, ht.logo_path AS team_logo,
+        c.opponent_id, vt.name AS opponent_name, vt.logo_path AS opponent_logo,
         s.name AS season_name, l.name AS league_name,
         COALESCE(ts.score, 0) AS team_score,
         COALESCE(os.score, 0) AS opponent_score
@@ -2440,7 +2651,7 @@ app.get('/api/public/seasons', requireReadToken, async (req, res) => {
   try {
     conn = await dbConnect();
     const baseQuery = `
-      SELECT ts.season_id, ts.coach, ts.active, ts.photo_path,
+      SELECT ts.season_id, ts.coach, ts.active, ts.logo_path,
              CONCAT(YEAR(s.start_date), '-', YEAR(s.end_date)) AS label
       FROM team_seasons ts
       JOIN seasons s ON s.season_id = ts.season_id

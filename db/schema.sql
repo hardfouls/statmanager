@@ -161,7 +161,7 @@ CREATE TABLE teams (
     gender        BIT(1)              DEFAULT NULL,    -- 0 = male, 1 = female
     member_id     SMALLINT UNSIGNED   NULL,
     external_code VARCHAR(20)         NULL,
-    photo_path    VARCHAR(255)        NULL,
+    logo_path     VARCHAR(255)        NULL,
     PRIMARY KEY (team_id),
     UNIQUE KEY uq_teams_name_gender (name, gender),
     CONSTRAINT fk_teams_member
@@ -173,10 +173,13 @@ CREATE TABLE teams (
 CREATE TABLE team_seasons (
     team_id     SMALLINT UNSIGNED   NOT NULL,
     season_id   SMALLINT UNSIGNED   NOT NULL,
-    coach       VARCHAR(25)         DEFAULT NULL,
-    conference  VARCHAR(25)         DEFAULT NULL,
-    active      BIT(1)              DEFAULT NULL,
-    photo_path  VARCHAR(255)        NULL,
+    coach        VARCHAR(25)         DEFAULT NULL,
+    conference   VARCHAR(25)         DEFAULT NULL,
+    active       BIT(1)              DEFAULT NULL,
+    logo_path    VARCHAR(255)        NULL,
+    display_name VARCHAR(100)        NULL,
+    nickname     VARCHAR(25)         NULL,
+    sponsor      VARCHAR(100)        NULL,
     PRIMARY KEY (team_id, season_id),
     CONSTRAINT fk_ts_team
         FOREIGN KEY (team_id)   REFERENCES teams (team_id)
