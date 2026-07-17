@@ -4334,15 +4334,30 @@ const pages = {
             </div>
           </div>
         </div>
+        <style>
+          .tp-tab-bar { display:flex; align-items:flex-end; gap:3px; padding:10px 12px 0; margin:-16px -16px 0; border-bottom:1px solid #444; }
+          .tp-tab {
+            padding:8px 16px; background:none; border:1px solid transparent;
+            border-bottom:none; border-radius:6px 6px 0 0; cursor:pointer;
+            font-family:inherit; font-size:.88em; color:var(--text-muted);
+            position:relative; bottom:-1px; transition:color .15s;
+          }
+          .tp-tab:hover { color:var(--text); background:var(--surface2); border-color:#444; }
+          .tp-tab.tp-active {
+            color:var(--accent); font-weight:600;
+            background:var(--surface); border-color:#444;
+            border-bottom-color:var(--surface);
+          }
+        </style>
         <div class="card" style="padding-bottom:0">
-          <div style="display:flex;align-items:center;gap:0;border-bottom:1px solid var(--border);margin:-16px -16px 0">
-            <button class="tp-tab" data-tab="schedule" style="padding:11px 20px;background:none;border:none;border-bottom:2px solid var(--accent);cursor:pointer;font-size:.9em;font-weight:600;color:var(--accent)">Schedule</button>
-            <button class="tp-tab" data-tab="roster" style="padding:11px 20px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:.9em;color:var(--text-muted)">Roster</button>
-            <button class="tp-tab" data-tab="player-stats" style="padding:11px 20px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:.9em;color:var(--text-muted)">Player Stats</button>
-            <button class="tp-tab" data-tab="leaders" style="padding:11px 20px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:.9em;color:var(--text-muted)">Leaders</button>
-            <button class="tp-tab" data-tab="team-stats" style="padding:11px 20px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:.9em;color:var(--text-muted)">Team Stats</button>
-            <button class="tp-tab" data-tab="photo" style="padding:11px 20px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:.9em;color:var(--text-muted)">Photo</button>
-            <div style="display:flex;align-items:center;gap:8px;margin-left:auto;padding:0 12px">
+          <div class="tp-tab-bar">
+            <button class="tp-tab tp-active" data-tab="schedule">Schedule</button>
+            <button class="tp-tab" data-tab="roster">Roster</button>
+            <button class="tp-tab" data-tab="player-stats">Player Stats</button>
+            <button class="tp-tab" data-tab="leaders">Leaders</button>
+            <button class="tp-tab" data-tab="team-stats">Team Stats</button>
+            <button class="tp-tab" data-tab="photo">Photo</button>
+            <div style="display:flex;align-items:center;gap:8px;margin-left:auto;padding:0 12px 8px">
               <label for="tp-season" style="font-size:.8em;color:var(--text-muted);white-space:nowrap">Season</label>
               <select id="tp-season" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:4px 8px;font-size:.82em"><option>Loading…</option></select>
             </div>
@@ -4529,10 +4544,7 @@ const pages = {
       function activateTab(name) {
         activeTab = name;
         document.querySelectorAll('.tp-tab').forEach(btn => {
-          const active = btn.dataset.tab === name;
-          btn.style.color        = active ? 'var(--accent)' : 'var(--text-muted)';
-          btn.style.borderBottom = active ? '2px solid var(--accent)' : '2px solid transparent';
-          btn.style.fontWeight   = active ? '600' : '400';
+          btn.classList.toggle('tp-active', btn.dataset.tab === name);
         });
         document.getElementById('tp-pane-schedule').style.display    = name === 'schedule'    ? '' : 'none';
         document.getElementById('tp-pane-roster').style.display      = name === 'roster'      ? '' : 'none';
