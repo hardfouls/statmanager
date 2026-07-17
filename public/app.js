@@ -4332,20 +4332,20 @@ const pages = {
                 <a id="tp-edit-btn" href="#" class="btn btn-secondary btn-sm" style="margin-top:10px;display:inline-block">Edit</a>
               </div>
             </div>
-            <div style="display:flex;align-items:center;gap:8px;margin-left:auto">
-              <label for="tp-season" style="font-size:.85em;color:var(--text-muted);white-space:nowrap">Season</label>
-              <select id="tp-season" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:5px 10px;font-size:.9em;min-width:180px"><option>Loading…</option></select>
-            </div>
           </div>
         </div>
         <div class="card" style="padding-bottom:0">
-          <div style="display:flex;gap:0;border-bottom:1px solid var(--border);margin:-16px -16px 0">
+          <div style="display:flex;align-items:center;gap:0;border-bottom:1px solid var(--border);margin:-16px -16px 0">
             <button class="tp-tab" data-tab="schedule" style="padding:11px 20px;background:none;border:none;border-bottom:2px solid var(--accent);cursor:pointer;font-size:.9em;font-weight:600;color:var(--accent)">Schedule</button>
             <button class="tp-tab" data-tab="roster" style="padding:11px 20px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:.9em;color:var(--text-muted)">Roster</button>
             <button class="tp-tab" data-tab="player-stats" style="padding:11px 20px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:.9em;color:var(--text-muted)">Player Stats</button>
             <button class="tp-tab" data-tab="leaders" style="padding:11px 20px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:.9em;color:var(--text-muted)">Leaders</button>
             <button class="tp-tab" data-tab="team-stats" style="padding:11px 20px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:.9em;color:var(--text-muted)">Team Stats</button>
             <button class="tp-tab" data-tab="photo" style="padding:11px 20px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:.9em;color:var(--text-muted)">Photo</button>
+            <div style="display:flex;align-items:center;gap:8px;margin-left:auto;padding:0 12px">
+              <label for="tp-season" style="font-size:.8em;color:var(--text-muted);white-space:nowrap">Season</label>
+              <select id="tp-season" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:4px 8px;font-size:.82em"><option>Loading…</option></select>
+            </div>
           </div>
           <div id="tp-pane-schedule" style="padding-top:16px">
             <div class="table-wrap">
@@ -4512,7 +4512,7 @@ const pages = {
       const hasPreferred = preferredId && seasons.some(s => s.season_id === preferredId);
       const defaultSeasonId = hasPreferred ? preferredId : seasons[0].season_id;
       seasonSel.innerHTML = seasons.map(s =>
-        `<option value="${s.season_id}"${s.season_id === defaultSeasonId ? ' selected' : ''}>${escapeHtml(s.season_name)} (${escapeHtml(s.label)})</option>`
+        `<option value="${s.season_id}"${s.season_id === defaultSeasonId ? ' selected' : ''}>${escapeHtml(s.season_name)}</option>`
       ).join('');
 
       // ── Tab switching ────────────────────────────────────────────────────────
@@ -4573,6 +4573,7 @@ const pages = {
 
       // ── Schedule ─────────────────────────────────────────────────────────────
       async function loadGames(seasonId) {
+        const fromHash = encodeURIComponent(window.location.hash);
         const tbody = document.getElementById('tp-games');
         tbody.innerHTML = `<tr><td colspan="7" class="list-empty">Loading…</td></tr>`;
         document.getElementById('tp-record').textContent = '';
@@ -4609,7 +4610,7 @@ const pages = {
                   : '';
                 const videoIcon = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>`;
                 const bsCell   = g.has_boxscore
-                  ? `<a href="#/boxscore?id=${g.competition_id}&from=${encodeURIComponent(window.location.hash)}" title="View Boxscore" style="color:var(--accent);display:inline-flex;align-items:center">${bsIcon}</a>`
+                  ? `<a href="#/boxscore?id=${g.competition_id}&from=${fromHash}" title="View Boxscore" style="color:var(--accent);display:inline-flex;align-items:center">${bsIcon}</a>`
                   : `<span title="No boxscore available" style="color:var(--text-muted);opacity:0.3;display:inline-flex;align-items:center">${bsIcon}</span>`;
                 const videoCell = g.video_url
                   ? `<a href="${escapeHtml(g.video_url)}" target="_blank" rel="noopener noreferrer" title="Watch Game" style="color:var(--accent);display:inline-flex;align-items:center">${videoIcon}</a>`
@@ -4989,6 +4990,7 @@ const pages = {
       }
 
       // ── Init ─────────────────────────────────────────────────────────────────
+      updateUrlSilent('team-profile', { team: teamId, season: defaultSeasonId, ...(params.tab ? { tab: params.tab } : {}), ...(params.from ? { from: params.from } : {}) });
       updateCoach(parseInt(seasonSel.value));
       await loadGames(parseInt(seasonSel.value));
       updateLogo(parseInt(seasonSel.value));
