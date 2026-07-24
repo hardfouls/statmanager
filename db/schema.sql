@@ -234,7 +234,8 @@ CREATE TABLE competitions (
     end_time        DATETIME            NULL,
     opponent_id     SMALLINT UNSIGNED   NOT NULL,
     comptype_id     TINYINT UNSIGNED    NULL,
-    location        VARCHAR(25)         NULL,
+    tournament_id   SMALLINT UNSIGNED   NULL,
+    venue_id        SMALLINT UNSIGNED   NULL,
     video_url       VARCHAR(500)        NULL,
     PRIMARY KEY (competition_id),
     KEY idx_competitions_season (season_id),
@@ -249,12 +250,14 @@ CREATE TABLE competitions (
     CONSTRAINT fk_competitions_opponent
         FOREIGN KEY (opponent_id) REFERENCES teams (team_id)
         ON UPDATE CASCADE ON DELETE RESTRICT,
-    tournament_id   SMALLINT UNSIGNED   NULL,
     CONSTRAINT fk_competitions_comptype
         FOREIGN KEY (comptype_id)   REFERENCES comptypes (comptype_id)
         ON UPDATE CASCADE ON DELETE SET NULL,
     CONSTRAINT fk_competitions_tournament
         FOREIGN KEY (tournament_id) REFERENCES tournaments (tournament_id)
+        ON UPDATE CASCADE ON DELETE SET NULL,
+    CONSTRAINT fk_competitions_venue
+        FOREIGN KEY (venue_id) REFERENCES members (member_id)
         ON UPDATE CASCADE ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

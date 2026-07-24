@@ -1619,7 +1619,7 @@ const pages = {
               <td>${escapeHtml(g.team_name)}</td>
               <td class="col-num" style="white-space:nowrap">${score}</td>
               <td>${escapeHtml(g.opponent_name)}</td>
-              <td>${escapeHtml(g.location)}</td>
+              <td>${escapeHtml(g.venue_name || '')}</td>
               <td style="white-space:nowrap;color:var(--text-muted)">${escapeHtml(g.comptype || '')}</td>
               <td style="color:var(--text-muted)">${escapeHtml(g.tournament_name || '')}</td>
               <td class="col-actions">
@@ -1692,56 +1692,62 @@ const pages = {
         <h2 class="page-title" id="gf-page-title">New Game</h2>
         <div class="card">
           <form id="gf-form" novalidate style="padding:4px 0">
-            <div class="two-col">
-              <div class="form-group">
-                <label for="gf-league">League <span style="color:var(--accent)">*</span></label>
-                <select id="gf-league"><option value="">— Select League —</option></select>
+            <input type="hidden" id="gf-team">
+            <input type="hidden" id="gf-season">
+            <div style="display:flex;align-items:center;gap:14px;margin-bottom:18px;padding-bottom:16px;border-bottom:1px solid var(--border)">
+              <div id="gf-team-logo" style="width:56px;height:56px;flex-shrink:0;border-radius:6px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;overflow:hidden"></div>
+              <div style="min-width:0">
+                <div id="gf-team-display" style="font-size:1.05em;font-weight:600;color:var(--text)">—</div>
+                <div id="gf-season-display" style="color:var(--text-muted);font-size:.88em;margin-top:3px">—</div>
+                <div id="gf-result-display" style="display:none;margin-top:5px;font-size:.88em;display:none"></div>
               </div>
-              <div class="form-group">
-                <label for="gf-season">Season <span style="color:var(--accent)">*</span></label>
-                <select id="gf-season"><option value="">— Select Season —</option></select>
-              </div>
-            </div>
-            <div class="form-group">
-              <label for="gf-date">Date <span style="color:var(--accent)">*</span></label>
-              <input type="date" id="gf-date">
             </div>
             <div class="two-col">
               <div class="form-group">
-                <label for="gf-team">Team <span style="color:var(--accent)">*</span></label>
-                <select id="gf-team"><option value="">— Select Team —</option></select>
+                <label for="gf-comptype">Game Type <span style="color:var(--accent)">*</span></label>
+                <select id="gf-comptype"><option value="">— Select Type —</option></select>
               </div>
+              <div style="display:flex;gap:8px">
+                <div class="form-group" style="flex:1;min-width:0">
+                  <label for="gf-date">Date <span style="color:var(--accent)">*</span></label>
+                  <input type="date" id="gf-date">
+                </div>
+                <div class="form-group" style="flex:0 0 120px">
+                  <label for="gf-time">Time <span style="color:var(--accent)">*</span></label>
+                  <select id="gf-time"><option value="">— Time —</option></select>
+                </div>
+              </div>
+            </div>
+            <div class="two-col">
               <div class="form-group">
                 <label for="gf-opponent">Opponent <span style="color:var(--accent)">*</span></label>
                 <select id="gf-opponent"><option value="">— Select Opponent —</option></select>
               </div>
-            </div>
-            <div class="two-col">
               <div class="form-group">
-                <label for="gf-location">Location</label>
-                <select id="gf-location">
+                <label for="gf-home-away">Home/Away</label>
+                <select id="gf-home-away">
                   <option value="Home">Home</option>
                   <option value="Away">Away</option>
                   <option value="Neutral">Neutral</option>
                 </select>
               </div>
             </div>
-            <div id="gf-score-display" style="display:none">
-              <p class="form-section-label">Score (calculated from period data)</p>
-              <div class="two-col">
-                <div class="form-group">
-                  <label>Team Score</label>
-                  <div class="read-only-field" id="gf-team-score-val">—</div>
-                </div>
-                <div class="form-group">
-                  <label>Opponent Score</label>
-                  <div class="read-only-field" id="gf-opp-score-val">—</div>
-                </div>
+            <div class="two-col">
+              <div class="form-group">
+                <label for="gf-venue">Location</label>
+                <select id="gf-venue"><option value="">— Select School —</option></select>
+              </div>
+              <div class="form-group">
+                <label for="gf-tournament">Tournament</label>
+                <select id="gf-tournament"><option value="">— None —</option></select>
               </div>
             </div>
-            <div class="form-actions">
-              <button type="submit" class="btn btn-primary" id="gf-save">Save</button>
-              <button type="button" class="btn btn-secondary" id="gf-cancel">Cancel</button>
+            <div class="form-actions" style="justify-content:space-between">
+              <div style="display:flex;gap:8px">
+                <button type="submit" class="btn btn-primary" id="gf-save">Save</button>
+                <button type="button" class="btn btn-secondary" id="gf-cancel">Cancel</button>
+              </div>
+              <button type="button" class="btn" id="gf-delete" style="display:none;background:#c62828;color:#fff;border-color:#c62828">Delete Game</button>
             </div>
             <div class="status-msg" id="gf-status"></div>
           </form>
@@ -1751,14 +1757,29 @@ const pages = {
     async init(params = {}) {
       const backHash = backUrl(params.back, '#/games');
 
-      let leaguesCache = [], allSeasonsCache = [], allTeamsCache = [];
+      let allSeasonsCache = [], allTeamsCache = [], membersCache = [], comptypesCache = [];
       try {
-        const [lr, sr, tr] = await Promise.all([fetch('api/leagues'), fetch('api/seasons'), fetch('api/teams')]);
-        const [ld, sd, td] = await Promise.all([lr.json(), sr.json(), tr.json()]);
-        leaguesCache    = ld.leagues || [];
-        allSeasonsCache = sd.seasons || [];
-        allTeamsCache   = td.teams   || [];
+        const [sr, tr, mr, cr] = await Promise.all([
+          fetch('api/seasons'), fetch('api/teams'), fetch('api/members'), fetch('api/comptypes'),
+        ]);
+        const [sd, td, md, cd] = await Promise.all([sr.json(), tr.json(), mr.json(), cr.json()]);
+        allSeasonsCache = sd.seasons   || [];
+        allTeamsCache   = td.teams     || [];
+        membersCache    = md.members   || [];
+        comptypesCache  = cd.comptypes || [];
       } catch {}
+
+      async function refreshTournaments(sid, selectedId = '') {
+        const sel = document.getElementById('gf-tournament');
+        sel.innerHTML = '<option value="">— None —</option>';
+        if (!sid) return;
+        try {
+          const data = await fetch(`api/tournaments?season_id=${sid}`).then(r => r.json());
+          const rows = data.tournaments || [];
+          sel.innerHTML = '<option value="">— None —</option>' +
+            rows.map(t => `<option value="${t.tournament_id}"${String(t.tournament_id) === String(selectedId) ? ' selected' : ''}>${escapeHtml(t.name)}</option>`).join('');
+        } catch {}
+      }
 
       let game = null;
       if (params.id) {
@@ -1769,76 +1790,165 @@ const pages = {
         } catch {}
       }
 
-      const leagueId = game?.league_id ?? params.league ?? '';
-      const seasonId = game?.season_id ?? params.season ?? '';
-      const teamId   = game?.team_id   ?? params.team   ?? '';
-      const oppId    = game?.opponent_id ?? '';
+      const seasonId = String(game?.season_id ?? params.season ?? '');
+      const teamId   = String(game?.team_id   ?? params.team   ?? '');
+      const oppId    = String(game?.opponent_id ?? '');
 
-      document.getElementById('gf-league').innerHTML = '<option value="">— Select League —</option>' +
-        leaguesCache.map(l =>
-          `<option value="${l.league_id}"${String(l.league_id) === String(leagueId) ? ' selected' : ''}>${escapeHtml(l.name)}</option>`
-        ).join('');
+      // Set hidden fields
+      document.getElementById('gf-team').value   = teamId;
+      document.getElementById('gf-season').value = seasonId;
 
-      function refreshFormSeasons(lid, selectedId = '') {
-        document.getElementById('gf-season').innerHTML = '<option value="">— Select Season —</option>' +
-          allSeasonsCache.filter(s => !lid || String(s.league_id) === lid)
-            .map(s => `<option value="${s.season_id}"${String(s.season_id) === String(selectedId) ? ' selected' : ''}>${escapeHtml(s.name)}</option>`)
-            .join('');
+      // Team + season header display
+      const teamObj   = allTeamsCache.find(t => String(t.team_id) === teamId);
+      const seasonObj = allSeasonsCache.find(s => String(s.season_id) === seasonId);
+      document.getElementById('gf-team-display').textContent   = teamObj?.name   || '—';
+      document.getElementById('gf-season-display').textContent = seasonObj?.name || '—';
+      const logoEl = document.getElementById('gf-team-logo');
+      if (teamObj?.logo_path) {
+        logoEl.innerHTML = `<img src="${escapeHtml(teamObj.logo_path)}?t=${Date.now()}" style="width:56px;height:56px;object-fit:contain" alt="">`;
+      } else {
+        logoEl.innerHTML = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color:var(--border)"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>`;
       }
 
-      function refreshFormTeams(sid, selectedTeamId = '', selectedOppId = '') {
-        const seen = new Map();
-        for (const t of allTeamsCache) { if (!seen.has(t.team_id)) seen.set(t.team_id, t); }
-        const unique = [...seen.values()].filter(t =>
-          !sid || allTeamsCache.some(r => r.team_id === t.team_id && String(r.season_ids || '').split(',').includes(String(sid)))
-        );
-        const opts = '<option value="">— Select —</option>' +
-          unique.map(t => `<option value="${t.team_id}">${escapeHtml(t.name)}${t.abbrev ? ` (${t.abbrev})` : ''}</option>`)
-            .join('');
-        const teamSel = document.getElementById('gf-team');
-        const oppSel  = document.getElementById('gf-opponent');
-        teamSel.innerHTML = opts.replace('— Select —', '— Select Team —');
-        oppSel.innerHTML  = opts.replace('— Select —', '— Select Opponent —');
-        if (selectedTeamId) teamSel.value = String(selectedTeamId);
-        if (selectedOppId)  oppSel.value  = String(selectedOppId);
-      }
+      // Opponent dropdown — all teams in the system, deduplicated by team_id
+      const seen = new Map();
+      for (const t of allTeamsCache) { if (!seen.has(t.team_id)) seen.set(t.team_id, t); }
+      document.getElementById('gf-opponent').innerHTML = '<option value="">— Select Opponent —</option>' +
+        [...seen.values()].map(t => `<option value="${t.team_id}"${String(t.team_id) === oppId ? ' selected' : ''}>${escapeHtml(t.name)}${t.abbrev ? ` (${t.abbrev})` : ''}</option>`).join('');
 
-      refreshFormSeasons(leagueId, seasonId);
-      refreshFormTeams(seasonId, teamId, oppId);
+      document.getElementById('gf-venue').innerHTML = '<option value="">— Select School —</option>' +
+        membersCache.map(m => `<option value="${m.member_id}">${escapeHtml(m.name)}</option>`).join('');
+
+      document.getElementById('gf-comptype').innerHTML = '<option value="">— Select Type —</option>' +
+        comptypesCache.map(c => `<option value="${c.comptype_id}">${escapeHtml(c.comptype)}</option>`).join('');
+
+      (() => {
+        const opts = ['<option value="">— Time —</option>'];
+        for (let h = 8; h <= 22; h++) {
+          for (let m = 0; m < 60; m += 15) {
+            if (h === 22 && m > 0) break;
+            const hh = String(h).padStart(2, '0');
+            const mm = String(m).padStart(2, '0');
+            const h12 = h % 12 || 12;
+            const ap = h < 12 ? 'AM' : 'PM';
+            opts.push(`<option value="${hh}:${mm}">${h12}:${mm} ${ap}</option>`);
+          }
+        }
+        document.getElementById('gf-time').innerHTML = opts.join('');
+      })();
+
+      await refreshTournaments(seasonId, game?.tournament_id ?? '');
 
       if (game) {
         setValue('gf-date', String(game.start_time).substring(0, 10));
-        document.getElementById('gf-location').value = game.location || 'Home';
-        const scoreDisplay = document.getElementById('gf-score-display');
-        scoreDisplay.style.display = '';
-        document.getElementById('gf-team-score-val').textContent = game.team_score != null ? game.team_score : '—';
-        document.getElementById('gf-opp-score-val').textContent  = game.opponent_score != null ? game.opponent_score : '—';
+        const timePart = String(game.start_time).substring(11, 16);
+        if (timePart && timePart !== '00:00') document.getElementById('gf-time').value = timePart;
+        const resolvedVenueId = game.venue_id ?? null;
+        if (resolvedVenueId) {
+          document.getElementById('gf-venue').value = String(resolvedVenueId);
+          const homeAway = resolvedVenueId == game.team_member_id ? 'Home'
+                         : resolvedVenueId == game.opp_member_id  ? 'Away'
+                         : 'Neutral';
+          document.getElementById('gf-home-away').value = homeAway;
+        }
+        if (game.comptype_id)  document.getElementById('gf-comptype').value  = String(game.comptype_id);
+        if (game.tournament_id) document.getElementById('gf-tournament').value = String(game.tournament_id);
+        const ts = parseInt(game.team_score), os = parseInt(game.opponent_score);
+        const hasScore = !isNaN(ts) && !isNaN(os);
+        const resultEl = document.getElementById('gf-result-display');
+        resultEl.style.display = '';
+        if (hasScore) {
+          const wl = ts > os
+            ? `<span style="color:#4caf50;font-weight:700">W</span>`
+            : `<span style="color:#f44336;font-weight:700">L</span>`;
+          resultEl.innerHTML = `<span style="color:var(--text-muted)">Result: </span>${wl} <span style="color:var(--text)">${ts}–${os}</span>` +
+            (game.has_boxscore ? ` <a href="#/boxscore?id=${game.competition_id}&from=${encodeURIComponent(backHash)}" style="color:var(--accent);margin-left:8px">View Boxscore</a>` : '');
+        } else {
+          resultEl.innerHTML = `<span style="color:var(--text-muted)">Result: </span><span style="color:var(--text-muted)">No score recorded</span>` +
+            (game.has_boxscore ? ` <a href="#/boxscore?id=${game.competition_id}&from=${encodeURIComponent(backHash)}" style="color:var(--accent);margin-left:8px">View Boxscore</a>` : '');
+        }
       }
 
-      document.getElementById('gf-league').addEventListener('change', function () {
-        refreshFormSeasons(this.value);
-        refreshFormTeams('');
+      function autoSetVenue() {
+        const homeAway = document.getElementById('gf-home-away').value;
+        if (homeAway === 'Neutral') return;
+        const sourceId = homeAway === 'Home'
+          ? document.getElementById('gf-team').value
+          : document.getElementById('gf-opponent').value;
+        if (!sourceId) return;
+        const t = allTeamsCache.find(t => String(t.team_id) === String(sourceId));
+        if (t?.member_id) document.getElementById('gf-venue').value = String(t.member_id);
+      }
+
+      document.getElementById('gf-home-away').addEventListener('change', autoSetVenue);
+      document.getElementById('gf-opponent').addEventListener('change', () => {
+        if (document.getElementById('gf-home-away').value === 'Away') autoSetVenue();
       });
-      document.getElementById('gf-season').addEventListener('change', function () {
-        refreshFormTeams(this.value);
-      });
+
+      if (!params.id) {
+        autoSetVenue();
+        if (teamId && seasonId) {
+          try {
+            const gdata = await fetch(`api/teams/${teamId}/games?season_id=${seasonId}`).then(r => r.json());
+            const games = (gdata.games || []).filter(g => g.start_time);
+            if (games.length > 0) {
+              const last = games.reduce((a, b) => new Date(a.start_time) > new Date(b.start_time) ? a : b);
+              setValue('gf-date', String(last.start_time).substring(0, 10));
+            }
+          } catch {}
+        }
+      }
 
       document.getElementById('gf-cancel').addEventListener('click', () => {
         window.location.hash = backHash;
       });
 
+      if (game) {
+        const delBtn = document.getElementById('gf-delete');
+        delBtn.style.display = '';
+        delBtn.addEventListener('click', async () => {
+          if (!await confirmDialog('Delete Game', 'Are you sure you want to delete this game? This cannot be undone.', { confirmLabel: 'Delete', confirmClass: 'btn-danger' })) return;
+          delBtn.disabled = true; delBtn.textContent = 'Deleting…';
+          try {
+            const res = await fetch(`api/games/${game.competition_id}`, { method: 'DELETE' });
+            const data = await res.json();
+            if (data.success) {
+              window.location.hash = backHash;
+            } else {
+              showStatus('gf-status', 'error', data.error || 'Delete failed');
+              delBtn.disabled = false; delBtn.textContent = 'Delete Game';
+            }
+          } catch {
+            showStatus('gf-status', 'error', 'Request failed — is the server running?');
+            delBtn.disabled = false; delBtn.textContent = 'Delete Game';
+          }
+        });
+      }
+
       document.getElementById('gf-form').addEventListener('submit', async e => {
         e.preventDefault();
         const btn  = document.getElementById('gf-save');
+        const date = document.getElementById('gf-date').value;
+        const time = document.getElementById('gf-time').value;
         const body = {
           season_id:   document.getElementById('gf-season').value,
           team_id:     document.getElementById('gf-team').value,
           opponent_id: document.getElementById('gf-opponent').value,
-          start_time:   document.getElementById('gf-date').value,
-          location:    document.getElementById('gf-location').value,
+          start_time:  date && time ? `${date} ${time}:00` : date,
+          venue_id:      document.getElementById('gf-venue').value      || null,
+          comptype_id:   document.getElementById('gf-comptype').value   || null,
+          tournament_id: document.getElementById('gf-tournament').value || null,
         };
-        if (!body.season_id || !body.team_id || !body.opponent_id || !body.start_time) {
+        if (!body.season_id || !body.team_id || !body.opponent_id || !date) {
           showStatus('gf-status', 'error', 'Season, team, opponent and date are required.');
+          return;
+        }
+        if (!time) {
+          showStatus('gf-status', 'error', 'Game time is required.');
+          return;
+        }
+        if (!body.comptype_id) {
+          showStatus('gf-status', 'error', 'Game type is required.');
           return;
         }
         btn.disabled = true; btn.textContent = 'Saving…';
@@ -2692,7 +2802,7 @@ const pages = {
               <td${fg}>${homeWon ? `<strong>${escapeHtml(g.team_name)}</strong>` : escapeHtml(g.team_name)}</td>
               <td class="col-num"${fg}>${score}</td>
               <td${fg}>${awayWon ? `<strong>${escapeHtml(g.opponent_name)}</strong>` : escapeHtml(g.opponent_name)}</td>
-              <td${fg}>${escapeHtml(g.location || '')}</td>
+              <td${fg}>${escapeHtml(g.venue_name || '')}</td>
               <td${fg}>${escapeHtml(g.comptype || '')}</td>
               <td${fg}>${escapeHtml(g.tournament_name || '')}</td>
             </tr>`;
@@ -4329,12 +4439,26 @@ const pages = {
                 <div id="tp-meta" style="font-size:.85em;color:var(--text-muted);margin-top:4px"></div>
                 <div id="tp-coach" style="font-size:.85em;color:var(--text-muted);margin-top:2px"></div>
                 <div id="tp-record" style="font-size:.85em;color:var(--text-muted);margin-top:2px"></div>
-                <a id="tp-edit-btn" href="#" class="btn btn-secondary btn-sm" style="margin-top:10px;display:inline-block">Edit</a>
+                <div style="position:relative;display:inline-block;margin-top:10px">
+                  <button id="tp-actions-btn" class="btn btn-secondary btn-sm" style="display:inline-flex;align-items:center;gap:6px">
+                    Actions
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                  </button>
+                  <div id="tp-actions-menu" style="display:none;position:absolute;top:calc(100% + 4px);left:0;min-width:180px;background:var(--surface);border:1px solid #444;border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.4);z-index:100;overflow:hidden">
+                    <button class="tp-action-item" id="tp-action-edit">Edit Team Info</button>
+                    <div style="height:1px;background:var(--border);margin:2px 0"></div>
+                    <button class="tp-action-item" id="tp-action-add-game">Add New Game</button>
+                    <button class="tp-action-item" id="tp-action-add-season">Add New Season</button>
+                    <button class="tp-action-item" id="tp-action-import-xml">Import Game XML</button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
         </div>
         <style>
+          .tp-action-item { display:block;width:100%;padding:9px 14px;background:none;border:none;color:var(--text);font-family:inherit;font-size:.88em;text-align:left;cursor:pointer; }
+          .tp-action-item:hover { background:var(--surface2);color:var(--accent); }
           .tp-tab-bar { display:flex; align-items:flex-end; gap:3px; padding:10px 12px 0; margin:-16px -16px 0; border-bottom:1px solid #444; }
           .tp-tab {
             padding:8px 16px; background:none; border:1px solid transparent;
@@ -4366,9 +4490,9 @@ const pages = {
             <div class="table-wrap">
               <table class="data-table">
                 <thead><tr>
-                  <th>Date</th><th>Opponent</th><th>Score</th><th style="width:32px"></th><th>Location</th><th>Tournament</th><th style="width:40px"></th>
+                  <th>Date</th><th>Time</th><th>Opponent</th><th>Score</th><th style="width:32px"></th><th>Location</th><th>Tournament</th><th style="width:40px"></th>
                 </tr></thead>
-                <tbody id="tp-games"><tr><td colspan="7" class="list-empty">Loading…</td></tr></tbody>
+                <tbody id="tp-games"><tr><td colspan="8" class="list-empty">Loading…</td></tr></tbody>
               </table>
             </div>
           </div>
@@ -4462,9 +4586,35 @@ const pages = {
         document.getElementById('tp-team-name').textContent = 'No team selected';
         return;
       }
-      document.getElementById('tp-edit-btn').addEventListener('click', e => {
-        e.preventDefault();
+      const actionsBtn  = document.getElementById('tp-actions-btn');
+      const actionsMenu = document.getElementById('tp-actions-menu');
+      actionsBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        actionsMenu.style.display = actionsMenu.style.display === 'none' ? '' : 'none';
+      });
+      document.addEventListener('click', () => { actionsMenu.style.display = 'none'; }, { once: false });
+
+      document.getElementById('tp-action-edit').addEventListener('click', () => {
+        actionsMenu.style.display = 'none';
         window.location.hash = `#/team-form?id=${teamId}&back=${encodeURIComponent(window.location.hash || '#/team-profile')}`;
+      });
+      document.getElementById('tp-action-add-game').addEventListener('click', () => {
+        actionsMenu.style.display = 'none';
+        const currentSeasonId = parseInt(seasonSel.value);
+        const currentSeason   = seasons.find(s => s.season_id === currentSeasonId);
+        const q = new URLSearchParams({
+          team:   teamId,
+          season: currentSeasonId,
+          ...(currentSeason?.league_id ? { league: currentSeason.league_id } : {}),
+          back:   encodeURIComponent(window.location.hash || '#/team-profile'),
+        });
+        window.location.hash = `#/game-form?${q}`;
+      });
+      document.getElementById('tp-action-add-season').addEventListener('click', () => {
+        actionsMenu.style.display = 'none';
+      });
+      document.getElementById('tp-action-import-xml').addEventListener('click', () => {
+        actionsMenu.style.display = 'none';
       });
 
       const [teamRes, seasonsRes] = await Promise.all([
@@ -4518,7 +4668,7 @@ const pages = {
 
       if (seasons.length === 0) {
         seasonSel.innerHTML = '<option value="">No seasons</option>';
-        document.getElementById('tp-games').innerHTML = '<tr><td colspan="7" class="list-empty">No seasons found</td></tr>';
+        document.getElementById('tp-games').innerHTML = '<tr><td colspan="8" class="list-empty">No seasons found</td></tr>';
         document.getElementById('tp-roster').innerHTML = '<tr><td colspan="5" class="list-empty">No seasons found</td></tr>';
         return;
       }
@@ -4587,7 +4737,7 @@ const pages = {
       async function loadGames(seasonId) {
         const fromHash = encodeURIComponent(window.location.hash);
         const tbody = document.getElementById('tp-games');
-        tbody.innerHTML = `<tr><td colspan="7" class="list-empty">Loading…</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="8" class="list-empty">Loading…</td></tr>`;
         document.getElementById('tp-record').textContent = '';
         try {
           const data  = await fetch(`api/teams/${teamId}/games?season_id=${seasonId}`).then(r => r.json());
@@ -4606,12 +4756,20 @@ const pages = {
 
           document.getElementById('tp-record').textContent = `Overall Record: ${wins} - ${losses}`;
 
-          const bsIcon = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="12" width="4" height="9"/><rect x="10" y="5" width="4" height="16"/><rect x="17" y="2" width="4" height="19"/></svg>`;
+          const bsIcon   = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="12" width="4" height="9"/><rect x="10" y="5" width="4" height="16"/><rect x="17" y="2" width="4" height="19"/></svg>`;
+          const editIcon = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
           tbody.innerHTML = games.length === 0
-            ? '<tr><td colspan="7" class="list-empty">No games scheduled</td></tr>'
+            ? '<tr><td colspan="8" class="list-empty">No games scheduled</td></tr>'
             : games.map(g => {
                 const d = g.start_time ? new Date(g.start_time) : null;
                 const dateStr  = d ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
+                const timeStr  = (() => {
+                  const t = String(g.start_time || '').substring(11, 16);
+                  if (!t || t === '00:00') return '—';
+                  const [hh, mm] = t.split(':');
+                  const h = parseInt(hh), ampm = h < 12 ? 'AM' : 'PM';
+                  return `${h % 12 || 12}:${mm} ${ampm}`;
+                })();
                 const ts = parseInt(g.team_score), os = parseInt(g.opponent_score);
                 const hasScore = !isNaN(ts) && !isNaN(os);
                 const score    = hasScore ? `${ts}–${os}` : '—';
@@ -4629,17 +4787,18 @@ const pages = {
                   : `<span title="No video available" style="color:var(--text-muted);opacity:0.3;display:inline-flex;align-items:center">${videoIcon}</span>`;
                 return `<tr>
                   <td style="white-space:nowrap;color:var(--text-muted)">${escapeHtml(dateStr)}</td>
+                  <td style="white-space:nowrap;color:var(--text-muted)">${timeStr}</td>
                   <td>${escapeHtml(g.opponent_name || '')}</td>
                   <td style="font-variant-numeric:tabular-nums">${score}</td>
                   <td style="text-align:center">${result}</td>
-                  <td style="color:var(--text-muted)">${escapeHtml(g.location || '')}</td>
+                  <td style="color:var(--text-muted)">${escapeHtml(g.venue_name || '')}</td>
                   <td style="color:var(--text-muted)">${escapeHtml(g.tournament_name || '')}</td>
-                  <td style="text-align:center;display:flex;gap:8px;justify-content:center;align-items:center">${bsCell}${videoCell}</td>
+                  <td style="text-align:center;display:flex;gap:8px;justify-content:center;align-items:center">${bsCell}${videoCell}<a href="#/game-form?id=${g.competition_id}&back=${fromHash}" title="Edit Game" style="color:var(--text-muted);display:inline-flex;align-items:center">${editIcon}</a></td>
                 </tr>`;
               }).join('');
           if (activeTab === 'team-stats') { renderDiffChart(); renderScoringChart(); renderScoringGauges(); }
         } catch {
-          tbody.innerHTML = '<tr><td colspan="7" class="list-empty">Failed to load games</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="8" class="list-empty">Failed to load games</td></tr>';
         }
       }
 

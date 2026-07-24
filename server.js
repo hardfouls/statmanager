@@ -57,6 +57,7 @@ app.use('/api', (req, res, next) => {
     return; // DB not configured yet — migrations will run on next restart
   }
   const migrate = async (sql) => { try { await conn.execute(sql); } catch { /* already applied or unsupported */ } };
+  const backfill = async (sql) => { try { await conn.query(sql); } catch (e) { console.error('backfill error:', e.message, sql.substring(0, 80)); } };
   try {
     await migrate(`ALTER TABLE leagues ADD COLUMN IF NOT EXISTS logo_path VARCHAR(255) NULL`);
     await migrate(`
@@ -202,6 +203,12 @@ app.use('/api', (req, res, next) => {
         FOREIGN KEY (competition_id) REFERENCES competitions (competition_id)
         ON DELETE SET NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+    await migrate(`ALTER TABLE competitions ADD COLUMN IF NOT EXISTS venue_id SMALLINT UNSIGNED NULL`);
+    await migrate(`
+      ALTER TABLE competitions
+        ADD CONSTRAINT IF NOT EXISTS fk_competitions_venue
+        FOREIGN KEY (venue_id) REFERENCES members (member_id)
+        ON UPDATE CASCADE ON DELETE SET NULL`);
     await migrate(`CREATE TABLE IF NOT EXISTS api_tokens (
       token_id     INT UNSIGNED         NOT NULL AUTO_INCREMENT,
       token_hash   VARCHAR(64)          NOT NULL,
@@ -212,6 +219,49 @@ app.use('/api', (req, res, next) => {
       PRIMARY KEY (token_id),
       UNIQUE KEY ux_token_hash (token_hash)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+    await migrate(`
+      INSERT IGNORE INTO tournament_seasons (tournament_id, season_id)
+      SELECT DISTINCT tournament_id, season_id FROM competitions WHERE tournament_id IS NOT NULL`);
+    await migrate(`ALTER TABLE competitions MODIFY COLUMN location VARCHAR(100)`);
+    await migrate(`ALTER TABLE members MODIFY COLUMN type ENUM('club','school','academy','rep_program','arena','university')`);
+    await backfill(`INSERT IGNORE INTO members (name, type, status) VALUES
+      ('Bliss Carman Middle School','school','active'),
+      ('Sussex Middle School','school','active'),
+      ('Queen Charlotte Middle School','school','active'),
+      ('Max Aitken Academy','school','active'),
+      ('École Les Éclaireurs','school','active'),
+      ('Harbour Station','arena','active'),
+      ('Homburg Centre','arena','active'),
+      ('TD Station','arena','active'),
+      ('Richard J. Currie Center','arena','active'),
+      ('Crandall University','university','active'),
+      ('UNBSJ','university','active'),
+      ('UPEI','university','active'),
+      ('Holland College','university','active')`);
+    await backfill(`UPDATE members SET type='arena' WHERE name IN ('Harbour Station','Homburg Centre','TD Station','Richard J. Currie Center') AND type=''`);
+    await backfill(`UPDATE members SET type='university' WHERE name IN ('Crandall University','UNBSJ','UPEI','Holland College') AND type=''`);
+    await backfill(`UPDATE competitions c JOIN members m ON TRIM(m.name) = TRIM(c.location) SET c.venue_id = m.member_id WHERE c.venue_id IS NULL`);
+    await backfill(`UPDATE competitions c JOIN members m ON m.name='Bliss Carman Middle School' SET c.venue_id=m.member_id WHERE c.venue_id IS NULL AND TRIM(c.location) IN ('Bliss Carman Middle','Bliss Carman MS','Bliss Carman','Bliss Carmon')`);
+    await backfill(`UPDATE competitions c JOIN members m ON m.name='Queen Charlotte Middle School' SET c.venue_id=m.member_id WHERE c.venue_id IS NULL AND TRIM(c.location)='Queen Charlotte Middle'`);
+    await backfill(`UPDATE competitions c JOIN members m ON m.name='Max Aitken Academy' SET c.venue_id=m.member_id WHERE c.venue_id IS NULL AND TRIM(c.location)='Max Aitkin Academy'`);
+    await backfill(`UPDATE competitions c JOIN members m ON m.name='Richard J. Currie Center' SET c.venue_id=m.member_id WHERE c.venue_id IS NULL AND TRIM(c.location)='Currie Center'`);
+    await backfill(`UPDATE competitions SET venue_id=60 WHERE venue_id IS NULL AND TRIM(location) IN ('Sussex Regional High','Sussex Regional High Scho','Sussex High School')`);
+    await backfill(`UPDATE competitions SET venue_id=57 WHERE venue_id IS NULL AND TRIM(location) IN ('St. Malachy''s High School','St. Malachy''s Memorial','Saint Malachy''s High')`);
+    await backfill(`UPDATE competitions SET venue_id=51 WHERE venue_id IS NULL AND TRIM(location) IN ('Saint John High','Saint John  High School')`);
+    await backfill(`UPDATE competitions SET venue_id=41 WHERE venue_id IS NULL AND TRIM(location) IN ('Miramichi Valley High','Miramcihi Valley High','Miramichi Valley')`);
+    await backfill(`UPDATE competitions SET venue_id=21 WHERE venue_id IS NULL AND TRIM(location) IN ('Fredericton High','Frecericton High School')`);
+    await backfill(`UPDATE competitions SET venue_id=49 WHERE venue_id IS NULL AND TRIM(location) IN ('Rothesay Netherwood','Rothesay Nertherwood')`);
+    await backfill(`UPDATE competitions SET venue_id=48 WHERE venue_id IS NULL AND TRIM(location)='Rothesay High'`);
+    await backfill(`UPDATE competitions SET venue_id=11 WHERE venue_id IS NULL AND TRIM(location) IN ('CP Allen High School','CPA High School')`);
+    await backfill(`UPDATE competitions SET venue_id=7 WHERE venue_id IS NULL AND TRIM(location) IN ('Bernice MacNaughton','Bernice McNaughton','Bernice McNaughron High','Bernice McNaughton School')`);
+    await backfill(`UPDATE competitions SET venue_id=28 WHERE venue_id IS NULL AND TRIM(location) IN ('Harrison Trimble High','Harrison Trimble')`);
+    await backfill(`UPDATE competitions SET venue_id=14 WHERE venue_id IS NULL AND TRIM(location) IN ('Cobequid Ed. Center','Cobequid Ed Center')`);
+    await backfill(`UPDATE competitions SET venue_id=34 WHERE venue_id IS NULL AND TRIM(location) IN ('Kennebecasis Vally High','Kennecasis Valley High')`);
+    await backfill(`UPDATE competitions SET venue_id=17 WHERE venue_id IS NULL AND TRIM(location)='Colonel Gray High Schol'`);
+    await backfill(`UPDATE competitions SET venue_id=47 WHERE venue_id IS NULL AND TRIM(location)='Riverview High Schoo'`);
+    await backfill(`UPDATE competitions SET venue_id=25 WHERE venue_id IS NULL AND TRIM(location)='Harbour View High'`);
+    await backfill(`UPDATE competitions SET venue_id=32 WHERE venue_id IS NULL AND TRIM(location)='James M. Hill'`);
+    await migrate(`ALTER TABLE competitions DROP COLUMN location`);
   } finally {
     await conn.end().catch(() => {});
   }
@@ -1119,11 +1169,12 @@ app.get('/api/seasons/:id', async (req, res) => {
     `, [id]);
 
     const [games] = await conn.execute(`
-      SELECT DISTINCT c.competition_id, c.start_time, c.location, c.team_id, c.opponent_id,
+      SELECT DISTINCT c.competition_id, c.start_time, c.team_id, c.opponent_id,
              ct.comptype, trn.name AS tournament_name,
              ts.score AS team_score, os.score AS opponent_score,
              tm.name  AS team_name,     tm.abbrev AS team_abbrev,
              opp.name AS opponent_name, opp.abbrev AS opponent_abbrev,
+             vm.name AS venue_name,
              EXISTS (SELECT 1 FROM boxscores b WHERE b.competition_id = c.competition_id) AS has_boxscore
       FROM competitions c
       JOIN team_schedules tsch ON tsch.competition_id = c.competition_id AND tsch.season_id = ?
@@ -1131,6 +1182,7 @@ app.get('/api/seasons/:id', async (req, res) => {
       JOIN teams opp   ON c.opponent_id = opp.team_id
       LEFT JOIN comptypes  ct  ON ct.comptype_id = c.comptype_id
       LEFT JOIN tournaments trn ON trn.tournament_id = c.tournament_id
+      LEFT JOIN members vm ON vm.member_id = c.venue_id
       LEFT JOIN (SELECT competition_id, team_id, SUM(score) AS score
                  FROM periods GROUP BY competition_id, team_id) ts
              ON ts.competition_id = c.competition_id AND ts.team_id = c.team_id
@@ -1261,7 +1313,7 @@ app.get('/api/teams', async (req, res) => {
     conn = await dbConnect();
     const [rows] = await conn.execute(`
       SELECT t.team_id, t.name, t.abbrev, t.nickname,
-             t.gender + 0 AS gender, t.external_code, t.logo_path,
+             t.gender + 0 AS gender, t.external_code, t.logo_path, t.member_id,
              l.league_id  AS league_id,
              l.name AS league_name,
              (SELECT ts_r.coach
@@ -1283,7 +1335,7 @@ app.get('/api/teams', async (req, res) => {
       GROUP BY t.team_id, l.league_id
       UNION ALL
       SELECT t.team_id, t.name, t.abbrev, t.nickname,
-             t.gender + 0 AS gender, t.external_code, t.logo_path,
+             t.gender + 0 AS gender, t.external_code, t.logo_path, t.member_id,
              NULL, NULL, NULL, 0, 0, NULL
       FROM teams t
       WHERE NOT EXISTS (SELECT 1 FROM team_seasons ts WHERE ts.team_id = t.team_id)
@@ -1507,7 +1559,7 @@ app.get('/api/teams/:id/seasons', async (req, res) => {
              ts.display_name, ts.nickname, ts.sponsor,
              s.name AS season_name,
              CONCAT(YEAR(s.start_date), '-', YEAR(s.end_date)) AS label,
-             l.name AS league_name
+             l.league_id, l.name AS league_name
       FROM team_seasons ts
       JOIN seasons s ON s.season_id = ts.season_id
       JOIN leagues  l ON l.league_id = s.league_id
@@ -1848,12 +1900,13 @@ app.get('/api/teams/:id/games', async (req, res) => {
   try {
     conn = await dbConnect();
     const [rows] = await conn.execute(`
-      SELECT c.competition_id, c.start_time, c.location,
+      SELECT c.competition_id, c.start_time,
              CASE WHEN c.team_id = ? THEN opp.name ELSE ht.name END  AS opponent_name,
              CASE WHEN c.team_id = ? THEN opp.abbrev ELSE ht.abbrev END AS opponent_abbrev,
              CASE WHEN c.team_id = ? THEN ts.score ELSE os.score END  AS team_score,
              CASE WHEN c.team_id = ? THEN os.score ELSE ts.score END  AS opponent_score,
              trn.name AS tournament_name,
+             vm.name AS venue_name,
              c.video_url,
              EXISTS(SELECT 1 FROM boxscores bx WHERE bx.competition_id = c.competition_id) AS has_boxscore
       FROM competitions c
@@ -1862,6 +1915,7 @@ app.get('/api/teams/:id/games', async (req, res) => {
       JOIN teams ht  ON ht.team_id  = c.team_id
       JOIN teams opp ON opp.team_id = c.opponent_id
       LEFT JOIN tournaments trn ON trn.tournament_id = c.tournament_id
+      LEFT JOIN members vm ON vm.member_id = c.venue_id
       LEFT JOIN (SELECT competition_id, team_id, SUM(score) AS score
                  FROM periods GROUP BY competition_id, team_id) ts
              ON ts.competition_id = c.competition_id AND ts.team_id = c.team_id
@@ -1956,13 +2010,16 @@ app.get('/api/games', async (req, res) => {
     conn = await dbConnect();
     const [rows] = await conn.execute(`
       SELECT c.competition_id, c.season_id, c.team_id, c.opponent_id,
-             c.start_time, c.location, ct.comptype, trn.name AS tournament_name,
+             c.start_time, c.venue_id, c.comptype_id, c.tournament_id,
+             vm.name AS venue_name,
+             ct.comptype, trn.name AS tournament_name,
              ts.score AS team_score,
              os.score AS opponent_score,
+             EXISTS (SELECT 1 FROM boxscores b WHERE b.competition_id = c.competition_id) AS has_boxscore,
              s.name AS season_name, s.league_id,
              l.name AS league_name,
-             tm.name  AS team_name,     tm.abbrev AS team_abbrev,
-             opp.name AS opponent_name, opp.abbrev AS opponent_abbrev,
+             tm.name  AS team_name,     tm.abbrev AS team_abbrev,   tm.member_id AS team_member_id,
+             opp.name AS opponent_name, opp.abbrev AS opponent_abbrev, opp.member_id AS opp_member_id,
              (SELECT tsch2.season_id FROM team_schedules tsch2
                WHERE tsch2.team_id = c.opponent_id AND tsch2.competition_id = c.competition_id
                LIMIT 1) AS opponent_season_id,
@@ -1976,6 +2033,7 @@ app.get('/api/games', async (req, res) => {
       JOIN teams opp   ON c.opponent_id = opp.team_id
       LEFT JOIN comptypes ct   ON ct.comptype_id  = c.comptype_id
       LEFT JOIN tournaments trn ON trn.tournament_id = c.tournament_id
+      LEFT JOIN members vm ON vm.member_id = c.venue_id
       LEFT JOIN (SELECT competition_id, team_id, SUM(score) AS score
                  FROM periods GROUP BY competition_id, team_id) ts
              ON ts.competition_id = c.competition_id AND ts.team_id = c.team_id
@@ -1993,17 +2051,55 @@ app.get('/api/games', async (req, res) => {
 });
 
 app.post('/api/games', async (req, res) => {
-  const { season_id, team_id, opponent_id, start_time, location } = req.body;
+  const { season_id, team_id, opponent_id, start_time, venue_id, comptype_id, tournament_id } = req.body;
   if (!season_id || !team_id || !opponent_id || !start_time)
     return res.status(400).json({ error: 'Season, team, opponent and date are required' });
   let conn;
   try {
     conn = await dbConnect();
+    const sid = parseInt(season_id), tid = parseInt(team_id), oid = parseInt(opponent_id);
     const [result] = await conn.execute(
-      'INSERT INTO competitions (season_id, team_id, start_time, opponent_id, location) VALUES (?, ?, ?, ?, ?)',
-      [parseInt(season_id), parseInt(team_id), start_time, parseInt(opponent_id), location || 'Home']
+      'INSERT INTO competitions (season_id, team_id, start_time, opponent_id, venue_id, comptype_id, tournament_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [sid, tid, start_time, oid, venue_id ? parseInt(venue_id) : null, comptype_id ? parseInt(comptype_id) : null, tournament_id ? parseInt(tournament_id) : null]
     );
-    res.json({ success: true, id: result.insertId });
+    const compId = result.insertId;
+
+    // Resolve the opponent's season — may differ if they're in a different league
+    const [[teamSeason]] = await conn.execute(
+      'SELECT name, league_id, start_date, end_date FROM seasons WHERE season_id = ?', [sid]
+    );
+    let oppSeasonId = sid;
+    const [[oppLeagueRow]] = await conn.execute(`
+      SELECT s.league_id FROM team_seasons ts
+      JOIN seasons s ON s.season_id = ts.season_id
+      WHERE ts.team_id = ?
+      ORDER BY s.start_date DESC LIMIT 1
+    `, [oid]);
+    if (oppLeagueRow && oppLeagueRow.league_id !== teamSeason.league_id) {
+      const [[existing]] = await conn.execute(
+        'SELECT season_id FROM seasons WHERE league_id = ? AND name = ?',
+        [oppLeagueRow.league_id, teamSeason.name]
+      );
+      if (existing) {
+        oppSeasonId = existing.season_id;
+      } else {
+        const [ins] = await conn.execute(
+          'INSERT INTO seasons (league_id, name, start_date, end_date) VALUES (?, ?, ?, ?)',
+          [oppLeagueRow.league_id, teamSeason.name, teamSeason.start_date, teamSeason.end_date]
+        );
+        oppSeasonId = ins.insertId;
+      }
+    }
+
+    await conn.execute(
+      'INSERT IGNORE INTO team_seasons (team_id, season_id) VALUES (?, ?), (?, ?)',
+      [tid, sid, oid, oppSeasonId]
+    );
+    await conn.execute(
+      'INSERT IGNORE INTO team_schedules (team_id, season_id, competition_id) VALUES (?, ?, ?), (?, ?, ?)',
+      [tid, sid, compId, oid, oppSeasonId, compId]
+    );
+    res.json({ success: true, id: compId });
   } catch (err) {
     res.json({ error: err.message });
   } finally {
@@ -2012,15 +2108,17 @@ app.post('/api/games', async (req, res) => {
 });
 
 app.put('/api/games/:id', async (req, res) => {
-  const { season_id, team_id, opponent_id, start_time, location } = req.body;
+  const { season_id, team_id, opponent_id, start_time, venue_id, comptype_id, tournament_id } = req.body;
   if (!season_id || !team_id || !opponent_id || !start_time)
     return res.status(400).json({ error: 'Season, team, opponent and date are required' });
   let conn;
   try {
     conn = await dbConnect();
     const [result] = await conn.execute(
-      'UPDATE competitions SET season_id=?, team_id=?, start_time=?, opponent_id=?, location=? WHERE competition_id=?',
-      [parseInt(season_id), parseInt(team_id), start_time, parseInt(opponent_id), location || 'Home', parseInt(req.params.id)]
+      'UPDATE competitions SET season_id=?, team_id=?, start_time=?, opponent_id=?, venue_id=?, comptype_id=?, tournament_id=? WHERE competition_id=?',
+      [parseInt(season_id), parseInt(team_id), start_time, parseInt(opponent_id),
+       venue_id ? parseInt(venue_id) : null, comptype_id ? parseInt(comptype_id) : null,
+       tournament_id ? parseInt(tournament_id) : null, parseInt(req.params.id)]
     );
     if (result.affectedRows === 0) return res.status(404).json({ error: 'Game not found' });
     res.json({ success: true });
@@ -2032,12 +2130,98 @@ app.put('/api/games/:id', async (req, res) => {
 });
 
 app.delete('/api/games/:id', async (req, res) => {
+  const compId = parseInt(req.params.id);
   let conn;
   try {
     conn = await dbConnect();
-    const [result] = await conn.execute('DELETE FROM competitions WHERE competition_id=?', [parseInt(req.params.id)]);
-    if (result.affectedRows === 0) return res.status(404).json({ error: 'Game not found' });
+
+    // Capture details before deleting
+    const [[comp]] = await conn.execute(
+      'SELECT team_id, opponent_id, season_id FROM competitions WHERE competition_id=?', [compId]
+    );
+    if (!comp) return res.status(404).json({ error: 'Game not found' });
+    const { team_id: tid, opponent_id: oid, season_id: sid } = comp;
+
+    // Capture the opponent's season for this game (may be different league's season)
+    const [[oppSched]] = await conn.execute(
+      'SELECT season_id FROM team_schedules WHERE team_id=? AND competition_id=?', [oid, compId]
+    );
+    const oppSeasonId = oppSched?.season_id ?? null;
+
+    await conn.execute('DELETE FROM team_schedules WHERE competition_id=?', [compId]);
+    await conn.execute('DELETE FROM competitions WHERE competition_id=?', [compId]);
+
+    // Clean up an auto-created opponent season if it is now completely empty
+    if (oppSeasonId && oppSeasonId !== sid) {
+      const [[{ gamesLeft }]] = await conn.execute(
+        'SELECT COUNT(*) AS gamesLeft FROM team_schedules WHERE season_id=?', [oppSeasonId]
+      );
+      if (gamesLeft === 0) {
+        const [[{ others }]] = await conn.execute(
+          'SELECT COUNT(*) AS others FROM team_seasons WHERE season_id=? AND team_id!=?',
+          [oppSeasonId, oid]
+        );
+        if (others === 0) {
+          await conn.execute('DELETE FROM team_seasons WHERE season_id=?', [oppSeasonId]);
+          await conn.execute('DELETE FROM seasons WHERE season_id=?', [oppSeasonId]);
+        }
+      }
+    }
+
     res.json({ success: true });
+  } catch (err) {
+    res.json({ error: err.message });
+  } finally {
+    await conn?.end().catch(() => {});
+  }
+});
+
+app.get('/api/members', async (req, res) => {
+  let conn;
+  try {
+    conn = await dbConnect();
+    const [rows] = await conn.execute(
+      `SELECT member_id, name, short_name, type, status FROM members WHERE status = 'active' ORDER BY name`
+    );
+    res.json({ members: rows });
+  } catch (err) {
+    res.json({ error: err.message });
+  } finally {
+    await conn?.end().catch(() => {});
+  }
+});
+
+app.get('/api/comptypes', async (req, res) => {
+  let conn;
+  try {
+    conn = await dbConnect();
+    const [rows] = await conn.execute(`SELECT comptype_id, comptype FROM comptypes ORDER BY comptype_id`);
+    res.json({ comptypes: rows });
+  } catch (err) {
+    res.json({ error: err.message });
+  } finally {
+    await conn?.end().catch(() => {});
+  }
+});
+
+app.get('/api/tournaments', async (req, res) => {
+  let conn;
+  try {
+    conn = await dbConnect();
+    const { season_id } = req.query;
+    if (season_id) {
+      const [rows] = await conn.execute(
+        `SELECT t.tournament_id, t.name FROM tournament_seasons ts
+         JOIN tournaments t ON t.tournament_id = ts.tournament_id
+         WHERE ts.season_id = ?
+         ORDER BY ts.startdate, t.name`,
+        [parseInt(season_id)]
+      );
+      res.json({ tournaments: rows });
+    } else {
+      const [rows] = await conn.execute(`SELECT tournament_id, name FROM tournaments ORDER BY name`);
+      res.json({ tournaments: rows });
+    }
   } catch (err) {
     res.json({ error: err.message });
   } finally {
@@ -2446,7 +2630,8 @@ async function handleBoxscore(req, res) {
 
     const [[comp]] = await conn.execute(`
       SELECT
-        c.competition_id, c.start_time, c.location,
+        c.competition_id, c.start_time, c.venue_id,
+        vm.name AS venue_name,
         c.team_id, ht.name AS team_name, ht.logo_path AS team_logo,
         c.opponent_id, vt.name AS opponent_name, vt.logo_path AS opponent_logo,
         s.name AS season_name, l.name AS league_name,
@@ -2457,6 +2642,7 @@ async function handleBoxscore(req, res) {
       JOIN leagues  l   ON l.league_id  = s.league_id
       JOIN teams    ht  ON ht.team_id = c.team_id
       JOIN teams    vt  ON vt.team_id = c.opponent_id
+      LEFT JOIN members vm ON vm.member_id = c.venue_id
       LEFT JOIN (SELECT competition_id, team_id, SUM(score) AS score
                  FROM periods GROUP BY competition_id, team_id) ts
              ON ts.competition_id = c.competition_id AND ts.team_id = c.team_id
@@ -2584,7 +2770,7 @@ app.get('/api/public/teams/:id/schedule', requireReadToken, async (req, res) => 
              DATE(c.start_time)                                                    AS game_date,
              TIME_FORMAT(TIME(c.start_time), '%H:%i')                             AS game_time,
              CASE WHEN c.team_id = ? THEN 'Home' ELSE 'Away' END                  AS vh,
-             c.location                                                             AS location,
+             vm.name                                                                AS location,
              CASE WHEN c.team_id = ? THEN opp.name ELSE ht.name END               AS opponent,
              team_pts.score                                                        AS pts_for,
              opp_pts.score                                                         AS pts_against,
@@ -2594,6 +2780,7 @@ app.get('/api/public/teams/:id/schedule', requireReadToken, async (req, res) => 
                                AND tsch.season_id = ? AND tsch.team_id = ?
       JOIN teams ht  ON ht.team_id  = c.team_id
       JOIN teams opp ON opp.team_id = c.opponent_id
+      LEFT JOIN members vm ON vm.member_id = c.venue_id
       LEFT JOIN tournaments trn ON trn.tournament_id = c.tournament_id
       LEFT JOIN (SELECT competition_id, team_id, SUM(score) AS score
                  FROM periods GROUP BY competition_id, team_id) team_pts
@@ -3073,8 +3260,8 @@ app.post('/api/import/commit', async (req, res) => {
 
     if (!competitionId) {
       const [r] = await conn.execute(
-        `INSERT INTO competitions (season_id, team_id, opponent_id, start_time, location, comptype_id)
-         VALUES (?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO competitions (season_id, team_id, opponent_id, start_time, venue_id, comptype_id)
+         VALUES (?, ?, ?, ?, (SELECT member_id FROM members WHERE name = ? LIMIT 1), ?)`,
         [game.seasonId, game.homeTeamId, game.visitorTeamId,
          game.startTime, game.location || null, game.comptypeId || null]
       );

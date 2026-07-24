@@ -221,33 +221,10 @@ WHERE  TOURNNAME IS NOT NULL AND TRIM(TOURNNAME) <> ''
 ORDER  BY TRIM(TOURNNAME);
 
 -- ── Step 4b: tournament_seasons ──────────────────────────────
--- Link each tournament to the NBIAA season it appeared in.
--- Season is matched by name (e.g. '2021-2022') within any league
--- whose name starts with 'NBIAA ' (covers all NBIAA divisions).
--- startdate/enddate are derived from the first and last game dates
--- for that tournament in the source competitions table.
-INSERT INTO tournament_seasons (tournament_id, season_id, startdate, enddate)
-SELECT DISTINCT
-    t.tournament_id,
-    s.season_id,
-    (SELECT MIN(DATE(dkc.DATE))
-     FROM   dakstats_history.competitions dkc
-     WHERE  dkc.TOURNID = dkt.TOURNID
-       AND  TRIM(dkc.SEASON) = TRIM(dkt.SEASON)) AS startdate,
-    (SELECT MAX(DATE(dkc.DATE))
-     FROM   dakstats_history.competitions dkc
-     WHERE  dkc.TOURNID = dkt.TOURNID
-       AND  TRIM(dkc.SEASON) = TRIM(dkt.SEASON)) AS enddate
-FROM       dakstats_history.tournaments dkt
-INNER JOIN tournaments t ON  t.name      = TRIM(dkt.TOURNNAME)
-INNER JOIN leagues     l ON  l.name = 'NBIAA' OR l.name LIKE 'NBIAA %'
-INNER JOIN seasons     s ON  s.league_id = l.league_id
-                         AND s.name      = TRIM(dkt.SEASON)
-WHERE  dkt.TOURNNAME IS NOT NULL AND TRIM(dkt.TOURNNAME) <> ''
-  AND  dkt.SEASON    IS NOT NULL
-ON DUPLICATE KEY UPDATE
-    startdate = VALUES(startdate),
-    enddate   = VALUES(enddate);
+-- Deferred to Step 5b-ii after competitions are imported, so that
+-- (tournament_id, season_id) pairs are derived from actual competition
+-- data rather than from dakstats_history.tournaments season name matching
+-- (which can produce wrong season IDs when seasons are re-imported).
 
 -- ── Step 5: Competitions ─────────────────────────────────────
 -- H_TMID (home team) and V_TMID (visiting team) are resolved to
@@ -262,7 +239,7 @@ ON DUPLICATE KEY UPDATE
 --     falling within that season's start_date..end_date window, not by
 --     season name string.  This allows cross-league exhibition games to
 --     be associated with the correct season for each team.
---   • location is populated from comp.ARENA.
+--   • venue_id is resolved from comp.ARENA by matching members.name.
 --   • Competitions where either team, the season, or the league cannot
 --     be resolved in statmanager are silently skipped (INNER JOIN).
 --   • competitions has no formal unique key, so INSERT IGNORE cannot
@@ -272,7 +249,7 @@ ON DUPLICATE KEY UPDATE
 --   • tournament_id is resolved via dakstats_history.tournaments
 --     (matched on TOURNID + SEASON) then to the statmanager tournaments
 --     table by name, assuming the 'NBIAA' league. NULL when no tournament.
-INSERT INTO competitions (season_id, team_id, start_time, end_time, opponent_id, comptype_id, location, tournament_id, video_url)
+INSERT INTO competitions (season_id, team_id, start_time, end_time, opponent_id, comptype_id, venue_id, tournament_id, video_url)
 SELECT
     s.season_id                                                           AS season_id,
     ht.team_id                                                            AS team_id,
@@ -280,7 +257,7 @@ SELECT
     comp.ENDTIME                                                          AS end_time,
     vt.team_id                                                            AS opponent_id,
     CASE WHEN comp.COMPTYPEID IN (1,2,3,4) THEN comp.COMPTYPEID ELSE NULL END AS comptype_id,
-    comp.ARENA                                                            AS location,
+    (SELECT m.member_id FROM members m WHERE m.name = comp.ARENA LIMIT 1) AS venue_id,
     trn.tournament_id                                                     AS tournament_id,
         NULLIF(CONCAT('https://www.youtube.com/watch?v=',
         SUBSTRING_INDEX(
@@ -348,6 +325,23 @@ SET sm_comp.video_url = CONCAT(
 WHERE sm_comp.video_url IS NULL
   AND REGEXP_SUBSTR(dkc.NOTES, 'youtube\\.com/embed/[a-zA-Z0-9_-]+') IS NOT NULL
   AND REGEXP_SUBSTR(dkc.NOTES, 'youtube\\.com/embed/[a-zA-Z0-9_-]+') != '';
+
+-- ── Step 5b-i: tournament_seasons backfill ───────────────────
+-- Build tournament_seasons from the competitions just imported.
+-- startdate/enddate are the first and last game dates for each
+-- (tournament, season) pair in the competitions table.
+INSERT INTO tournament_seasons (tournament_id, season_id, startdate, enddate)
+SELECT
+    c.tournament_id,
+    c.season_id,
+    MIN(DATE(c.start_time)) AS startdate,
+    MAX(DATE(c.start_time)) AS enddate
+FROM   competitions c
+WHERE  c.tournament_id IS NOT NULL
+GROUP  BY c.tournament_id, c.season_id
+ON DUPLICATE KEY UPDATE
+    startdate = LEAST(tournament_seasons.startdate,   VALUES(startdate)),
+    enddate   = GREATEST(tournament_seasons.enddate,  VALUES(enddate));
 
 -- ── Step 5b: team_schedules ───────────────────────────────────
 -- Two rows per competition: one for the home team (resolved via their
