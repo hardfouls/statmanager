@@ -1,11 +1,11 @@
 {
   "name": "statmanager",
-  "version": "0.3.0-beta",
+  "version": "0.4.0-beta",
   "description": "Basketball Stats Manager",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "deploy": "wsl rsync -avz --delete --rsync-path=/usr/bin/rsync --exclude=node_modules --exclude=xml-archives --exclude=statmanager.ini --exclude=.git --exclude=db/testdata --exclude='Design Notes' --exclude=samples --exclude=public/leagues/icons --exclude=public/teams -e 'ssh -p 220 -i ~/.ssh/id_ed25519_synology' /mnt/e/dev/projects/statmanager/ vaughanp@192.168.86.33:/volume1/web/statmanager/ && wsl ssh synology-dev 'PATH=/usr/local/bin:$PATH pm2 restart statmanager'",
+    "deploy": "wsl rsync -avz --delete --rsync-path=/usr/bin/rsync --exclude=node_modules --exclude=xml-archives --exclude=statmanager.ini --exclude=.git --exclude=db/testdata --exclude='Design Notes' --exclude=samples --exclude=public/leagues/icons --exclude=public/teams -e 'ssh -p 220 -i ~/.ssh/id_ed25519_synology' /mnt/e/dev/projects/statmanager/ vaughanp@homehub.hardfouls.com:/volume1/web/statmanager/ && wsl ssh homehub.hardfouls.com -p 220 -i ~/.ssh/id_ed25519_synology 'PATH=/usr/local/bin:$PATH pm2 restart statmanager'",
     "watch": "chokidar '**/*' --ignore 'node_modules/**' --ignore 'xml-archives/**' --ignore '.git/**' --ignore 'db/testdata/**' --debounce 800 -c 'npm run deploy'"
   },
   "dependencies": {
